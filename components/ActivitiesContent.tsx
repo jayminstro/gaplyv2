@@ -192,10 +192,11 @@ export function ActivitiesContent({
 
       <Tabs defaultValue="discover" className="w-full flex flex-col" onValueChange={onTabChange}>
         <TabsList className={layoutClasses(
-          'w-full grid grid-cols-2 h-12',
+          'w-full h-12',
           LAYOUT_CONSTANTS.CARD_BACKGROUND,
-          LAYOUT_CONSTANTS.ROUNDED_LARGE
-        )}>
+          LAYOUT_CONSTANTS.ROUNDED_LARGE,
+          'p-1 grid grid-cols-2 gap-0 !w-full !grid'
+        )} style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           <TabsTrigger 
             value="discover" 
             className={layoutClasses(
@@ -203,7 +204,8 @@ export function ActivitiesContent({
               'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
               LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
               'transition-all duration-200',
-              'h-full'
+              'h-full flex items-center justify-center',
+              'bg-transparent !flex-1 !w-full'
             )}
           >
             Discover
@@ -215,7 +217,8 @@ export function ActivitiesContent({
               'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
               LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
               'transition-all duration-200',
-              'h-full'
+              'h-full flex items-center justify-center',
+              'bg-transparent !flex-1 !w-full'
             )}
           >
             My Activities
