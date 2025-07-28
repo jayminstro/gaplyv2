@@ -112,6 +112,40 @@ A comprehensive mobile-first task management and time-blocking application with 
    npm run dev
    ```
 
+   The application will be available at `http://localhost:3000`
+
+### VS Code Setup
+
+This project includes optimized VS Code configuration for the best development experience:
+
+1. **Open the project in VS Code**
+   ```bash
+   code .
+   ```
+
+2. **Install recommended extensions** (you'll be prompted automatically)
+   - Tailwind CSS IntelliSense
+   - Prettier - Code formatter
+   - ESLint
+   - TypeScript and JavaScript Language Features
+   - Auto Rename Tag
+   - Path Intellisense
+   - Error Lens
+
+3. **Development Features**
+   - ✅ Auto-formatting on save with Prettier
+   - ✅ Real-time ESLint error detection
+   - ✅ Tailwind CSS class auto-completion
+   - ✅ TypeScript IntelliSense with path mapping
+   - ✅ Integrated terminal with npm scripts
+   - ✅ Git integration for version control
+
+4. **Run the development server from VS Code**
+   - Press `Ctrl/Cmd + Shift + P` and type "Terminal: Create New Terminal"
+   - Run `npm install` to install dependencies
+   - Run `npm run dev` to start the development server
+   - The app will open at `http://localhost:3000`
+
 ## 📁 Project Structure
 
 ```
