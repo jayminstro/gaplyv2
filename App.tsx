@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { preferencesAPI, tasksAPI, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
 import { supabase } from './utils/supabase/client';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SignUpScreen } from './components/SignUpScreen';
