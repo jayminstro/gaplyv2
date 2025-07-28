@@ -71,7 +71,7 @@ A comprehensive mobile-first task management and time-blocking application with 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/gaply.git
+   git clone https://github.com/jayminstro/gaplyv2.git
    cd gaply
    ```
 
