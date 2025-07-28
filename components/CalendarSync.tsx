@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, RefreshCw, Check, AlertCircle, ExternalLink, Unlink } from 'lucide-react';
 import { Button } from "./ui/button";
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface CalendarSyncProps {
   onStatusChange?: (connected: boolean) => void;
