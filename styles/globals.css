@@ -1,6 +1,6 @@
-@import "tailwindcss";
-
-@custom-variant dark (&:is(.dark *));
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 :root {
   --font-size: 14px;
@@ -80,114 +80,61 @@
   --sidebar-ring: oklch(0.439 0 0);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-input-background: var(--input-background);
-  --color-switch-background: var(--switch-background);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
+
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-gray-200 dark:border-gray-800;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-slate-900 text-white;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #0f172a 100%);
+    min-height: 100vh;
+  }
+
+  html {
+    @apply scroll-smooth;
   }
 }
 
-/**
- * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
- */
+/* Base typography */
 @layer base {
-  :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
-    h1 {
-      font-size: var(--text-2xl);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  h1 {
+    @apply text-2xl font-medium leading-relaxed;
+  }
 
-    h2 {
-      font-size: var(--text-xl);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  h2 {
+    @apply text-xl font-medium leading-relaxed;
+  }
 
-    h3 {
-      font-size: var(--text-lg);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  h3 {
+    @apply text-lg font-medium leading-relaxed;
+  }
 
-    h4 {
-      font-size: var(--text-base);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  h4 {
+    @apply text-base font-medium leading-relaxed;
+  }
 
-    p {
-      font-size: var(--text-base);
-      font-weight: var(--font-weight-normal);
-      line-height: 1.5;
-    }
+  p {
+    @apply text-base font-normal leading-relaxed;
+  }
 
-    label {
-      font-size: var(--text-base);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  label {
+    @apply text-base font-medium leading-relaxed;
+  }
 
-    button {
-      font-size: var(--text-base);
-      font-weight: var(--font-weight-medium);
-      line-height: 1.5;
-    }
+  button {
+    @apply text-base font-medium leading-relaxed;
+  }
 
-    input {
-      font-size: var(--text-base);
-      font-weight: var(--font-weight-normal);
-      line-height: 1.5;
-    }
+  input {
+    @apply text-base font-normal leading-relaxed;
   }
 }
 
 html {
-  font-size: var(--font-size);
+  font-size: 14px;
 }
 
 /* Hide scrollbars for mobile app experience */
@@ -327,5 +274,198 @@ html::-webkit-scrollbar {
 @media (orientation: landscape) and (max-height: 500px) {
   .toaster {
     bottom: calc(70px + env(safe-area-inset-bottom, 0px) + 10px) !important;
+  }
+}
+
+/* Mobile keyboard handling */
+:root {
+  --vh: 1vh;
+}
+
+.keyboard-open body {
+  height: calc(var(--vh, 1vh) * 100);
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 768px) {
+  body {
+    height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
+  }
+  
+  .main-content {
+    height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
+  }
+}
+
+/* Prevent zoom on input focus for iOS */
+@supports (-webkit-overflow-scrolling: touch) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="search"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Enhanced touch targets */
+@media (hover: none) and (pointer: coarse) {
+  /* Mobile devices */
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"] {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* Increase tap targets for small icons */
+  .icon-button {
+    padding: 12px;
+    margin: -12px;
+  }
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  /* Hide elements that don't make sense in app mode */
+  .browser-only {
+    display: none;
+  }
+  
+  /* Add padding for status bar if needed */
+  .pwa-content {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Dark mode optimizations for mobile */
+@media (prefers-color-scheme: dark) {
+  /* Better contrast for mobile screens */
+  :root {
+    --background: #000000;
+    --foreground: #ffffff;
+  }
+}
+
+/* Device-specific styles */
+.ios-device {
+  /* iOS-specific styles */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.android-device {
+  /* Android-specific styles */
+  overscroll-behavior: contain;
+}
+
+.pwa-standalone {
+  /* PWA standalone mode styles */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+.device-has-notch {
+  /* Styles for devices with notch */
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.app-offline {
+  /* Styles when app is offline */
+  filter: grayscale(0.3);
+}
+
+.low-battery {
+  /* Styles when device has low battery */
+  --primary-color: #dc2626; /* Red tint for low battery mode */
+}
+
+.low-memory {
+  /* Styles when device has low memory */
+  /* Reduce animations and effects */
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Mobile navigation enhancements */
+.mobile-nav {
+  /* Ensure navigation is always accessible */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Mobile content area */
+.mobile-content {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Mobile modal optimizations */
+.mobile-modal {
+  /* Ensure modals work well on mobile */
+  max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  border-radius: 20px 20px 0 0;
+  margin-top: auto;
+}
+
+/* Touch feedback */
+@media (hover: none) and (pointer: coarse) {
+  .touch-feedback:active {
+    transform: scale(0.98);
+    opacity: 0.8;
+    transition: all 0.1s ease;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border: #ffffff;
+    --foreground: #ffffff;
+    --background: #000000;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print styles for mobile */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
   }
 }

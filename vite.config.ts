@@ -10,11 +10,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './'),
     },
   },
-  css: {
-    postcss: {
-      plugins: [],
-    },
-  },
+
   server: {
     port: 3000,
     host: true,

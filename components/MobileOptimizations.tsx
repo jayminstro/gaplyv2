@@ -30,6 +30,26 @@ export function MobileOptimizations() {
     addMetaTag('apple-mobile-web-app-title', 'Gaply');
     addMetaTag('mobile-web-app-capable', 'yes');
     addMetaTag('theme-color', '#0f172a');
+    addMetaTag('apple-touch-fullscreen', 'yes');
+    addMetaTag('format-detection', 'telephone=no');
+    addMetaTag('msapplication-tap-highlight', 'no');
+
+    // Add link tags for PWA
+    const addLinkTag = (rel: string, href: string, sizes?: string) => {
+      const existing = document.querySelector(`link[rel="${rel}"]`);
+      if (!existing) {
+        const link = document.createElement('link');
+        link.rel = rel;
+        link.href = href;
+        if (sizes) link.setAttribute('sizes', sizes);
+        document.head.appendChild(link);
+      }
+    };
+
+    addLinkTag('apple-touch-icon', '/apple-touch-icon.png', '180x180');
+    addLinkTag('icon', '/favicon-32x32.png', '32x32');
+    addLinkTag('icon', '/favicon-16x16.png', '16x16');
+    addLinkTag('manifest', '/manifest.json');
 
     // Enhanced touch scrolling support
     let isScrolling = false;
@@ -120,6 +140,9 @@ export function MobileOptimizations() {
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: none;
         overscroll-behavior-y: none;
+        /* Mobile keyboard handling */
+        position: fixed;
+        width: 100%;
       }
       
       /* Root container styling */
@@ -263,12 +286,143 @@ export function MobileOptimizations() {
     // Add optimized scroll listener
     document.addEventListener('scroll', handleScroll, { passive: true });
 
+    // Handle app installation prompt
+    let deferredPrompt: any = null;
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // You can show a custom install button here
+      console.log('App install prompt available');
+    };
+
+    // Handle app installation
+    const handleAppInstalled = () => {
+      console.log('App was installed');
+      deferredPrompt = null;
+    };
+
+    // Add PWA event listeners
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // Handle screen orientation changes
+    const handleOrientationChange = () => {
+      // Force viewport recalculation
+      const viewport = document.querySelector('meta[name="viewport"]');
+      if (viewport) {
+        viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+      }
+    };
+
+    // Add orientation change listener
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    // Handle app state changes (when app comes back from background)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // App came back to foreground
+        console.log('App resumed from background');
+        // Trigger any necessary refreshes
+        window.dispatchEvent(new Event('appresume'));
+      } else {
+        // App went to background
+        console.log('App went to background');
+        window.dispatchEvent(new Event('appbackground'));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Prevent context menu on long press (mobile)
+    const preventContextMenu = (e: Event) => {
+      if (e.type === 'contextmenu') {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    document.addEventListener('contextmenu', preventContextMenu);
+
+    // Handle hardware back button (Android)
+    const handleBackButton = (e: PopStateEvent) => {
+      // Custom back button handling can be added here
+      console.log('Hardware back button pressed');
+    };
+
+    window.addEventListener('popstate', handleBackButton);
+
+    // Handle mobile keyboard events
+    const handleKeyboardOpen = () => {
+      // Add class when keyboard is open
+      document.body.classList.add('keyboard-open');
+      // Store the original viewport height
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+
+    const handleKeyboardClose = () => {
+      // Remove class when keyboard closes
+      document.body.classList.remove('keyboard-open');
+      // Reset viewport height
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+
+    // Detect keyboard open/close on iOS
+    let initialViewportHeight = window.innerHeight;
+    const handleResize = () => {
+      const currentHeight = window.innerHeight;
+      const difference = initialViewportHeight - currentHeight;
+      
+      if (difference > 150) {
+        handleKeyboardOpen();
+      } else {
+        handleKeyboardClose();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    // Detect focus on input fields
+    const handleInputFocus = () => {
+      setTimeout(handleKeyboardOpen, 300); // iOS delay
+    };
+
+    const handleInputBlur = () => {
+      setTimeout(handleKeyboardClose, 300); // iOS delay
+    };
+
+    // Add event listeners to all input elements
+    const inputs = document.querySelectorAll('input, textarea, select');
+    inputs.forEach(input => {
+      input.addEventListener('focus', handleInputFocus);
+      input.addEventListener('blur', handleInputBlur);
+    });
+
+    // Set initial viewport height
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+
     // Cleanup function
     return () => {
       document.removeEventListener('touchstart', handleTouchStart);
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', preventDoubleTapZoom);
       document.removeEventListener('scroll', handleScroll);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('contextmenu', preventContextMenu);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      window.removeEventListener('popstate', handleBackButton);
+      window.removeEventListener('resize', handleResize);
+      
+      // Remove input event listeners
+      const inputs = document.querySelectorAll('input, textarea, select');
+      inputs.forEach(input => {
+        input.removeEventListener('focus', handleInputFocus);
+        input.removeEventListener('blur', handleInputBlur);
+      });
     };
   }, []);
 

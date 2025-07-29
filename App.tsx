@@ -16,6 +16,9 @@ import { Home as HomeIcon, Activity, Settings } from 'lucide-react';
 import { TimerModal } from "./components/TimerModal";
 import { FloatingTimer } from "./components/FloatingTimer";
 import { WidgetView } from './components/WidgetView';
+import { PWAPrompt } from './components/PWAPrompt';
+import { MobileDeviceHandler } from './components/MobileDeviceHandler';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { Task, TimeGap, UserPreferences } from './types/index';
 import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './utils/constants';
 import { sanitizeTasks } from './utils/helpers';
@@ -23,6 +26,21 @@ import { debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
 
 export default function App() {
+  // Register service worker for PWA functionality
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sw.js')
+          .then((registration) => {
+            console.log('SW registered: ', registration);
+          })
+          .catch((registrationError) => {
+            console.log('SW registration failed: ', registrationError);
+          });
+      });
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState('home');
   const [globalTasks, setGlobalTasks] = useState<Task[]>([]);
   const [timerTask, setTimerTask] = useState<Task | null>(null);
@@ -552,6 +570,7 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white relative overflow-hidden">
       {/* Mobile optimizations */}
       <MobileOptimizations />
+      <MobileDeviceHandler />
       
       {/* Toast notifications */}
       <Toaster 
@@ -564,6 +583,12 @@ export default function App() {
         closeButton={false}
         offset="100px"
       />
+      
+      {/* PWA Installation Prompt */}
+      {isAuthenticated && !isDataLoading && !isWidgetMode && <PWAPrompt />}
+      
+      {/* Offline Indicator */}
+      <OfflineIndicator />
       
       {/* Background blur elements */}
       <div className="absolute top-10 left-5 w-20 h-20 bg-pink-400/30 rounded-full blur-xl"></div>
@@ -582,7 +607,7 @@ export default function App() {
       
       {/* Main content - with padding for fixed navigation and enhanced mobile scrolling */}
       <div 
-        className="relative z-10 overflow-y-auto pb-20 safe-area-top scroll-smooth ios-scroll android-scroll no-bounce" 
+        className="relative z-10 overflow-y-auto mobile-content safe-area-top scroll-smooth ios-scroll android-scroll no-bounce" 
         style={{ height: 'calc(100vh - 80px)' }}
         data-scrollable="true"
       >
@@ -592,11 +617,11 @@ export default function App() {
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
+      <div className="mobile-nav fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
         <div className="flex justify-around items-center py-4 px-6 safe-area-left safe-area-right">
           <button
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+            className={`touch-feedback flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
               activeTab === 'home' ? 'text-white' : 'text-slate-400'
             }`}
             type="button"
@@ -607,7 +632,7 @@ export default function App() {
           
           <button
             onClick={() => setActiveTab('activities')}
-            className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+            className={`touch-feedback flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
               activeTab === 'activities' ? 'text-white' : 'text-slate-400'
             }`}
             type="button"
@@ -618,7 +643,7 @@ export default function App() {
           
           <button
             onClick={() => setActiveTab('settings')}
-            className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+            className={`touch-feedback flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
               activeTab === 'settings' ? 'text-white' : 'text-slate-400'
             }`}
             type="button"
