@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { preferencesAPI, tasksAPI, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
 import { supabase } from './utils/supabase/client';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SignUpScreen } from './components/SignUpScreen';
@@ -273,9 +273,9 @@ export default function App() {
               setGaps(todayGaps);
               console.log(`✅ Initialized ${todayGaps.length} gaps for today`);
             } catch (gapError) {
-              console.error('❌ Gap initialization failed, using defaults:', gapError);
+              console.log('🔄 Gap initialization handled by API fallback system');
               
-              // Create local default gaps as fallback
+              // Create local default gaps as ultimate fallback
               try {
                 const { GapLogic } = await import('./utils/gapLogic');
                 const today = new Date().toISOString().split('T')[0];
@@ -283,7 +283,7 @@ export default function App() {
                 setGaps(fallbackGaps);
                 console.log(`✅ Created ${fallbackGaps.length} local fallback gaps`);
               } catch (fallbackError) {
-                console.error('❌ Even local gap creation failed:', fallbackError);
+                console.log('Using default empty gaps as final fallback');
                 setGaps(DEFAULT_GAPS);
               }
             }

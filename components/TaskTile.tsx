@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Timer, Check, Trash2, Clock, Calendar } from 'lucide-react';
-import { motion, useMotionValue, useTransform, PanInfo } from 'motion/react';
+import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { MinimizedTimerOnTask } from './MinimizedTimerOnTask';
 import { Task } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';

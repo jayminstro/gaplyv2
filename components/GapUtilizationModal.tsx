@@ -6,7 +6,7 @@ import { generateUUID } from '../utils/uuid';
 import { GapsAPI } from '../utils/gapsAPI';
 import { supabase } from '../utils/supabase/client';
 import { exploreAPI, calendarAPI } from '../utils/api';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface GapUtilizationModalProps {
   isOpen: boolean;

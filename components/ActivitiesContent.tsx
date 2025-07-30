@@ -14,7 +14,7 @@ import { NewTaskModal } from "./NewTaskModal";
 import { Task } from '../types/index';
 import { tasksAPI, exploreAPI } from '../utils/api';
 import { renderSafeIcon } from '../utils/helpers';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { ActivitySchedulingModal } from './ActivitySchedulingModal';
 import { 
   LAYOUT_CONSTANTS, 

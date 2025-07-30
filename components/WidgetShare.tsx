@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Share2, Copy, Check, Smartphone, ExternalLink } from 'lucide-react';
 import { Button } from './ui/button';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export function WidgetShare() {
   const [copied, setCopied] = useState(false);

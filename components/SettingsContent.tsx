@@ -31,7 +31,7 @@ import { DebugPanel } from './DebugPanel';
 import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup } from './ToggleGroup';
 import { WidgetShare } from './WidgetShare';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface SettingsContentProps {
   user: any;
