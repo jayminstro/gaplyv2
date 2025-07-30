@@ -1,7 +1,7 @@
-import { projectId, publicAnonKey } from './supabase/info';
+import { supabaseConfig } from './supabase/config';
 import { supabase } from './supabase/client';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-966d4846`;
+const API_BASE = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846`;
 
 async function apiRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
   const maxRetries = 2;
