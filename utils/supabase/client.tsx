@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from './info';
+import { supabaseConfig } from './config';
 
-const supabaseUrl = `https://${projectId}.supabase.co`;
+const supabaseUrl = `https://${supabaseConfig.projectId}.supabase.co`;
 
-export const supabase = createClient(supabaseUrl, publicAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseConfig.publicAnonKey);

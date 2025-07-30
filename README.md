@@ -83,8 +83,12 @@ A comprehensive mobile-first task management and time-blocking application with 
 3. **Environment Setup**
    Create a `.env.local` file with your Supabase and Google credentials:
    ```env
-   VITE_SUPABASE_URL=your_supabase_url
+   # Supabase Configuration
+   VITE_SUPABASE_PROJECT_ID=your_supabase_project_id
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   VITE_SUPABASE_URL=your_supabase_url
+   
+   # Google OAuth Configuration
    GOOGLE_CLIENT_ID=your_google_oauth_client_id
    GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
    ```
@@ -196,6 +200,9 @@ The backend provides RESTful endpoints via Hono web server:
 - **Authentication**: Secure JWT token-based auth via Supabase
 - **Data Validation**: Input validation on both client and server
 - **CORS**: Properly configured for secure API access
+- **Environment Variables**: All sensitive configuration moved to environment variables
+- **No Hardcoded Secrets**: Supabase credentials are properly externalized
+- **Secure Token Handling**: Access tokens managed through secure session management
 
 ## 🚀 Deployment
 
@@ -252,6 +259,7 @@ The application can be deployed to any static hosting service:
 ## 📋 Recent Updates & Improvements
 
 ### ✅ Completed Features
+- ✅ **Security Improvements**: Moved hardcoded Supabase credentials to environment variables
 - ✅ Work hours banner system with smart timeline replacement
 - ✅ Activity stack modal with bottom slide-up animation and proper spacing
 - ✅ Google Calendar integration with optional activity scheduling

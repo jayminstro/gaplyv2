@@ -1,6 +1,6 @@
 import { TimeGap, UserPreferences } from '../types/index';
 import { GapLogic, GapManager } from './gapLogic';
-import { projectId, publicAnonKey } from './supabase/info';
+import { supabaseConfig } from './supabase/config';
 import { safeTimeToMinutes } from './helpers';
 
 /**
@@ -8,7 +8,7 @@ import { safeTimeToMinutes } from './helpers';
  * Handles all gap-related operations following the priority system
  */
 export class GapsAPI {
-  private static readonly BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-966d4846`;
+  private static readonly BASE_URL = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846`;
   private static readonly TIMEOUT_MS = 5000; // Reduced timeout for faster fallback
   private static readonly LOCAL_DEVELOPMENT = process.env.NODE_ENV === 'development';
 

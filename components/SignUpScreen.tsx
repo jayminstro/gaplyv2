@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Eye, EyeOff, Zap, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { supabaseConfig } from '../utils/supabase/config';
 
 interface SignUpScreenProps {
   onAuthSuccess: () => Promise<void>;
@@ -46,11 +46,11 @@ export function SignUpScreen({ onAuthSuccess, onToggleAuth }: SignUpScreenProps)
 
     try {
       // Call our server's signup endpoint
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-966d4846/signup`, {
+      const response = await fetch(`https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          'Authorization': `Bearer ${supabaseConfig.publicAnonKey}`
         },
         body: JSON.stringify({
           email: formData.email,
@@ -68,8 +68,8 @@ export function SignUpScreen({ onAuthSuccess, onToggleAuth }: SignUpScreenProps)
         // After successful signup, we need to actually log in the user
         const { createClient } = await import('@supabase/supabase-js');
         const supabase = createClient(
-          `https://${projectId}.supabase.co`,
-          publicAnonKey
+          `https://${supabaseConfig.projectId}.supabase.co`,
+          supabaseConfig.publicAnonKey
         );
         
         // Now sign them in
@@ -100,8 +100,8 @@ export function SignUpScreen({ onAuthSuccess, onToggleAuth }: SignUpScreenProps)
     try {
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
-        `https://${projectId}.supabase.co`,
-        publicAnonKey
+        `https://${supabaseConfig.projectId}.supabase.co`,
+        supabaseConfig.publicAnonKey
       );
 
       const { error } = await supabase.auth.signInWithOAuth({

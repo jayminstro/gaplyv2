@@ -1,7 +1,7 @@
 import { supabase } from './supabase/client';
 import { generateUUID } from './uuid';
 import { tasksAPI } from './api';
-import { projectId, publicAnonKey } from './supabase/info';
+import { supabaseConfig } from './supabase/config';
 
 // Debug utility to help identify data saving issues
 export const debugDataSaving = {
@@ -10,20 +10,20 @@ export const debugDataSaving = {
     console.log('🔍 Checking environment configuration...');
     try {
       console.log('Environment details:', {
-        projectId,
-        publicAnonKeyExists: !!publicAnonKey,
-        publicAnonKeyLength: publicAnonKey?.length,
+        projectId: supabaseConfig.projectId,
+        publicAnonKeyExists: !!supabaseConfig.publicAnonKey,
+        publicAnonKeyLength: supabaseConfig.publicAnonKey?.length,
         nodeEnv: process.env.NODE_ENV,
         currentUrl: window.location.href,
         userAgent: navigator.userAgent
       });
       
-      if (!projectId) {
+      if (!supabaseConfig.projectId) {
         console.error('❌ Missing projectId');
         return false;
       }
       
-      if (!publicAnonKey) {
+      if (!supabaseConfig.publicAnonKey) {
         console.error('❌ Missing publicAnonKey');
         return false;
       }
@@ -69,9 +69,9 @@ export const debugDataSaving = {
   async testApiCall() {
     console.log('🌐 Testing API connectivity...');
     try {
-      console.log('Testing health endpoint:', `https://${projectId}.supabase.co/functions/v1/make-server-966d4846/health`);
+      console.log('Testing health endpoint:', `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846/health`);
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-966d4846/health`, {
+      const response = await fetch(`https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846/health`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -94,11 +94,11 @@ export const debugDataSaving = {
         return false;
       }
     } catch (error) {
-      console.error('❌ API connectivity test failed:', {
-        error,
-        message: error.message,
-        projectId,
-        url: `https://${projectId}.supabase.co/functions/v1/make-server-966d4846/health`
+              console.error('❌ API connectivity test failed:', {
+          error,
+          message: error.message,
+          projectId: supabaseConfig.projectId,
+                  url: `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846/health`
       });
       return false;
     }
