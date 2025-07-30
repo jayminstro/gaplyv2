@@ -32,14 +32,24 @@
     }
   },
   "include": [
-    "**/*.ts", 
-    "**/*.tsx",
-    "vite.config.ts"
+    "src/**/*.ts", 
+    "src/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "utils/**/*.ts",
+    "utils/**/*.tsx",
+    "types/**/*.ts",
+    "types/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "*.ts",
+    "*.tsx"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "build"
+    "build",
+    "vite.config.ts"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
