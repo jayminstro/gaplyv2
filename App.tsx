@@ -19,8 +19,9 @@ import { WidgetView } from './components/WidgetView';
 import { Task, TimeGap, UserPreferences } from './types/index';
 import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './utils/constants';
 import { sanitizeTasks } from './utils/helpers';
-import { debugDataSaving } from './utils/debug';
+import { debugDataSaving as _debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
+import { SimpleLocalFirstService } from './utils/localFirst/SimpleLocalFirstService.ts';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -42,10 +43,10 @@ export default function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const [profile, setProfile] = useState<any>(null);
 
-  const [editingProfile, setEditingProfile] = useState(false);
+  const [_editingProfile, setEditingProfile] = useState(false);
 
   // Track unsaved changes per section
-  const [unsavedChanges, setUnsavedChanges] = useState(DEFAULT_UNSAVED_CHANGES);
+  const [_unsavedChanges, setUnsavedChanges] = useState(DEFAULT_UNSAVED_CHANGES);
 
   // Activities state - moved here to avoid conditional hook calls
   const [currentActivitiesTab, setCurrentActivitiesTab] = useState('discover');
@@ -54,6 +55,9 @@ export default function App() {
 
   // Widget mode detection
   const [isWidgetMode, setIsWidgetMode] = useState(false);
+
+  // Local-first service
+  const [localFirstService, setLocalFirstService] = useState<SimpleLocalFirstService | null>(null);
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -79,7 +83,7 @@ export default function App() {
     checkAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setIsAuthenticated(true);
         setUser(session.user);
@@ -95,6 +99,62 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Initialize local-first system
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+
+    const initializeLocalFirst = async () => {
+      try {
+        const service = new SimpleLocalFirstService(user.id);
+        await service.initialize();
+        setLocalFirstService(service);
+      } catch (error) {
+        console.error('Failed to initialize local-first service:', error);
+      }
+    };
+
+    initializeLocalFirst();
+  }, [isAuthenticated, user?.id]);
+
+  // Load data using simple local-first system
+  useEffect(() => {
+    if (!localFirstService) return;
+
+    const loadData = async () => {
+      try {
+        // Load tasks
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
+
+        // Load gaps for today
+        const today = new Date().toISOString().split('T')[0];
+        const gaps = await localFirstService.getGaps(today);
+        setGaps(gaps);
+
+        // Load preferences
+        const prefs = await localFirstService.getUserPreferences();
+        if (prefs) {
+          setPreferences(prefs);
+        }
+
+        setIsDataLoading(false);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        setIsDataLoading(false);
+      }
+    };
+
+    loadData();
+  }, [localFirstService]);
+
+  // Update data when local-first service changes
+  useEffect(() => {
+    if (localFirstService) {
+      // Refresh data when local-first service is available
+      // This could be optimized to only refresh changed data
+    }
+  }, [localFirstService]);
 
   // Load user preferences and profile data when authenticated
   useEffect(() => {
@@ -242,9 +302,9 @@ export default function App() {
             
             // Verify the token is not expired
             const now = new Date();
-            const expiresAt = new Date(currentSession.expires_at * 1000);
+            const expiresAt = currentSession.expires_at ? new Date(currentSession.expires_at * 1000) : null;
             
-            if (now >= expiresAt) {
+            if (expiresAt && now >= expiresAt) {
               console.warn('⚠️ Access token has expired, refreshing session...');
               const { data: { session: newSession } } = await supabase.auth.refreshSession();
               if (newSession?.access_token) {
@@ -377,12 +437,12 @@ export default function App() {
   };
 
   // Settings helper functions
-  const updatePreference = (key: string, value: any, section: string) => {
+  const _updatePreference = (key: string, value: any, section: string) => {
     setPreferences(prev => ({ ...prev, [key]: value }));
     setUnsavedChanges(prev => ({ ...prev, [section]: true }));
   };
 
-  const saveSection = async (section: string) => {
+  const _saveSection = async (section: string) => {
     if (!isAuthenticated || !user?.id) {
       console.error('Cannot save: user not authenticated');
       toast.error('Please sign in to save preferences');
@@ -461,7 +521,7 @@ export default function App() {
   const runningTimerTask = globalTasks.find(task => task.isTimerRunning);
 
   // Check if MinimizedTimerOnTask is visible (only on Activities > My Activities tab)
-  const isMinimizedTimerVisible = activeTab === 'activities' && currentActivitiesTab === 'my-activities' && runningTimerTask;
+  const _isMinimizedTimerVisible = activeTab === 'activities' && currentActivitiesTab === 'my-activities' && runningTimerTask;
   
   // FloatingTimer should show everywhere except My Activities tab
   const shouldShowFloatingTimer = !!runningTimerTask && !(activeTab === 'activities' && currentActivitiesTab === 'my-activities');
@@ -505,40 +565,46 @@ export default function App() {
     }
   };
 
-  const handleTaskCreated = async (newTask: Task) => {
-    // Update the global tasks list
-    const updatedTasks = [...globalTasks, newTask];
-    setGlobalTasks(updatedTasks);
-    
-    // Save to database
+  // Update task operations to use simple local-first
+  const handleTaskCreated = async (task: Task) => {
     try {
-      if (isAuthenticated && user?.id) {
-        console.log('Saving new task for user:', user.id);
-        await tasksAPI.save(updatedTasks);
-        
-        // Refresh gaps data if this task was scheduled (gap was split)
-        if (newTask.scheduledGapId || newTask.status === 'scheduled') {
-          console.log('Task was scheduled, refreshing gaps...');
-          const { data: { session: currentSession } } = await supabase.auth.getSession();
-          if (currentSession?.access_token) {
-            try {
-              const todayGaps = await GapsAPI.getGapsForDate(
-                new Date().toISOString().split('T')[0], 
-                currentSession.access_token
-              );
-              setGaps(todayGaps);
-              console.log('✅ Gaps refreshed after task scheduling');
-            } catch (gapError) {
-              console.error('Error refreshing gaps after task creation:', gapError);
-            }
-          }
-        }
-      } else {
-        console.warn('Cannot save task: user not authenticated');
+      if (localFirstService) {
+        await localFirstService.createTask(task);
+        // Refresh tasks
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
       }
     } catch (error) {
-      console.error('Error saving new task for user:', user?.id, error);
-      toast.error('Failed to save task');
+      console.error('Error creating task:', error);
+      toast.error('Failed to create task');
+    }
+  };
+
+  const _handleTaskUpdated = async (task: Task) => {
+    try {
+      if (localFirstService) {
+        await localFirstService.updateTask(task.id, task);
+        // Refresh tasks
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
+      }
+    } catch (error) {
+      console.error('Error updating task:', error);
+      toast.error('Failed to update task');
+    }
+  };
+
+  const _handleTaskDeleted = async (taskId: string) => {
+    try {
+      if (localFirstService) {
+        await localFirstService.deleteTask(taskId);
+        // Refresh tasks
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
     }
   };
 

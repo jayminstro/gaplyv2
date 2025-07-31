@@ -1,25 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
-
-interface Task {
-  id: string;
-  title: string;
-  category: string;
-  duration: string;
-  dueDate?: string;
-  dueTime?: string;
-  status: 'scheduled' | 'overdue' | 'draft';
-  isTimerRunning?: boolean;
-  timerRemaining?: number;
-  timerTotal?: number;
-  iconColor: string;
-  icon: React.ReactNode;
-}
+import { Task } from '../types/index';
 
 interface FloatingTimerProps {
   task: Task | null;
   isVisible: boolean;
-  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => void;
+  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => Promise<void>;
   onExpand: () => void;
 }
 

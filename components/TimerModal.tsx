@@ -3,26 +3,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "./ui/button";
 import { Play, Pause, Square, Plus, ChevronDown } from 'lucide-react';
 
-interface Task {
-  id: string;
-  title: string;
-  category: string;
-  duration: string;
-  dueDate?: string;
-  dueTime?: string;
-  status: 'scheduled' | 'overdue' | 'draft';
-  isTimerRunning?: boolean;
-  timerRemaining?: number;
-  timerTotal?: number;
-  iconColor: string;
-  icon: React.ReactNode;
-}
+import { Task } from '../types/index';
 
 interface TimerModalProps {
   task: Task | null;
   isOpen: boolean;
   onClose: () => void;
-  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => void;
+  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => Promise<void>;
 }
 
 export function TimerModal({ task, isOpen, onClose, onTimerUpdate }: TimerModalProps) {
