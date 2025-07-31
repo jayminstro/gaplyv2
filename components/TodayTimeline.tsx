@@ -182,8 +182,33 @@ export function TodayTimeline({
   const scheduledActivities = tasks
     .filter(task => {
       if (!task.dueTime || !task.dueDate) return false;
+      
+      // Check if the task is for today
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      if (task.dueDate !== today) {
+        console.log('🔍 Filtered out task not for today:', task.title, 'dueDate:', task.dueDate, 'today:', today);
+        return false;
+      }
+      
       const taskMinutes = timeToMinutes(task.dueTime);
-      return taskMinutes >= timelineStartMinutes && taskMinutes < timelineEndMinutes;
+      const taskDurationMinutes = parseInt(task.duration.split(':')[1]) + (parseInt(task.duration.split(':')[0]) * 60);
+      const taskEndMinutes = taskMinutes + taskDurationMinutes;
+      
+      // Filter out activities that are in the past (have already ended)
+      if (taskEndMinutes <= currentMinutes) {
+        console.log('🔍 Filtered out past task:', task.title, 'endTime:', minutesToTime(taskEndMinutes), 'currentTime:', minutesToTime(currentMinutes));
+        return false;
+      }
+      
+      // Only include activities within the timeline's time range
+      const isInTimelineRange = taskMinutes >= timelineStartMinutes && taskMinutes < timelineEndMinutes;
+      if (!isInTimelineRange) {
+        console.log('🔍 Filtered out task outside timeline range:', task.title, 'taskTime:', minutesToTime(taskMinutes), 'timelineRange:', `${minutesToTime(timelineStartMinutes)}-${minutesToTime(timelineEndMinutes)}`);
+        return false;
+      }
+      
+      console.log('✅ Task included in timeline:', task.title, 'time:', minutesToTime(taskMinutes), 'duration:', task.duration);
+      return true;
     })
     .map(task => {
       const startMinutes = timeToMinutes(task.dueTime!);
