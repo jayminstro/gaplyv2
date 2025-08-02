@@ -88,5 +88,6 @@ export const DATABASE_INDEXES = {
   profile: ['user_id', 'is_synced'],
   scheduled_gaps: ['user_id', 'gap_id', 'task_id', 'is_synced', 'deleted_at'],
   activity_completions: ['user_id', 'completed_at', 'is_synced', 'deleted_at'],
-  sync_queue: ['table', 'operation', 'created_at', 'retry_count']
+  sync_queue: ['table', 'operation', 'created_at', 'retry_count'],
+  schema: ['user_id', 'version']
 } as const; 

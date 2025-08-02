@@ -21,7 +21,11 @@ import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './ut
 import { sanitizeTasks } from './utils/helpers';
 import { debugDataSaving as _debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
-import { SimpleLocalFirstService } from './utils/localFirst/SimpleLocalFirstService.ts';
+import { EnhancedLocalFirstService } from './utils/localFirst/EnhancedLocalFirstService';
+import { LoginSyncService } from './utils/localFirst/LoginSyncService';
+import { OfflineFirstDebugPanel } from './components/OfflineFirstDebugPanel';
+import { LoginSyncTest } from './components/LoginSyncTest';
+import { logger, logNetworkStatus } from './utils/debug';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -57,7 +61,21 @@ export default function App() {
   const [isWidgetMode, setIsWidgetMode] = useState(false);
 
   // Local-first service
-  const [localFirstService, setLocalFirstService] = useState<SimpleLocalFirstService | null>(null);
+  const [localFirstService, setLocalFirstService] = useState<EnhancedLocalFirstService | null>(null);
+  const [loginSyncService, setLoginSyncService] = useState<LoginSyncService | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{
+    isOnline: boolean;
+    isSyncing: boolean;
+    lastSyncTime: Date | null;
+    localDataCount: { tasks: number; gaps: number };
+    unsyncedCount: { tasks: number; gaps: number };
+  }>({
+    isOnline: navigator.onLine,
+    isSyncing: false,
+    lastSyncTime: null,
+    localDataCount: { tasks: 0, gaps: 0 },
+    unsyncedCount: { tasks: 0, gaps: 0 }
+  });
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -100,61 +118,120 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Initialize local-first system
+  // Initialize local-first system with login sync
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
 
-    const initializeLocalFirst = async () => {
+    const initializeWithLoginSync = async () => {
       try {
-        const service = new SimpleLocalFirstService(user.id);
-        await service.initialize();
-        setLocalFirstService(service);
+        console.log('🔄 Initializing local-first system with login sync...');
+        
+        // Create login sync service for remote-to-local sync
+        const loginService = new LoginSyncService(user.id);
+        const syncResult = await loginService.initializeAndSync();
+        
+        if (syncResult.success) {
+          console.log('✅ Login sync completed successfully');
+          console.log(`📊 Sync summary: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
+          
+          if (syncResult.conflictsResolved > 0) {
+            console.log(`🔄 ${syncResult.conflictsResolved} conflicts resolved`);
+          }
+          
+          setLoginSyncService(loginService);
+        } else {
+          console.warn('⚠️ Login sync completed with warnings:', syncResult.errors);
+          setLoginSyncService(loginService); // Still set the service even with warnings
+        }
+
+        // Create enhanced local-first service for ongoing operations
+        const enhancedService = new EnhancedLocalFirstService(user.id, {
+          sync: {
+            autoSync: false, // Disable auto sync for now, focus on pull-only
+            syncInterval: 30000,
+            retryAttempts: 3,
+            retryDelay: 1000,
+            backgroundSync: false
+          }
+        });
+
+        await enhancedService.initialize();
+        setLocalFirstService(enhancedService);
+        setIsDataLoading(false);
+        
       } catch (error) {
-        console.error('Failed to initialize local-first service:', error);
+        console.error('❌ Failed to initialize local-first system:', error);
+        setIsDataLoading(false);
       }
     };
 
-    initializeLocalFirst();
+    initializeWithLoginSync();
   }, [isAuthenticated, user?.id]);
 
-  // Load data using simple local-first system
+  // Load data from local database
   useEffect(() => {
-    if (!localFirstService) return;
+    if (!loginSyncService) return;
 
-    const loadData = async () => {
+    const loadLocalData = async () => {
       try {
-        // Load tasks
-        const tasks = await localFirstService.getTasks();
+        console.log('📱 Loading local data...');
+        
+        // Load tasks from local database
+        const tasks = await loginSyncService.getTasks();
         setGlobalTasks(tasks);
 
-        // Load gaps for today
+        // Load gaps for today from local database
         const today = new Date().toISOString().split('T')[0];
-        const gaps = await localFirstService.getGaps(today);
+        const gaps = await loginSyncService.getGaps(today);
         setGaps(gaps);
 
-        // Load preferences
-        const prefs = await localFirstService.getUserPreferences();
+        // Load preferences from local database
+        const prefs = await loginSyncService.getUserPreferences();
         if (prefs) {
           setPreferences(prefs);
         }
 
-        setIsDataLoading(false);
+        // Update sync status
+        const status = await loginSyncService.getSyncStatus();
+        setSyncStatus({
+          isOnline: status.isOnline,
+          isSyncing: false,
+          lastSyncTime: status.lastSyncTime,
+          localDataCount: status.localDataCount,
+          unsyncedCount: { tasks: 0, gaps: 0 } // No unsynced data in pull-only mode
+        });
+
+        console.log(`✅ Local data loaded: ${tasks.length} tasks, ${gaps.length} gaps`);
       } catch (error) {
-        console.error('Error loading data:', error);
-        setIsDataLoading(false);
+        console.error('❌ Error loading local data:', error);
       }
     };
 
-    loadData();
-  }, [localFirstService]);
+    loadLocalData();
+  }, [loginSyncService]);
 
-  // Update data when local-first service changes
+  // Network status monitoring
   useEffect(() => {
-    if (localFirstService) {
-      // Refresh data when local-first service is available
-      // This could be optimized to only refresh changed data
-    }
-  }, [localFirstService]);
+    const handleOnline = () => {
+      console.log('🌐 Network connection restored');
+      logNetworkStatus(true);
+      setSyncStatus(prev => ({ ...prev, isOnline: true }));
+    };
+
+    const handleOffline = () => {
+      console.log('🌐 Network connection lost');
+      logNetworkStatus(false);
+      setSyncStatus(prev => ({ ...prev, isOnline: false }));
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load user preferences and profile data when authenticated
   useEffect(() => {
@@ -409,29 +486,115 @@ export default function App() {
     }
   };
 
+  // Debug panel handlers
+  const handleRefreshSyncStatus = async () => {
+    if (loginSyncService) {
+      const status = await loginSyncService.getSyncStatus();
+      setSyncStatus({
+        isOnline: status.isOnline,
+        isSyncing: false,
+        lastSyncTime: status.lastSyncTime,
+        localDataCount: status.localDataCount,
+        unsyncedCount: { tasks: 0, gaps: 0 }
+      });
+    }
+  };
+
+  const handleForceSync = async () => {
+    if (loginSyncService) {
+      try {
+        // For pull-only mode, we can re-run the login sync
+        const syncResult = await loginSyncService.initializeAndSync();
+        if (syncResult.success) {
+          toast.success(`Manual sync completed: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
+        } else {
+          toast.warning('Manual sync completed with warnings');
+        }
+        
+        // Refresh the data
+        const tasks = await loginSyncService.getTasks();
+        const gaps = await loginSyncService.getGaps();
+        setGlobalTasks(tasks);
+        setGaps(gaps);
+        
+        // Update sync status
+        await handleRefreshSyncStatus();
+      } catch (error) {
+        console.error('Manual sync failed:', error);
+        toast.error('Manual sync failed');
+      }
+    }
+  };
+
+  const handleClearLocalData = async () => {
+    if (loginSyncService) {
+      try {
+        await loginSyncService.cleanup();
+        setGlobalTasks([]);
+        setGaps([]);
+        setSyncStatus(prev => ({
+          ...prev,
+          localDataCount: { tasks: 0, gaps: 0 },
+          unsyncedCount: { tasks: 0, gaps: 0 }
+        }));
+        toast.success('Local data cleared');
+      } catch (error) {
+        console.error('Failed to clear local data:', error);
+        toast.error('Failed to clear local data');
+      }
+    }
+  };
+
+  const handleExportLogs = () => {
+    const logData = logger.exportLogs();
+    const blob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `offline-first-logs-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Logs exported successfully');
+  };
+
+  // Enhanced sign out handler
   const handleSignOut = async () => {
     try {
+      // Clean up services
+      if (localFirstService) {
+        await localFirstService.cleanup();
+      }
+      if (loginSyncService) {
+        await loginSyncService.cleanup();
+      }
+
       await supabase.auth.signOut();
       setIsAuthenticated(false);
       setUser(null);
+      setLocalFirstService(null);
+      
+      // Reset all state
       setGlobalTasks([]);
       setGaps([]);
-      // Reset settings state
       setPreferences(DEFAULT_PREFERENCES);
       setProfile(null);
       setEditingProfile(false);
       setUnsavedChanges(DEFAULT_UNSAVED_CHANGES);
-      // Reset activities state
       setCurrentActivitiesTab('discover');
       setEditingTask(null);
       setIsNewTaskModalOpen(false);
-      // Reset data loading state
       setIsDataLoading(false);
-      
-      // Show success toast
+      setSyncStatus({
+        isOnline: navigator.onLine,
+        isSyncing: false,
+        lastSyncTime: null,
+        localDataCount: { tasks: 0, gaps: 0 },
+        unsyncedCount: { tasks: 0, gaps: 0 }
+      });
+
       toast.success('Signed out successfully');
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error('❌ Sign out error:', error);
       toast.error('Sign out failed');
     }
   };
@@ -541,21 +704,36 @@ export default function App() {
     }
   }, 2000); // Debounce for 2 seconds
 
+  // Enhanced timer update handler
   const handleGlobalTimerUpdate = async (task: Task, isRunning: boolean, remaining: number, total?: number) => {
-    const updatedTasks = globalTasks.map(t => 
-      t.id === task.id 
-        ? { 
-            ...t, 
-            isTimerRunning: isRunning, 
-            timerRemaining: remaining,
-            ...(total && { timerTotal: total })
-          }
-        : t
-    );
-    setGlobalTasks(updatedTasks);
+    try {
+      const updatedTask = {
+        ...task,
+        isTimerRunning: isRunning,
+        timerRemaining: remaining,
+        timerTotal: total || task.timerTotal
+      };
 
-    // Use debounced save to avoid excessive database calls during timer updates
-    debouncedSaveTasks(updatedTasks);
+      // Update in local state immediately for UI responsiveness
+      setGlobalTasks(prev => 
+        prev.map(t => t.id === task.id ? updatedTask : t)
+      );
+
+      // Save to local database
+      if (localFirstService) {
+        await localFirstService.updateTask(task.id, updatedTask);
+        
+        // Update sync status
+        const status = await localFirstService.getEnhancedSyncStatus();
+        setSyncStatus(status);
+      }
+
+      // Debounced save to prevent excessive API calls
+      debouncedSaveTasks(globalTasks);
+    } catch (error) {
+      console.error('❌ Error updating timer:', error);
+      toast.error('Failed to save timer progress');
+    }
   };
 
   const handleFloatingTimerExpand = () => {
@@ -565,45 +743,79 @@ export default function App() {
     }
   };
 
-  // Update task operations to use simple local-first
+  // Enhanced task creation handler
   const handleTaskCreated = async (task: Task) => {
     try {
       if (localFirstService) {
-        await localFirstService.createTask(task);
+        console.log(`📝 Creating task: ${task.title}`);
+        
+        const createdTask = await localFirstService.createTask(task);
+        
         // Refresh tasks
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
+
+        // Update sync status
+        const status = await localFirstService.getEnhancedSyncStatus();
+        setSyncStatus(status);
+
+        console.log(`✅ Task created: ${createdTask.title}`);
+        
+        // Show offline indicator if offline
+        if (!navigator.onLine) {
+          toast.success('Task created (offline - will sync when online)');
+        }
       }
     } catch (error) {
-      console.error('Error creating task:', error);
+      console.error('❌ Error creating task:', error);
       toast.error('Failed to create task');
     }
   };
 
-  const _handleTaskUpdated = async (task: Task) => {
+  // Enhanced task update handler
+  const handleTaskUpdated = async (task: Task) => {
     try {
       if (localFirstService) {
+        console.log(`📝 Updating task: ${task.title}`);
+        
         await localFirstService.updateTask(task.id, task);
+        
         // Refresh tasks
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
+
+        // Update sync status
+        const status = await localFirstService.getEnhancedSyncStatus();
+        setSyncStatus(status);
+
+        console.log(`✅ Task updated: ${task.title}`);
       }
     } catch (error) {
-      console.error('Error updating task:', error);
+      console.error('❌ Error updating task:', error);
       toast.error('Failed to update task');
     }
   };
 
-  const _handleTaskDeleted = async (taskId: string) => {
+  // Enhanced task deletion handler
+  const handleTaskDeleted = async (taskId: string) => {
     try {
       if (localFirstService) {
+        console.log(`🗑️ Deleting task: ${taskId}`);
+        
         await localFirstService.deleteTask(taskId);
+        
         // Refresh tasks
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
+
+        // Update sync status
+        const status = await localFirstService.getEnhancedSyncStatus();
+        setSyncStatus(status);
+
+        console.log(`✅ Task deleted: ${taskId}`);
       }
     } catch (error) {
-      console.error('Error deleting task:', error);
+      console.error('❌ Error deleting task:', error);
       toast.error('Failed to delete task');
     }
   };
@@ -643,12 +855,28 @@ export default function App() {
         );
       case 'settings':
         return (
-          <SettingsContent 
-            user={user}
-            preferences={preferences}
-            onSignOut={handleSignOut}
-            onPreferencesUpdate={updatePreferencesFromSettings}
-          />
+          <div className="space-y-6">
+            <SettingsContent 
+              user={user}
+              preferences={preferences}
+              onSignOut={handleSignOut}
+              onPreferencesUpdate={updatePreferencesFromSettings}
+            />
+            
+            {/* Offline-First Debug Panel */}
+            <OfflineFirstDebugPanel
+              syncStatus={syncStatus}
+              onRefreshStatus={handleRefreshSyncStatus}
+              onForceSync={handleForceSync}
+              onClearLocalData={handleClearLocalData}
+              onExportLogs={handleExportLogs}
+            />
+            
+            {/* Login Sync Test */}
+            {user?.id && (
+              <LoginSyncTest userId={user.id} />
+            )}
+          </div>
         );
       default:
         return (
