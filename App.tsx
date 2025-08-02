@@ -21,11 +21,9 @@ import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './ut
 import { sanitizeTasks } from './utils/helpers';
 import { debugDataSaving as _debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
-import { EnhancedLocalFirstService } from './utils/localFirst/EnhancedLocalFirstService';
+import { SimpleLocalFirstService } from './utils/localFirst/SimpleLocalFirstService.ts';
 import { LoginSyncService } from './utils/localFirst/LoginSyncService';
-import { OfflineFirstDebugPanel } from './components/OfflineFirstDebugPanel';
-import { LoginSyncTest } from './components/LoginSyncTest';
-import { logger, logNetworkStatus } from './utils/debug';
+import { SimpleLoginSyncDebug } from './components/SimpleLoginSyncDebug';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -61,21 +59,8 @@ export default function App() {
   const [isWidgetMode, setIsWidgetMode] = useState(false);
 
   // Local-first service
-  const [localFirstService, setLocalFirstService] = useState<EnhancedLocalFirstService | null>(null);
+  const [localFirstService, setLocalFirstService] = useState<SimpleLocalFirstService | null>(null);
   const [loginSyncService, setLoginSyncService] = useState<LoginSyncService | null>(null);
-  const [syncStatus, setSyncStatus] = useState<{
-    isOnline: boolean;
-    isSyncing: boolean;
-    lastSyncTime: Date | null;
-    localDataCount: { tasks: number; gaps: number };
-    unsyncedCount: { tasks: number; gaps: number };
-  }>({
-    isOnline: navigator.onLine,
-    isSyncing: false,
-    lastSyncTime: null,
-    localDataCount: { tasks: 0, gaps: 0 },
-    unsyncedCount: { tasks: 0, gaps: 0 }
-  });
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -101,7 +86,7 @@ export default function App() {
     checkAuth();
 
     // Listen for auth changes
-            const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setIsAuthenticated(true);
         setUser(session.user);
@@ -144,19 +129,10 @@ export default function App() {
           setLoginSyncService(loginService); // Still set the service even with warnings
         }
 
-        // Create enhanced local-first service for ongoing operations
-        const enhancedService = new EnhancedLocalFirstService(user.id, {
-          sync: {
-            autoSync: false, // Disable auto sync for now, focus on pull-only
-            syncInterval: 30000,
-            retryAttempts: 3,
-            retryDelay: 1000,
-            backgroundSync: false
-          }
-        });
-
-        await enhancedService.initialize();
-        setLocalFirstService(enhancedService);
+        // Create simple local-first service for ongoing operations
+        const simpleService = new SimpleLocalFirstService(user.id);
+        await simpleService.initialize();
+        setLocalFirstService(simpleService);
         setIsDataLoading(false);
         
       } catch (error) {
@@ -168,7 +144,7 @@ export default function App() {
     initializeWithLoginSync();
   }, [isAuthenticated, user?.id]);
 
-  // Load data from local database
+  // Load data from local database using login sync service
   useEffect(() => {
     if (!loginSyncService) return;
 
@@ -191,47 +167,16 @@ export default function App() {
           setPreferences(prefs);
         }
 
-        // Update sync status
-        const status = await loginSyncService.getSyncStatus();
-        setSyncStatus({
-          isOnline: status.isOnline,
-          isSyncing: false,
-          lastSyncTime: status.lastSyncTime,
-          localDataCount: status.localDataCount,
-          unsyncedCount: { tasks: 0, gaps: 0 } // No unsynced data in pull-only mode
-        });
-
         console.log(`✅ Local data loaded: ${tasks.length} tasks, ${gaps.length} gaps`);
+        setIsDataLoading(false);
       } catch (error) {
         console.error('❌ Error loading local data:', error);
+        setIsDataLoading(false);
       }
     };
 
     loadLocalData();
   }, [loginSyncService]);
-
-  // Network status monitoring
-  useEffect(() => {
-    const handleOnline = () => {
-      console.log('🌐 Network connection restored');
-      logNetworkStatus(true);
-      setSyncStatus(prev => ({ ...prev, isOnline: true }));
-    };
-
-    const handleOffline = () => {
-      console.log('🌐 Network connection lost');
-      logNetworkStatus(false);
-      setSyncStatus(prev => ({ ...prev, isOnline: false }));
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   // Load user preferences and profile data when authenticated
   useEffect(() => {
@@ -269,76 +214,24 @@ export default function App() {
         
         if (profileData) {
           setProfile(profileData);
-        } else {
-          // Extract profile data from user metadata as fallback
-          const userMetadata = user.user_metadata || {};
-          const fallbackProfile = {
-            id: user.id,
-            first_name: userMetadata.firstName || userMetadata.first_name || '',
-            last_name: userMetadata.lastName || userMetadata.last_name || '',
-            email: user.email || '',
-            phone_country_code: userMetadata.phone_country_code || '+1',
-            phone_number: userMetadata.phone_number || '',
-            timezone: userMetadata.timezone || 'America/New_York',
-            avatar_url: userMetadata.avatar_url || null
-          };
-          setProfile(fallbackProfile);
         }
+        
+        console.log('✅ User data loaded successfully');
       } catch (error) {
-        console.error('Critical error loading user data:', error);
-        // Don't show error toast on first load, as it might be expected
-        console.log('User data will load with defaults, retrying in background...');
+        console.error('❌ Error loading user data:', error);
       }
     };
 
     loadUserData();
   }, [isAuthenticated, user?.id]);
 
-  // Refresh preferences when returning to settings tab (in case they were updated)
-  useEffect(() => {
-    if (activeTab === 'settings' && isAuthenticated && user?.id) {
-      const refreshPreferences = async () => {
-        try {
-          console.log('Refreshing preferences for user:', user.id);
-          
-          const [prefsData, profileData] = await Promise.all([
-            preferencesAPI.get().catch(err => {
-              console.error('Error refreshing preferences:', err);
-              return null;
-            }),
-            profileAPI.get().catch(err => {
-              console.error('Error refreshing profile:', err);
-              return null;
-            })
-          ]);
-          
-          if (prefsData) {
-            setPreferences(prefsData);
-          }
-        } catch (error) {
-          console.error('Critical error refreshing user data:', error);
-        }
-      };
-
-      refreshPreferences();
-    }
-  }, [activeTab, isAuthenticated, user?.id]);
-
-  // Load app data from database when authenticated
+  // Load app data (tasks, gaps) when authenticated
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
-    
+
     const loadAppData = async () => {
-      // Add a small delay to ensure session is available for API calls
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
       try {
         console.log('Loading app data for user:', user.id);
-        
-        // Debug diagnosis is available in DebugPanel - not run automatically
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🔧 Debug tools available in settings panel');
-        }
         
         const loadWithRetry = async (apiCall: () => Promise<any>, name: string, defaultValue: any) => {
           for (let attempt = 0; attempt < 3; attempt++) {
@@ -349,105 +242,29 @@ export default function App() {
             } catch (error) {
               console.error(`Error loading ${name} (attempt ${attempt + 1}):`, error);
               if (attempt === 2) return defaultValue; // Last attempt failed, use default
-              await new Promise(resolve => setTimeout(resolve, 750 * (attempt + 1)));
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
             }
           }
         };
-        
-        // Load tasks with retry logic
-        const tasksData = await loadWithRetry(() => tasksAPI.get(), 'tasks', []);
-        if (tasksData && Array.isArray(tasksData)) {
-          setGlobalTasks(sanitizeTasks(tasksData));
-        } else {
-          console.log('No tasks found for user, initializing with empty array');
-          setGlobalTasks([]);
+
+        // Load tasks and gaps with retry logic
+        const [tasksData, gapsData] = await Promise.all([
+          loadWithRetry(() => tasksAPI.get(), 'tasks', []),
+          loadWithRetry(() => GapsAPI.getGapsForDate(new Date().toISOString().split('T')[0], ''), 'gaps', DEFAULT_GAPS)
+        ]);
+
+        if (tasksData) {
+          const sanitizedTasks = sanitizeTasks(tasksData);
+          setGlobalTasks(sanitizedTasks);
         }
 
-        // Initialize gaps using the new gap logic  
-        try {
-          const { data: { session: initialSession } } = await supabase.auth.getSession();
-          let currentSession = initialSession;
-          
-          if (currentSession?.access_token && currentSession?.user) {
-            console.log('🔄 Initializing gaps with gap logic...');
-            console.log('Session details:', { 
-              user_id: currentSession.user.id,
-              access_token_length: currentSession.access_token.length,
-              expires_at: currentSession.expires_at,
-              user_email: currentSession.user.email
-            });
-            
-            // Verify the token is not expired
-            const now = new Date();
-            const expiresAt = currentSession.expires_at ? new Date(currentSession.expires_at * 1000) : null;
-            
-            if (expiresAt && now >= expiresAt) {
-              console.warn('⚠️ Access token has expired, refreshing session...');
-              const { data: { session: newSession } } = await supabase.auth.refreshSession();
-              if (newSession?.access_token) {
-                console.log('✅ Session refreshed successfully');
-                currentSession = newSession;
-              } else {
-                throw new Error('Failed to refresh expired session');
-              }
-            }
-            
-            try {
-              // Validate preferences before making API call
-              const validPreferences = {
-                ...DEFAULT_PREFERENCES,
-                ...preferences
-              };
-              
-              console.log('📋 Using preferences for gap initialization:', {
-                calendar_work_start: validPreferences.calendar_work_start,
-                calendar_work_end: validPreferences.calendar_work_end,
-                calendar_working_days: validPreferences.calendar_working_days,
-                google_calendar_connected: validPreferences.google_calendar_connected
-              });
-              
-              const todayGaps = await GapsAPI.ensureTodayGaps(validPreferences, currentSession.access_token);
-              setGaps(todayGaps);
-              console.log(`✅ Initialized ${todayGaps.length} gaps for today`);
-            } catch (gapError) {
-              console.log('🔄 Gap initialization handled by API fallback system');
-              
-              // Create local default gaps as ultimate fallback
-              try {
-                const { GapLogic } = await import('./utils/gapLogic');
-                const today = new Date().toISOString().split('T')[0];
-                const fallbackGaps = GapLogic.createDefaultGaps(today, preferences, currentSession.user.id);
-                setGaps(fallbackGaps);
-                console.log(`✅ Created ${fallbackGaps.length} local fallback gaps`);
-              } catch (fallbackError) {
-                console.log('Using default empty gaps as final fallback');
-                setGaps(DEFAULT_GAPS);
-              }
-            }
-          } else {
-            console.log('⚠️ No valid session or access token for gap initialization, using defaults');
-            console.log('Session state:', {
-              hasSession: !!currentSession,
-              hasAccessToken: !!currentSession?.access_token,
-              hasUser: !!currentSession?.user
-            });
-            setGaps(DEFAULT_GAPS);
-          }
-        } catch (error) {
-          console.error('❌ Error in gap initialization flow:', error);
-          setGaps(DEFAULT_GAPS);
+        if (gapsData) {
+          setGaps(gapsData);
         }
-        
-        // Data loading complete
-        setIsDataLoading(false);
+
+        console.log('✅ App data loaded successfully');
       } catch (error) {
-        console.error('Critical error loading app data:', error);
-        // Initialize with default data if everything fails
-        setGlobalTasks([]);
-        setGaps(DEFAULT_GAPS);
-        console.log('App data loaded with defaults due to errors');
-        // Complete data loading even if there were errors
-        setIsDataLoading(false);
+        console.error('❌ Error loading app data:', error);
       }
     };
 
@@ -486,83 +303,11 @@ export default function App() {
     }
   };
 
-  // Debug panel handlers
-  const handleRefreshSyncStatus = async () => {
-    if (loginSyncService) {
-      const status = await loginSyncService.getSyncStatus();
-      setSyncStatus({
-        isOnline: status.isOnline,
-        isSyncing: false,
-        lastSyncTime: status.lastSyncTime,
-        localDataCount: status.localDataCount,
-        unsyncedCount: { tasks: 0, gaps: 0 }
-      });
-    }
-  };
-
-  const handleForceSync = async () => {
-    if (loginSyncService) {
-      try {
-        // For pull-only mode, we can re-run the login sync
-        const syncResult = await loginSyncService.initializeAndSync();
-        if (syncResult.success) {
-          toast.success(`Manual sync completed: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
-        } else {
-          toast.warning('Manual sync completed with warnings');
-        }
-        
-        // Refresh the data
-        const tasks = await loginSyncService.getTasks();
-        const gaps = await loginSyncService.getGaps();
-        setGlobalTasks(tasks);
-        setGaps(gaps);
-        
-        // Update sync status
-        await handleRefreshSyncStatus();
-      } catch (error) {
-        console.error('Manual sync failed:', error);
-        toast.error('Manual sync failed');
-      }
-    }
-  };
-
-  const handleClearLocalData = async () => {
-    if (loginSyncService) {
-      try {
-        await loginSyncService.cleanup();
-        setGlobalTasks([]);
-        setGaps([]);
-        setSyncStatus(prev => ({
-          ...prev,
-          localDataCount: { tasks: 0, gaps: 0 },
-          unsyncedCount: { tasks: 0, gaps: 0 }
-        }));
-        toast.success('Local data cleared');
-      } catch (error) {
-        console.error('Failed to clear local data:', error);
-        toast.error('Failed to clear local data');
-      }
-    }
-  };
-
-  const handleExportLogs = () => {
-    const logData = logger.exportLogs();
-    const blob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `offline-first-logs-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Logs exported successfully');
-  };
-
-  // Enhanced sign out handler
   const handleSignOut = async () => {
     try {
       // Clean up services
       if (localFirstService) {
-        await localFirstService.cleanup();
+        // Clean up simple service if needed
       }
       if (loginSyncService) {
         await loginSyncService.cleanup();
@@ -584,13 +329,6 @@ export default function App() {
       setEditingTask(null);
       setIsNewTaskModalOpen(false);
       setIsDataLoading(false);
-      setSyncStatus({
-        isOnline: navigator.onLine,
-        isSyncing: false,
-        lastSyncTime: null,
-        localDataCount: { tasks: 0, gaps: 0 },
-        unsyncedCount: { tasks: 0, gaps: 0 }
-      });
 
       toast.success('Signed out successfully');
     } catch (error) {
@@ -628,79 +366,20 @@ export default function App() {
     setPreferences(newPreferences);
   };
 
-  // Show loading screen while checking authentication
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-
-  // Show data loading screen when authenticated but data is still loading
-  if (isAuthenticated && isDataLoading) {
-    return <LoadingScreen isDataLoading={true} userName={profile?.first_name} />;
-  }
-
-  // Show authentication screens if not authenticated
-  if (!isAuthenticated) {
-    if (showSignUp) {
-      return (
-        <SignUpScreen 
-          onAuthSuccess={handleAuthSuccess}
-          onToggleAuth={() => setShowSignUp(false)}
-        />
-      );
-    } else {
-      return (
-        <LoginScreen 
-          onAuthSuccess={handleAuthSuccess}
-          onToggleAuth={() => setShowSignUp(true)}
-        />
-      );
-    }
-  }
-
-  // If in widget mode, render the widget view
-  if (isAuthenticated && !isDataLoading && isWidgetMode) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white flex items-center justify-center p-4">
-        <div 
-          className="cursor-pointer transition-transform hover:scale-105"
-          onClick={() => {
-            // Remove widget parameter to open full app
-            const url = new URL(window.location.href);
-            url.searchParams.delete('widget');
-            window.location.href = url.toString();
-          }}
-        >
-          <WidgetView 
-            tasks={globalTasks} 
-            gaps={gaps} 
-            userName={profile?.first_name} 
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Find any currently running timer
-  const runningTimerTask = globalTasks.find(task => task.isTimerRunning);
-
-  // Check if MinimizedTimerOnTask is visible (only on Activities > My Activities tab)
-  const _isMinimizedTimerVisible = activeTab === 'activities' && currentActivitiesTab === 'my-activities' && runningTimerTask;
-  
-  // FloatingTimer should show everywhere except My Activities tab
-  const shouldShowFloatingTimer = !!runningTimerTask && !(activeTab === 'activities' && currentActivitiesTab === 'my-activities');
-
-  // Debounce timer updates to avoid excessive database calls
+  // Debounced save function for tasks
   const debouncedSaveTasks = debounce(async (tasks: Task[]) => {
+    if (!isAuthenticated || !user?.id) {
+      console.error('Cannot save tasks: user not authenticated');
+      return;
+    }
+
     try {
-      if (isAuthenticated && user?.id) {
-        console.log('Saving updated tasks for user:', user.id);
-        await tasksAPI.save(tasks);
-      } else {
-        console.warn('Cannot save tasks: user not authenticated');
-      }
+      console.log('Saving tasks to server...');
+      await tasksAPI.save(tasks);
+      console.log('✅ Tasks saved successfully');
     } catch (error) {
-      console.error('Error saving tasks for user:', user?.id, error);
-      toast.error('Failed to save timer progress');
+      console.error('❌ Error saving tasks:', error);
+      toast.error('Failed to save tasks');
     }
   }, 2000); // Debounce for 2 seconds
 
@@ -722,10 +401,6 @@ export default function App() {
       // Save to local database
       if (localFirstService) {
         await localFirstService.updateTask(task.id, updatedTask);
-        
-        // Update sync status
-        const status = await localFirstService.getEnhancedSyncStatus();
-        setSyncStatus(status);
       }
 
       // Debounced save to prevent excessive API calls
@@ -737,8 +412,8 @@ export default function App() {
   };
 
   const handleFloatingTimerExpand = () => {
-    if (runningTimerTask) {
-      setTimerTask(runningTimerTask);
+    if (timerTask) {
+      setTimerTask(timerTask);
       setIsTimerModalOpen(true);
     }
   };
@@ -754,10 +429,6 @@ export default function App() {
         // Refresh tasks
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
-
-        // Update sync status
-        const status = await localFirstService.getEnhancedSyncStatus();
-        setSyncStatus(status);
 
         console.log(`✅ Task created: ${createdTask.title}`);
         
@@ -784,10 +455,6 @@ export default function App() {
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
 
-        // Update sync status
-        const status = await localFirstService.getEnhancedSyncStatus();
-        setSyncStatus(status);
-
         console.log(`✅ Task updated: ${task.title}`);
       }
     } catch (error) {
@@ -808,10 +475,6 @@ export default function App() {
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
 
-        // Update sync status
-        const status = await localFirstService.getEnhancedSyncStatus();
-        setSyncStatus(status);
-
         console.log(`✅ Task deleted: ${taskId}`);
       }
     } catch (error) {
@@ -819,6 +482,10 @@ export default function App() {
       toast.error('Failed to delete task');
     }
   };
+
+  // Determine if floating timer should be visible
+  const runningTimerTask = globalTasks.find(task => task.isTimerRunning);
+  const shouldShowFloatingTimer = !!runningTimerTask && activeTab !== 'activities';
 
   const renderContent = () => {
     switch (activeTab) {
@@ -839,7 +506,7 @@ export default function App() {
       case 'activities':
         return (
           <ActivitiesContent 
-            globalTasks={globalTasks} 
+            globalTasks={globalTasks}
             setGlobalTasks={setGlobalTasks}
             onTimerOpen={(task) => {
               setTimerTask(task);
@@ -863,18 +530,9 @@ export default function App() {
               onPreferencesUpdate={updatePreferencesFromSettings}
             />
             
-            {/* Offline-First Debug Panel */}
-            <OfflineFirstDebugPanel
-              syncStatus={syncStatus}
-              onRefreshStatus={handleRefreshSyncStatus}
-              onForceSync={handleForceSync}
-              onClearLocalData={handleClearLocalData}
-              onExportLogs={handleExportLogs}
-            />
-            
-            {/* Login Sync Test */}
+            {/* Login Sync Debug */}
             {user?.id && (
-              <LoginSyncTest userId={user.id} />
+              <SimpleLoginSyncDebug userId={user.id} />
             )}
           </div>
         );
@@ -976,14 +634,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Global Timer Modal */}
+      {/* Timer Modal */}
       <TimerModal
-        task={timerTask}
         isOpen={isTimerModalOpen}
-        onClose={() => {
-          setIsTimerModalOpen(false);
-          setTimerTask(null);
-        }}
+        onClose={() => setIsTimerModalOpen(false)}
+        task={timerTask}
         onTimerUpdate={handleGlobalTimerUpdate}
       />
     </div>

@@ -3,7 +3,6 @@ import { ConflictResolver } from '../sync/ConflictResolver';
 import { LocalTask, LocalTimeGap, LocalUserPreferences } from '../database/schema';
 import { Task, TimeGap, UserPreferences } from '../../types/index';
 import { supabase } from '../supabase/client';
-import { logger } from '../debug';
 
 export interface LoginSyncResult {
   success: boolean;
@@ -30,7 +29,7 @@ export class LoginSyncService {
    */
   async initializeAndSync(): Promise<LoginSyncResult> {
     try {
-      logger.info('🔄 Starting login sync service initialization...');
+      console.log('🔄 Starting login sync service initialization...');
       
       // Initialize database
       await this.dbManager.initialize();
@@ -38,10 +37,10 @@ export class LoginSyncService {
       // Perform login sync
       const syncResult = await this.performLoginSync();
       
-      logger.info('✅ Login sync completed', syncResult);
+      console.log('✅ Login sync completed', syncResult);
       return syncResult;
     } catch (error) {
-      logger.error('❌ Login sync service initialization failed', error);
+      console.error('❌ Login sync service initialization failed:', error);
       return {
         success: false,
         tasksSynced: 0,
@@ -69,29 +68,29 @@ export class LoginSyncService {
     try {
       // Check network connectivity
       if (!navigator.onLine) {
-        logger.info('📱 Offline mode - preserving local data only');
+        console.log('📱 Offline mode - preserving local data only');
         return result;
       }
 
       // Get authentication session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        logger.info('🔐 No session - preserving local data only');
+        console.log('🔐 No session - preserving local data only');
         return result;
       }
 
-      logger.info('🔄 Performing login sync...');
+      console.log('🔄 Performing login sync...');
 
       // 1. Load local data first
       const localTasks = await this.dbManager.tasks.getAll();
       const localGaps = await this.dbManager.gaps.getAll();
       const localPreferences = await this.dbManager.preferences.get('current');
 
-      logger.info(`📱 Local data loaded: ${localTasks.length} tasks, ${localGaps.length} gaps`);
+      console.log(`📱 Local data loaded: ${localTasks.length} tasks, ${localGaps.length} gaps`);
 
       // 2. Fetch remote data
       const remoteData = await this.fetchRemoteData(session.access_token);
-      logger.info(`☁️ Remote data fetched: ${remoteData.tasks.length} tasks, ${remoteData.gaps.length} gaps`);
+      console.log(`☁️ Remote data fetched: ${remoteData.tasks.length} tasks, ${remoteData.gaps.length} gaps`);
 
       // 3. Merge and store data
       const mergeResult = await this.mergeAndStoreData(
@@ -107,13 +106,13 @@ export class LoginSyncService {
       result.conflictsResolved = mergeResult.conflictsResolved;
       result.errors = mergeResult.errors;
 
-      logger.info(`✅ Login sync completed: ${result.tasksSynced} tasks, ${result.gapsSynced} gaps synced`);
+      console.log(`✅ Login sync completed: ${result.tasksSynced} tasks, ${result.gapsSynced} gaps synced`);
       if (result.conflictsResolved > 0) {
-        logger.info(`🔄 ${result.conflictsResolved} conflicts resolved`);
+        console.log(`🔄 ${result.conflictsResolved} conflicts resolved`);
       }
 
     } catch (error) {
-      logger.error('❌ Login sync failed', error);
+      console.error('❌ Login sync failed:', error);
       result.success = false;
       result.errors.push(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -133,7 +132,7 @@ export class LoginSyncService {
     const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-966d4846`;
 
     try {
-      logger.info('🌐 Fetching remote data...');
+      console.log('🌐 Fetching remote data...');
 
       const [tasksResponse, gapsResponse, preferencesResponse] = await Promise.allSettled([
         fetch(`${baseUrl}/tasks`, {
@@ -159,10 +158,10 @@ export class LoginSyncService {
         ? await preferencesResponse.value.json() 
         : null;
 
-      logger.info(`✅ Remote data fetched: ${tasks.length} tasks, ${gaps.length} gaps`);
+      console.log(`✅ Remote data fetched: ${tasks.length} tasks, ${gaps.length} gaps`);
       return { tasks, gaps, preferences };
     } catch (error) {
-      logger.error('❌ Failed to fetch remote data', error);
+      console.error('❌ Failed to fetch remote data:', error);
       return { tasks: [], gaps: [], preferences: null };
     }
   }
@@ -207,9 +206,9 @@ export class LoginSyncService {
           }
           result.tasksSynced++;
         }
-      } catch (error) {
-        const errorMsg = `Task merge failed for ${remoteTask.id}: ${error}`;
-        logger.error(errorMsg);
+              } catch (error) {
+          const errorMsg = `Task merge failed for ${remoteTask.id}: ${error}`;
+          console.error(errorMsg);
         result.errors.push(errorMsg);
       }
     }
@@ -233,9 +232,9 @@ export class LoginSyncService {
           }
           result.gapsSynced++;
         }
-      } catch (error) {
-        const errorMsg = `Gap merge failed for ${remoteGap.id}: ${error}`;
-        logger.error(errorMsg);
+              } catch (error) {
+          const errorMsg = `Gap merge failed for ${remoteGap.id}: ${error}`;
+          console.error(errorMsg);
         result.errors.push(errorMsg);
       }
     }
@@ -262,9 +261,9 @@ export class LoginSyncService {
             local_updated_at: new Date().toISOString()
           });
         }
-      } catch (error) {
-        const errorMsg = `Preferences merge failed: ${error}`;
-        logger.error(errorMsg);
+              } catch (error) {
+          const errorMsg = `Preferences merge failed: ${error}`;
+          console.error(errorMsg);
         result.errors.push(errorMsg);
       }
     }
@@ -284,7 +283,7 @@ export class LoginSyncService {
    */
   async getGaps(date?: string): Promise<LocalTimeGap[]> {
     if (date) {
-      return await this.dbManager.gaps.getByDate(date);
+      return await this.dbManager.gaps.getByDate(this.userId, date);
     }
     return await this.dbManager.gaps.getAll();
   }
@@ -320,6 +319,6 @@ export class LoginSyncService {
   async cleanup(): Promise<void> {
     // Close database connection if needed
     // For now, just log cleanup
-    logger.info('🧹 Login sync service cleanup completed');
+    console.log('🧹 Login sync service cleanup completed');
   }
 } 
