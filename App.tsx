@@ -21,9 +21,8 @@ import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './ut
 import { sanitizeTasks } from './utils/helpers';
 import { debugDataSaving as _debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
-import { SimpleLocalFirstService } from './utils/localFirst/SimpleLocalFirstService.ts';
-import { LoginSyncService } from './utils/localFirst/LoginSyncService';
-import { SimpleLoginSyncDebug } from './components/SimpleLoginSyncDebug';
+import { EnhancedStorageManager } from './utils/storage/EnhancedStorageManager';
+import { EnhancedLoginSyncService } from './utils/localFirst/EnhancedLoginSyncService';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -59,8 +58,8 @@ export default function App() {
   const [isWidgetMode, setIsWidgetMode] = useState(false);
 
   // Local-first service
-  const [localFirstService, setLocalFirstService] = useState<SimpleLocalFirstService | null>(null);
-  const [loginSyncService, setLoginSyncService] = useState<LoginSyncService | null>(null);
+  const [localFirstService, setLocalFirstService] = useState<EnhancedStorageManager | null>(null);
+  const [loginSyncService, setLoginSyncService] = useState<EnhancedLoginSyncService | null>(null);
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -112,7 +111,7 @@ export default function App() {
         console.log('🔄 Initializing local-first system with login sync...');
         
         // Create login sync service for remote-to-local sync
-        const loginService = new LoginSyncService(user.id);
+        const loginService = new EnhancedLoginSyncService(user.id);
         const syncResult = await loginService.initializeAndSync();
         
         if (syncResult.success) {
@@ -129,10 +128,23 @@ export default function App() {
           setLoginSyncService(loginService); // Still set the service even with warnings
         }
 
-        // Create simple local-first service for ongoing operations
-        const simpleService = new SimpleLocalFirstService(user.id);
-        await simpleService.initialize();
-        setLocalFirstService(simpleService);
+        // Create enhanced storage manager for ongoing operations
+        const enhancedStorage = new EnhancedStorageManager(user.id, {
+          storageType: 'auto', // Auto-detect best storage (IndexedDB preferred)
+          enableEncryption: true, // Enable encryption for sensitive data
+          encryptFields: ['description', 'notes', 'title'], // Encrypt sensitive fields
+          enableAnalytics: true, // Enable storage analytics
+          enableSync: false, // Disable sync for now (using LoginSyncService instead)
+          analyticsConfig: {
+            trackAccessPatterns: true,
+            trackSizeChanges: true,
+            trackPerformance: true,
+            retentionDays: 30,
+            sampleRate: 0.1
+          }
+        });
+        await enhancedStorage.initialize();
+        setLocalFirstService(enhancedStorage);
         setIsDataLoading(false);
         
       } catch (error) {
@@ -424,13 +436,17 @@ export default function App() {
       if (localFirstService) {
         console.log(`📝 Creating task: ${task.title}`);
         
-        const createdTask = await localFirstService.createTask(task);
+        // Get current tasks and add the new task
+        const currentTasks = await localFirstService.getTasks();
+        const updatedTasks = [...currentTasks, task];
         
-        // Refresh tasks
-        const tasks = await localFirstService.getTasks();
-        setGlobalTasks(tasks);
+        // Save all tasks
+        await localFirstService.saveTasks(updatedTasks);
+        
+        // Update local state
+        setGlobalTasks(updatedTasks);
 
-        console.log(`✅ Task created: ${createdTask.title}`);
+        console.log(`✅ Task created: ${task.title}`);
         
         // Show offline indicator if offline
         if (!navigator.onLine) {
@@ -449,13 +465,15 @@ export default function App() {
       if (localFirstService) {
         console.log(`📝 Updating task: ${task.title}`);
         
-        await localFirstService.updateTask(task.id, task);
+        // Update the specific task
+        const updatedTask = await localFirstService.updateTask(task.id, task);
         
-        // Refresh tasks
-        const tasks = await localFirstService.getTasks();
-        setGlobalTasks(tasks);
-
-        console.log(`✅ Task updated: ${task.title}`);
+        if (updatedTask) {
+          // Get all tasks and update local state
+          const tasks = await localFirstService.getTasks();
+          setGlobalTasks(tasks);
+          console.log(`✅ Task updated: ${task.title}`);
+        }
       }
     } catch (error) {
       console.error('❌ Error updating task:', error);
@@ -469,13 +487,15 @@ export default function App() {
       if (localFirstService) {
         console.log(`🗑️ Deleting task: ${taskId}`);
         
-        await localFirstService.deleteTask(taskId);
+        // Delete the task
+        const deleted = await localFirstService.deleteTask(taskId);
         
-        // Refresh tasks
-        const tasks = await localFirstService.getTasks();
-        setGlobalTasks(tasks);
-
-        console.log(`✅ Task deleted: ${taskId}`);
+        if (deleted) {
+          // Get remaining tasks and update local state
+          const tasks = await localFirstService.getTasks();
+          setGlobalTasks(tasks);
+          console.log(`✅ Task deleted: ${taskId}`);
+        }
       }
     } catch (error) {
       console.error('❌ Error deleting task:', error);
@@ -529,11 +549,6 @@ export default function App() {
               onSignOut={handleSignOut}
               onPreferencesUpdate={updatePreferencesFromSettings}
             />
-            
-            {/* Login Sync Debug */}
-            {user?.id && (
-              <SimpleLoginSyncDebug userId={user.id} />
-            )}
           </div>
         );
       default:

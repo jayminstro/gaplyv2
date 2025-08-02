@@ -26,9 +26,9 @@ export class GapsAPI {
       });
       clearTimeout(timeoutId);
       return response;
-    } catch (error) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
+      if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`Request timed out after ${this.TIMEOUT_MS}ms`);
       }
       throw error;
@@ -38,14 +38,14 @@ export class GapsAPI {
   /**
    * Check if we should use local fallback mode
    */
-  private static shouldUseFallback(error: any): boolean {
+  private static shouldUseFallback(error: unknown): boolean {
     // Use fallback for common development scenarios
     if (this.LOCAL_DEVELOPMENT) {
       return true;
     }
     
     // Use fallback for network errors, 404s, timeouts
-    const errorMessage = error?.message?.toLowerCase() || '';
+    const errorMessage = error instanceof Error ? error.message.toLowerCase() : '';
     const isNetworkError = errorMessage.includes('fetch') || 
                           errorMessage.includes('network') ||
                           errorMessage.includes('timeout') ||
@@ -68,7 +68,7 @@ export class GapsAPI {
       const gaps = GapLogic.createDefaultGaps(date, preferences, userId);
       console.log(`✅ Created ${gaps.length} local fallback gaps for ${date}`);
       return gaps;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Error creating local fallback gaps:', error);
       return [];
     }
@@ -112,7 +112,7 @@ export class GapsAPI {
       
       console.log(`✅ Retrieved ${filteredGaps.length} gaps for ${date}`);
       return filteredGaps;
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 API unavailable, using local fallback gaps');
         const { DEFAULT_PREFERENCES } = await import('./constants');
@@ -160,7 +160,7 @@ export class GapsAPI {
       
       // Get all gaps for the date after initialization
       return await this.getGapsForDate(date, accessToken);
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 API unavailable, creating local gaps directly');
         return await this.createLocalFallbackGaps(date, preferences);
@@ -212,7 +212,7 @@ export class GapsAPI {
 
       console.log(`✅ Calendar sync completed for ${date}, created ${result.gaps.length} gaps`);
       return { gaps: result.gaps, replaced: true };
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 Calendar sync API unavailable, using local gaps');
         const { DEFAULT_PREFERENCES } = await import('./constants');
@@ -269,7 +269,7 @@ export class GapsAPI {
       console.log(`✅ Gap split successfully, created ${result.newGaps?.length || 0} new gaps`);
       
       return result.newGaps || [];
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 Gap splitting API unavailable - using local fallback');
         return [];
@@ -297,7 +297,12 @@ export class GapsAPI {
         console.log(`🔧 Development mode - gaps saved to local storage as fallback`);
         // Store in localStorage as fallback for development
         const today = new Date().toISOString().split('T')[0];
-        localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
+        try {
+          localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
+        } catch (error: unknown) {
+          console.error('Failed to save gaps to localStorage in development mode:', error);
+          // In development mode, we can't do much if localStorage fails
+        }
         return;
       }
       
@@ -311,15 +316,25 @@ export class GapsAPI {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to save gaps: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('❌ Server error response:', response.status, errorText);
+        throw new Error(`Failed to save gaps: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
+      const result = await response.json();
+      console.log('✅ Gap saving response:', result);
       console.log(`✅ Saved ${gaps.length} gaps successfully`);
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 Gap saving API unavailable - storing locally');
         const today = new Date().toISOString().split('T')[0];
-        localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
+        try {
+          localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
+        } catch (storageError: unknown) {
+          console.error('Failed to save gaps to localStorage fallback:', storageError);
+          // If localStorage also fails, we can't save the data
+          throw new Error('Both API and localStorage failed to save gaps');
+        }
         return;
       }
       
@@ -338,11 +353,15 @@ export class GapsAPI {
       if (this.LOCAL_DEVELOPMENT) {
         console.log(`🔧 Development mode - loading gaps from local storage`);
         const today = new Date().toISOString().split('T')[0];
-        const storedGaps = localStorage.getItem(`gaply_gaps_${today}`);
-        if (storedGaps) {
-          const gaps = JSON.parse(storedGaps);
-          console.log(`✅ Loaded ${gaps.length} gaps from local storage`);
-          return gaps;
+        try {
+          const storedGaps = localStorage.getItem(`gaply_gaps_${today}`);
+          if (storedGaps) {
+            const gaps = JSON.parse(storedGaps);
+            console.log(`✅ Loaded ${gaps.length} gaps from local storage`);
+            return gaps;
+          }
+        } catch (error: unknown) {
+          console.error('Failed to read gaps from localStorage in development mode:', error);
         }
         return [];
       }
@@ -363,13 +382,17 @@ export class GapsAPI {
       console.log(`✅ Retrieved ${gaps.length} total gaps`);
       
       return gaps;
-    } catch (error) {
+    } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 Gap fetching API unavailable - checking local storage');
         const today = new Date().toISOString().split('T')[0];
-        const storedGaps = localStorage.getItem(`gaply_gaps_${today}`);
-        if (storedGaps) {
-          return JSON.parse(storedGaps);
+        try {
+          const storedGaps = localStorage.getItem(`gaply_gaps_${today}`);
+          if (storedGaps) {
+            return JSON.parse(storedGaps);
+          }
+        } catch (storageError: unknown) {
+          console.error('Failed to read gaps from localStorage fallback:', storageError);
         }
         return [];
       }
@@ -398,7 +421,7 @@ export class GapsAPI {
       try {
         gaps = await this.getGapsForDate(today, accessToken);
         console.log(`✅ Retrieved ${gaps.length} existing gaps for today`);
-      } catch (fetchError) {
+      } catch (fetchError: unknown) {
         console.log('🔄 Failed to fetch existing gaps, will try to initialize');
         gaps = []; // Continue with initialization
       }
@@ -410,7 +433,7 @@ export class GapsAPI {
           // Try to initialize gaps via API
           gaps = await this.initializeGapsForDate(today, preferences, accessToken);
           console.log(`✅ Initialized ${gaps.length} gaps`);
-        } catch (initError) {
+        } catch (initError: unknown) {
           console.log('🔄 API initialization failed, creating local default gaps');
           
           // Fallback to local gap creation using gap logic
@@ -428,7 +451,7 @@ export class GapsAPI {
       }
       
       return gaps;
-    } catch (error) {
+    } catch (error: unknown) {
       console.log('🔄 Critical error in ensureTodayGaps, using emergency fallback');
       
       // Last resort fallback: create basic default gaps locally
@@ -436,7 +459,7 @@ export class GapsAPI {
         const fallbackGaps = await this.createLocalFallbackGaps(today, preferences);
         console.log(`🚨 Using emergency fallback gaps (${fallbackGaps.length} gaps)`);
         return fallbackGaps;
-      } catch (fallbackError) {
+      } catch (fallbackError: unknown) {
         console.error('❌ Even fallback gap creation failed:', fallbackError);
         
         // Ultimate fallback: return empty array

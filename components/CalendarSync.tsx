@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Calendar, RefreshCw, Check, AlertCircle, ExternalLink, Unlink } from 'lucide-react';
-import { Button } from "./ui/button";
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Badge } from './ui/badge';
+import { Calendar, RefreshCw, Unlink, ExternalLink, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface CalendarSyncProps {
@@ -29,25 +31,42 @@ export function CalendarSync({ onStatusChange }: CalendarSyncProps) {
     loadStatus();
     
     // Check if we just returned from Google OAuth
-    const wasConnecting = localStorage.getItem('gaply_calendar_connecting');
-    const calendarError = localStorage.getItem('gaply_calendar_error');
+    const checkCalendarState = async () => {
+      try {
+        // Try to get calendar state from enhanced storage if available
+        // For now, fall back to localStorage for backward compatibility
+        const wasConnecting = localStorage.getItem('gaply_calendar_connecting');
+        const calendarError = localStorage.getItem('gaply_calendar_error');
+        
+        if (wasConnecting === 'true') {
+          try {
+            localStorage.removeItem('gaply_calendar_connecting');
+            localStorage.removeItem('gaply_return_url');
+          } catch (error) {
+            console.error('Failed to clear calendar connecting state:', error);
+          }
+          
+          // Show success message and reload status
+          setTimeout(() => {
+            loadStatus();
+            toast.success('Google Calendar connected successfully!');
+          }, 1000);
+        } else if (calendarError) {
+          try {
+            localStorage.removeItem('gaply_calendar_error');
+          } catch (error) {
+            console.error('Failed to clear calendar error state:', error);
+          }
+          toast.error('Failed to connect Google Calendar', {
+            description: calendarError
+          });
+        }
+      } catch (error) {
+        console.error('Error checking calendar connection state:', error);
+      }
+    };
     
-    if (wasConnecting === 'true') {
-      localStorage.removeItem('gaply_calendar_connecting');
-      localStorage.removeItem('gaply_return_url');
-      
-      // Show success message and reload status
-      setTimeout(() => {
-        loadStatus();
-        toast.success('Google Calendar connected successfully!');
-      }, 1000);
-    } else if (calendarError) {
-      localStorage.removeItem('gaply_calendar_error');
-      toast.error('Failed to connect Google Calendar', {
-        description: calendarError
-      });
-    }
-    
+    checkCalendarState();
     setIsConnecting(false);
   }, []);
 
@@ -105,8 +124,30 @@ export function CalendarSync({ onStatusChange }: CalendarSyncProps) {
       const { authUrl } = await response.json();
       
       // Store the current state to restore after redirect
-      localStorage.setItem('gaply_calendar_connecting', 'true');
-      localStorage.setItem('gaply_return_url', window.location.href);
+      // Use enhanced storage if available, fall back to localStorage
+      try {
+        // Try to use enhanced storage first
+        const { EnhancedStorageManager } = await import('../utils/storage/EnhancedStorageManager');
+        const storage = new EnhancedStorageManager(session.user.id, {
+          storageType: 'auto',
+          enableEncryption: false, // Calendar state doesn't need encryption
+          enableAnalytics: false
+        });
+        await storage.initialize();
+        
+        await storage.saveCalendarState('connecting', 'true');
+        await storage.saveCalendarState('return_url', window.location.href);
+      } catch (storageError) {
+        console.warn('Enhanced storage not available, using localStorage fallback:', storageError);
+        // Fall back to localStorage
+        try {
+          localStorage.setItem('gaply_calendar_connecting', 'true');
+          localStorage.setItem('gaply_return_url', window.location.href);
+        } catch (localStorageError) {
+          console.error('Failed to store calendar connection state:', localStorageError);
+          // Continue with redirect even if storage fails
+        }
+      }
       
       // Redirect to Google OAuth (better than popup)
       window.location.href = authUrl;
