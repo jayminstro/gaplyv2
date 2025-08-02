@@ -319,3 +319,174 @@ export const debugDataSaving = {
 if (typeof window !== 'undefined') {
   (window as any).debugDataSaving = debugDataSaving;
 }
+
+// Enhanced logging utility for offline-first debugging
+export class OfflineFirstLogger {
+  private static instance: OfflineFirstLogger;
+  private logs: Array<{
+    timestamp: Date;
+    level: 'info' | 'warn' | 'error' | 'debug';
+    message: string;
+    data?: any;
+  }> = [];
+  private maxLogs = 100;
+
+  static getInstance(): OfflineFirstLogger {
+    if (!OfflineFirstLogger.instance) {
+      OfflineFirstLogger.instance = new OfflineFirstLogger();
+    }
+    return OfflineFirstLogger.instance;
+  }
+
+  private log(level: 'info' | 'warn' | 'error' | 'debug', message: string, data?: any) {
+    const logEntry = {
+      timestamp: new Date(),
+      level,
+      message,
+      data
+    };
+
+    this.logs.push(logEntry);
+
+    // Keep only the last maxLogs entries
+    if (this.logs.length > this.maxLogs) {
+      this.logs = this.logs.slice(-this.maxLogs);
+    }
+
+    // Console output with emojis for better visibility
+    const emoji = {
+      info: '📱',
+      warn: '⚠️',
+      error: '❌',
+      debug: '🔍'
+    };
+
+    const prefix = `${emoji[level]} [OfflineFirst]`;
+    
+    if (data) {
+      console.log(`${prefix} ${message}`, data);
+    } else {
+      console.log(`${prefix} ${message}`);
+    }
+  }
+
+  info(message: string, data?: any) {
+    this.log('info', message, data);
+  }
+
+  warn(message: string, data?: any) {
+    this.log('warn', message, data);
+  }
+
+  error(message: string, data?: any) {
+    this.log('error', message, data);
+  }
+
+  debug(message: string, data?: any) {
+    this.log('debug', message, data);
+  }
+
+  // Network status logging
+  networkStatus(isOnline: boolean) {
+    this.info(`Network ${isOnline ? 'connected' : 'disconnected'}`);
+  }
+
+  // Sync operations logging
+  syncStarted(operation: string) {
+    this.info(`Sync started: ${operation}`);
+  }
+
+  syncCompleted(operation: string, result: any) {
+    this.info(`Sync completed: ${operation}`, result);
+  }
+
+  syncFailed(operation: string, error: any) {
+    this.error(`Sync failed: ${operation}`, error);
+  }
+
+  // Data operations logging
+  dataCreated(type: string, id: string, offline: boolean) {
+    this.info(`${type} created: ${id} (${offline ? 'offline' : 'online'})`);
+  }
+
+  dataUpdated(type: string, id: string, offline: boolean) {
+    this.info(`${type} updated: ${id} (${offline ? 'offline' : 'online'})`);
+  }
+
+  dataDeleted(type: string, id: string, offline: boolean) {
+    this.info(`${type} deleted: ${id} (${offline ? 'offline' : 'online'})`);
+  }
+
+  // Conflict resolution logging
+  conflictDetected(type: string, id: string, localTime: string, remoteTime: string) {
+    this.warn(`Conflict detected for ${type} ${id}`, {
+      localTime,
+      remoteTime,
+      resolution: 'timestamp-based'
+    });
+  }
+
+  conflictResolved(type: string, id: string, strategy: string) {
+    this.info(`Conflict resolved for ${type} ${id} using ${strategy}`);
+  }
+
+  // Get logs for debugging
+  getLogs() {
+    return [...this.logs];
+  }
+
+  // Clear logs
+  clearLogs() {
+    this.logs = [];
+  }
+
+  // Export logs for debugging
+  exportLogs() {
+    return {
+      timestamp: new Date().toISOString(),
+      logs: this.logs,
+      summary: {
+        total: this.logs.length,
+        byLevel: this.logs.reduce((acc, log) => {
+          acc[log.level] = (acc[log.level] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      }
+    };
+  }
+}
+
+// Global logger instance
+export const logger = OfflineFirstLogger.getInstance();
+
+// Export the exportLogs function for direct access
+export const exportLogs = () => logger.exportLogs();
+
+// Utility functions for common logging patterns
+export const logNetworkStatus = (isOnline: boolean) => {
+  logger.networkStatus(isOnline);
+};
+
+export const logDataOperation = (operation: 'create' | 'update' | 'delete', type: string, id: string) => {
+  const isOffline = !navigator.onLine;
+  
+  switch (operation) {
+    case 'create':
+      logger.dataCreated(type, id, isOffline);
+      break;
+    case 'update':
+      logger.dataUpdated(type, id, isOffline);
+      break;
+    case 'delete':
+      logger.dataDeleted(type, id, isOffline);
+      break;
+  }
+};
+
+export const logSyncOperation = (operation: string, result?: any, error?: any) => {
+  if (error) {
+    logger.syncFailed(operation, error);
+  } else {
+    logger.syncCompleted(operation, result);
+  }
+};

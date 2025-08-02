@@ -35,6 +35,12 @@ export class GapModel {
       .toArray();
   }
 
+  async getAll(): Promise<LocalTimeGap[]> {
+    return await this.db.gaps
+      .filter(gap => !gap.deleted_at)
+      .toArray();
+  }
+
   async getByDate(userId: string, date: string): Promise<LocalTimeGap[]> {
     return await this.db.gaps
       .where(['user_id', 'date'])

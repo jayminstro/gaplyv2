@@ -34,7 +34,8 @@ export class GaplyDatabase extends Dexie {
       profile: DATABASE_INDEXES.profile.join(','),
       scheduled_gaps: DATABASE_INDEXES.scheduled_gaps.join(','),
       activity_completions: DATABASE_INDEXES.activity_completions.join(','),
-      sync_queue: DATABASE_INDEXES.sync_queue.join(',')
+      sync_queue: DATABASE_INDEXES.sync_queue.join(','),
+      schema: DATABASE_INDEXES.schema.join(',')
     });
 
     // Set up hooks for automatic sync flag management

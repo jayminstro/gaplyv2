@@ -35,6 +35,12 @@ export class TaskModel {
       .toArray();
   }
 
+  async getAll(): Promise<LocalTask[]> {
+    return await this.db.tasks
+      .filter(task => !task.deleted_at)
+      .toArray();
+  }
+
   async getByDateRange(userId: string, startDate: string, endDate: string): Promise<LocalTask[]> {
     return await this.db.tasks
       .where('user_id')
