@@ -18,7 +18,7 @@ export interface StorageInfo {
 export class IndexedDBStorage {
   private db: IDBDatabase | null = null;
   private readonly dbName = 'GaplyStorage';
-  private readonly version = 2;
+  private readonly version = 3;
   private readonly userId: string;
 
   constructor(userId: string) {
@@ -45,7 +45,7 @@ export class IndexedDBStorage {
         
         // Create collections for different data types
         if (!db.objectStoreNames.contains('tasks')) {
-          const taskStore = db.createObjectStore('tasks', { keyPath: 'data.id' });
+          const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
           taskStore.createIndex('userId', 'userId', { unique: false });
           taskStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
@@ -150,9 +150,10 @@ export class IndexedDBStorage {
     const store = transaction.objectStore('tasks');
 
     return new Promise((resolve, reject) => {
-      const item: StorageItem = {
+      const item = {
+        ...task,
         id: task.id,
-        data: { ...task, userId: this.userId },
+        userId: this.userId,
         createdAt: task.created_at || new Date().toISOString(),
         updatedAt: task.updated_at || new Date().toISOString(),
         version: 1
@@ -181,9 +182,10 @@ export class IndexedDBStorage {
     let addedCount = 0;
     
     for (const task of tasks) {
-      const item: StorageItem = {
+      const item = {
+        ...task,
         id: task.id,
-        data: { ...task, userId: this.userId },
+        userId: this.userId,
         createdAt: task.created_at || new Date().toISOString(),
         updatedAt: task.updated_at || new Date().toISOString(),
         version: 1
@@ -214,12 +216,11 @@ export class IndexedDBStorage {
     return new Promise((resolve, reject) => {
       const request = index.getAll(this.userId);
       request.onsuccess = () => {
-        const items: StorageItem[] = request.result;
+        const items = request.result;
         const tasks = items.map(item => {
-          const task = item.data as Task & { userId?: string };
-          // Remove userId from the returned task object
-          const { userId, ...cleanTask } = task;
-          return cleanTask as Task;
+          // Remove internal fields from the task object
+          const { userId, createdAt, updatedAt, version, ...task } = item;
+          return task as Task;
         });
         resolve(tasks);
       };
@@ -236,20 +237,22 @@ export class IndexedDBStorage {
     return new Promise((resolve, reject) => {
       const getRequest = store.get(taskId);
       getRequest.onsuccess = () => {
-        const item: StorageItem = getRequest.result;
+        const item = getRequest.result;
         if (!item) {
           resolve(null);
           return;
         }
 
-        const updatedTask = { ...item.data, ...updates, updated_at: new Date().toISOString() };
-        const updatedItem: StorageItem = {
-          ...item,
-          data: updatedTask,
-          updatedAt: updatedTask.updated_at
+        const { userId, createdAt, updatedAt, version, ...task } = item;
+        const updatedTask = {
+          ...task,
+          ...updates,
+          userId: this.userId,
+          updated_at: new Date().toISOString(),
+          version: version + 1
         };
 
-        const putRequest = store.put(updatedItem);
+        const putRequest = store.put(updatedTask);
         putRequest.onsuccess = () => resolve(updatedTask);
         putRequest.onerror = () => reject(putRequest.error);
       };
