@@ -15,22 +15,26 @@ export class EnhancedLoginSyncService {
   private storage: EnhancedStorageManager;
   private userId: string;
 
-  constructor(userId: string) {
+  constructor(userId: string, existingStorage?: EnhancedStorageManager) {
     this.userId = userId;
-    this.storage = new EnhancedStorageManager(userId, {
-      storageType: 'auto',
-      enableEncryption: true,
-      encryptFields: ['description', 'notes', 'title'],
-      enableAnalytics: true,
-      enableSync: false, // We'll handle sync manually here
-      analyticsConfig: {
-        trackAccessPatterns: true,
-        trackSizeChanges: true,
-        trackPerformance: true,
-        retentionDays: 30,
-        sampleRate: 0.1
-      }
-    });
+    if (existingStorage) {
+      this.storage = existingStorage;
+    } else {
+      this.storage = new EnhancedStorageManager(userId, {
+        storageType: 'auto',
+        enableEncryption: true,
+        encryptFields: ['description', 'notes', 'title'],
+        enableAnalytics: true,
+        enableSync: false, // We'll handle sync manually here
+        analyticsConfig: {
+          trackAccessPatterns: true,
+          trackSizeChanges: true,
+          trackPerformance: true,
+          retentionDays: 30,
+          sampleRate: 0.1
+        }
+      });
+    }
   }
 
   /**
@@ -102,6 +106,13 @@ export class EnhancedLoginSyncService {
       console.log(`☁️ Remote data fetched: ${remoteData.tasks.length} tasks, ${remoteData.gaps.length} gaps`);
 
       // 3. Merge and store data
+      console.log('🔄 Starting data merge process...');
+      
+      // Ensure storage is fully initialized
+      if (!this.storage) {
+        throw new Error('Storage manager not initialized');
+      }
+      
       const mergeResult = await this.mergeAndStoreData(
         localTasks,
         localGaps,
@@ -192,14 +203,32 @@ export class EnhancedLoginSyncService {
     };
 
     try {
+      console.log('🔄 Starting data merge and store...');
+      
+      // Ensure storage is initialized
+      if (!this.storage) {
+        throw new Error('Storage not initialized');
+      }
+      
+      console.log('📊 Data summary:', {
+        localTasks: localTasks.length,
+        localGaps: localGaps.length,
+        localPreferences: !!localPreferences,
+        remoteTasks: remoteData.tasks.length,
+        remoteGaps: remoteData.gaps.length,
+        remotePreferences: !!remoteData.preferences
+      });
+
       // Merge tasks (remote takes precedence for now)
       if (remoteData.tasks.length > 0) {
-        await this.storage.saveTasks(remoteData.tasks);
+        console.log('💾 Saving remote tasks (replacing all)...');
+        await this.storage.saveTasks(remoteData.tasks, true); // Use replaceAll=true for sync
         result.tasksSynced = remoteData.tasks.length;
         console.log(`✅ Synced ${result.tasksSynced} tasks`);
       }
 
       // Merge gaps by date
+      console.log('📅 Processing gaps...');
       const gapsByDate = new Map<string, TimeGap[]>();
       
       // Add local gaps
@@ -217,8 +246,10 @@ export class EnhancedLoginSyncService {
         gapsByDate.set(date, [gap]);
       });
 
+      console.log(`📅 Saving gaps for ${gapsByDate.size} dates...`);
       // Save gaps by date
       for (const [date, gaps] of gapsByDate.entries()) {
+        console.log(`💾 Saving ${gaps.length} gaps for date: ${date}`);
         await this.storage.saveGaps(gaps, date);
         result.gapsSynced += gaps.length;
       }
@@ -227,13 +258,22 @@ export class EnhancedLoginSyncService {
 
       // Merge preferences (remote takes precedence)
       if (remoteData.preferences) {
+        console.log('⚙️ Saving remote preferences...');
         await this.storage.savePreferences(remoteData.preferences);
         console.log('✅ Synced preferences');
       }
 
-    } catch (error) {
+      console.log('✅ Data merge and store completed successfully');
+
+    } catch (error: any) {
       console.error('Error merging and storing data:', error);
-      result.errors.push(error instanceof Error ? error.message : 'Unknown error');
+      console.error('Error details:', {
+        errorType: typeof error,
+        errorMessage: error?.message || 'Unknown error',
+        errorStack: error?.stack || 'No stack trace',
+        errorString: String(error)
+      });
+      result.errors.push(error instanceof Error ? error.message : String(error) || 'Unknown error');
     }
 
     return result;

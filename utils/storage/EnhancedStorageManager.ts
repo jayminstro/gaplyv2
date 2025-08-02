@@ -22,7 +22,7 @@ export interface EnhancedStorageConfig {
     sampleRate: number;
   };
   syncConfig?: {
-    conflictResolution: 'local' | 'remote' | 'merge' | 'manual';
+    conflictResolution: 'local' | 'remote' | 'merge';
     syncInterval: number;
     retryAttempts: number;
     batchSize: number;
@@ -41,7 +41,7 @@ export interface StorageHealth {
 }
 
 export class EnhancedStorageManager {
-  private storage: IStorageStrategy;
+  private storage!: IStorageStrategy;
   private encryptedStorage?: EncryptedStorageStrategy;
   private sync?: StorageSync;
   private analytics?: StorageAnalytics;
@@ -185,23 +185,24 @@ export class EnhancedStorageManager {
    * Handle task conflicts
    */
   private async handleTaskConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
-    // In a real app, you might show a UI dialog to the user
-    // For now, use the configured default
-    return this.config.syncConfig?.conflictResolution || 'merge';
+    // For now, always use 'merge' strategy
+    return 'merge';
   }
 
   /**
    * Handle gap conflicts
    */
   private async handleGapConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
-    return this.config.syncConfig?.conflictResolution || 'merge';
+    // For now, always use 'merge' strategy
+    return 'merge';
   }
 
   /**
    * Handle preference conflicts
    */
   private async handlePreferenceConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
-    return this.config.syncConfig?.conflictResolution || 'merge';
+    // For now, always use 'merge' strategy
+    return 'merge';
   }
 
   /**
@@ -211,16 +212,47 @@ export class EnhancedStorageManager {
     return this.encryptedStorage || this.storage;
   }
 
-  // Delegate all storage operations to the active storage
-  async saveTasks(tasks: Task[]): Promise<void> {
+  async resetDatabase(): Promise<void> {
     await this.ensureInitialized();
-    const startTime = performance.now();
+    console.log('🔄 EnhancedStorageManager: Resetting database...');
     
     try {
-      await this.getActiveStorage().saveTasks(tasks);
-      await this.trackOperation('saveTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
+      await this.getActiveStorage().resetDatabase();
+      console.log('✅ EnhancedStorageManager: Database reset completed');
     } catch (error) {
+      console.error('❌ EnhancedStorageManager: Error resetting database:', error);
+      throw error;
+    }
+  }
+
+    async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
+    await this.ensureInitialized();
+    const startTime = performance.now();
+
+    try {
+      console.log(`🔄 EnhancedStorageManager: Saving ${tasks.length} tasks...${replaceAll ? ' (replacing all)' : ''}`);
+      await this.getActiveStorage().saveTasks(tasks, replaceAll);
+      await this.trackOperation('saveTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
+      console.log(`✅ EnhancedStorageManager: Successfully saved ${tasks.length} tasks`);
+    } catch (error) {
+      console.error(`❌ EnhancedStorageManager: Error saving tasks:`, error);
       await this.trackOperation('saveTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime, false);
+      throw error;
+    }
+  }
+
+  async saveTask(task: Task): Promise<void> {
+    await this.ensureInitialized();
+    const startTime = performance.now();
+
+    try {
+      console.log(`🔄 EnhancedStorageManager: Saving single task: ${task.id}`);
+      await this.getActiveStorage().saveTask(task);
+      await this.trackOperation('saveTask', task.id, 'task', 1, performance.now() - startTime);
+      console.log(`✅ EnhancedStorageManager: Successfully saved task ${task.id}`);
+    } catch (error) {
+      console.error(`❌ EnhancedStorageManager: Error saving task:`, error);
+      await this.trackOperation('saveTask', task.id, 'task', 1, performance.now() - startTime, false);
       throw error;
     }
   }
@@ -272,9 +304,12 @@ export class EnhancedStorageManager {
     const startTime = performance.now();
     
     try {
+      console.log(`🔄 EnhancedStorageManager: Saving ${gaps.length} gaps for date ${date}...`);
       await this.getActiveStorage().saveGaps(gaps, date);
       await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime);
+      console.log(`✅ EnhancedStorageManager: Successfully saved ${gaps.length} gaps for date ${date}`);
     } catch (error) {
+      console.error(`❌ EnhancedStorageManager: Error saving gaps for date ${date}:`, error);
       await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime, false);
       throw error;
     }

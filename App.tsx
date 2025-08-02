@@ -110,25 +110,7 @@ export default function App() {
       try {
         console.log('🔄 Initializing local-first system with login sync...');
         
-        // Create login sync service for remote-to-local sync
-        const loginService = new EnhancedLoginSyncService(user.id);
-        const syncResult = await loginService.initializeAndSync();
-        
-        if (syncResult.success) {
-          console.log('✅ Login sync completed successfully');
-          console.log(`📊 Sync summary: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
-          
-          if (syncResult.conflictsResolved > 0) {
-            console.log(`🔄 ${syncResult.conflictsResolved} conflicts resolved`);
-          }
-          
-          setLoginSyncService(loginService);
-        } else {
-          console.warn('⚠️ Login sync completed with warnings:', syncResult.errors);
-          setLoginSyncService(loginService); // Still set the service even with warnings
-        }
-
-        // Create enhanced storage manager for ongoing operations
+        // Create enhanced storage manager first (shared instance)
         const enhancedStorage = new EnhancedStorageManager(user.id, {
           storageType: 'auto', // Auto-detect best storage (IndexedDB preferred)
           enableEncryption: true, // Enable encryption for sensitive data
@@ -145,6 +127,25 @@ export default function App() {
         });
         await enhancedStorage.initialize();
         setLocalFirstService(enhancedStorage);
+        
+        // Create login sync service with the same storage instance
+        const loginService = new EnhancedLoginSyncService(user.id, enhancedStorage);
+        const syncResult = await loginService.initializeAndSync();
+        
+        if (syncResult.success) {
+          console.log('✅ Login sync completed successfully');
+          console.log(`📊 Sync summary: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
+          
+          if (syncResult.conflictsResolved > 0) {
+            console.log(`🔄 ${syncResult.conflictsResolved} conflicts resolved`);
+          }
+          
+          setLoginSyncService(loginService);
+        } else {
+          console.warn('⚠️ Login sync completed with warnings:', syncResult.errors);
+          setLoginSyncService(loginService); // Still set the service even with warnings
+        }
+        
         setIsDataLoading(false);
         
       } catch (error) {
@@ -158,23 +159,27 @@ export default function App() {
 
   // Load data from local database using login sync service
   useEffect(() => {
-    if (!loginSyncService) return;
+    if (!loginSyncService || !localFirstService) return;
 
     const loadLocalData = async () => {
       try {
         console.log('📱 Loading local data...');
+        console.log('🔍 Using localFirstService for data loading...');
         
-        // Load tasks from local database
-        const tasks = await loginSyncService.getTasks();
+        // Load tasks from local database using the same storage instance
+        const tasks = await localFirstService.getTasks();
+        console.log('📋 Tasks loaded from storage:', tasks);
         setGlobalTasks(tasks);
 
         // Load gaps for today from local database
         const today = new Date().toISOString().split('T')[0];
-        const gaps = await loginSyncService.getGaps(today);
+        const gaps = await localFirstService.getGaps(today);
+        console.log('📅 Gaps loaded from storage for today:', gaps);
         setGaps(gaps);
 
         // Load preferences from local database
-        const prefs = await loginSyncService.getUserPreferences();
+        const prefs = await localFirstService.getPreferences();
+        console.log('⚙️ Preferences loaded from storage:', prefs);
         if (prefs) {
           setPreferences(prefs);
         }
@@ -188,7 +193,7 @@ export default function App() {
     };
 
     loadLocalData();
-  }, [loginSyncService]);
+  }, [loginSyncService, localFirstService]);
 
   // Load user preferences and profile data when authenticated
   useEffect(() => {
@@ -436,15 +441,12 @@ export default function App() {
       if (localFirstService) {
         console.log(`📝 Creating task: ${task.title}`);
         
-        // Get current tasks and add the new task
-        const currentTasks = await localFirstService.getTasks();
-        const updatedTasks = [...currentTasks, task];
+        // Save the new task
+        await localFirstService.saveTask(task);
         
-        // Save all tasks
-        await localFirstService.saveTasks(updatedTasks);
-        
-        // Update local state
-        setGlobalTasks(updatedTasks);
+        // Get all tasks and update local state
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
 
         console.log(`✅ Task created: ${task.title}`);
         
@@ -465,15 +467,13 @@ export default function App() {
       if (localFirstService) {
         console.log(`📝 Updating task: ${task.title}`);
         
-        // Update the specific task
-        const updatedTask = await localFirstService.updateTask(task.id, task);
+        // Save the updated task
+        await localFirstService.saveTask(task);
         
-        if (updatedTask) {
-          // Get all tasks and update local state
-          const tasks = await localFirstService.getTasks();
-          setGlobalTasks(tasks);
-          console.log(`✅ Task updated: ${task.title}`);
-        }
+        // Get all tasks and update local state
+        const tasks = await localFirstService.getTasks();
+        setGlobalTasks(tasks);
+        console.log(`✅ Task updated: ${task.title}`);
       }
     } catch (error) {
       console.error('❌ Error updating task:', error);
@@ -506,6 +506,48 @@ export default function App() {
   // Determine if floating timer should be visible
   const runningTimerTask = globalTasks.find(task => task.isTimerRunning);
   const shouldShowFloatingTimer = !!runningTimerTask && activeTab !== 'activities';
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Show loading screen if authenticated but data is still loading
+  if (isAuthenticated && isDataLoading) {
+    return <LoadingScreen isDataLoading={true} userName={profile?.first_name} />;
+  }
+
+  // Show authentication screens if not authenticated
+  if (!isAuthenticated) {
+    if (showSignUp) {
+      return (
+        <SignUpScreen 
+          onAuthSuccess={handleAuthSuccess}
+          onToggleAuth={() => setShowSignUp(false)}
+        />
+      );
+    } else {
+      return (
+        <LoginScreen 
+          onAuthSuccess={handleAuthSuccess}
+          onToggleAuth={() => setShowSignUp(true)}
+        />
+      );
+    }
+  }
+
+  // If in widget mode, render the widget view
+  if (isAuthenticated && !isDataLoading && isWidgetMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white flex items-center justify-center">
+        <WidgetView 
+          tasks={globalTasks}
+          gaps={gaps}
+          userName={profile?.first_name || ''}
+        />
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (activeTab) {

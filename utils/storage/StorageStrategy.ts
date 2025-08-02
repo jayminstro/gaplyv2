@@ -3,7 +3,8 @@ import { IndexedDBStorage, StorageInfo } from './IndexedDBStorage';
 
 export interface IStorageStrategy {
   initialize(): Promise<void>;
-  saveTasks(tasks: Task[]): Promise<void>;
+  saveTasks(tasks: Task[], replaceAll?: boolean): Promise<void>;
+  saveTask(task: Task): Promise<void>;
   getTasks(): Promise<Task[]>;
   updateTask(taskId: string, updates: Partial<Task>): Promise<Task | null>;
   deleteTask(taskId: string): Promise<boolean>;
@@ -17,6 +18,7 @@ export interface IStorageStrategy {
   removeCalendarState(key: string): Promise<void>;
   getStorageInfo(): Promise<StorageInfo>;
   cleanupOldData(daysToKeep?: number): Promise<number>;
+  resetDatabase(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -35,8 +37,24 @@ export class MemoryStorageStrategy implements IStorageStrategy {
     console.log('✅ Memory storage initialized');
   }
 
-  async saveTasks(tasks: Task[]): Promise<void> {
-    this.tasks = [...tasks];
+  async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
+    if (replaceAll) {
+      this.tasks = [...tasks];
+    } else {
+      // Update existing tasks and add new ones
+      const taskMap = new Map(this.tasks.map(task => [task.id, task]));
+      tasks.forEach(task => taskMap.set(task.id, task));
+      this.tasks = Array.from(taskMap.values());
+    }
+  }
+
+  async saveTask(task: Task): Promise<void> {
+    const index = this.tasks.findIndex(t => t.id === task.id);
+    if (index !== -1) {
+      this.tasks[index] = task;
+    } else {
+      this.tasks.push(task);
+    }
   }
 
   async getTasks(): Promise<Task[]> {
@@ -94,7 +112,7 @@ export class MemoryStorageStrategy implements IStorageStrategy {
   async getStorageInfo(): Promise<StorageInfo> {
     const collections = {
       tasks: this.tasks.length,
-      gaps: this.getAllGaps().length,
+      gaps: (await this.getAllGaps()).length,
       preferences: this.preferences ? 1 : 0,
       calendar: this.calendarState.size
     };
@@ -131,6 +149,13 @@ export class MemoryStorageStrategy implements IStorageStrategy {
     return cleanedCount;
   }
 
+  async resetDatabase(): Promise<void> {
+    this.tasks = [];
+    this.gaps.clear();
+    this.preferences = null;
+    this.calendarState.clear();
+  }
+
   async close(): Promise<void> {
     this.tasks = [];
     this.gaps.clear();
@@ -150,11 +175,39 @@ export class LocalStorageStrategy implements IStorageStrategy {
     console.log('✅ LocalStorage strategy initialized');
   }
 
-  async saveTasks(tasks: Task[]): Promise<void> {
+  async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
     try {
-      localStorage.setItem(`gaply_tasks_${this.userId}`, JSON.stringify(tasks));
+      if (replaceAll) {
+        localStorage.setItem(`gaply_tasks_${this.userId}`, JSON.stringify(tasks));
+      } else {
+        // Get existing tasks
+        const existingTasks = await this.getTasks();
+        const taskMap = new Map(existingTasks.map(task => [task.id, task]));
+        
+        // Update existing tasks and add new ones
+        tasks.forEach(task => taskMap.set(task.id, task));
+        localStorage.setItem(`gaply_tasks_${this.userId}`, JSON.stringify(Array.from(taskMap.values())));
+      }
     } catch (error) {
       console.error('Failed to save tasks to localStorage:', error);
+      throw error;
+    }
+  }
+
+  async saveTask(task: Task): Promise<void> {
+    try {
+      const tasks = await this.getTasks();
+      const index = tasks.findIndex(t => t.id === task.id);
+      
+      if (index !== -1) {
+        tasks[index] = task;
+      } else {
+        tasks.push(task);
+      }
+      
+      localStorage.setItem(`gaply_tasks_${this.userId}`, JSON.stringify(tasks));
+    } catch (error) {
+      console.error('Failed to save task to localStorage:', error);
       throw error;
     }
   }
@@ -366,6 +419,14 @@ export class LocalStorageStrategy implements IStorageStrategy {
     return cleanedCount;
   }
 
+  async resetDatabase(): Promise<void> {
+    const keys = Object.keys(localStorage);
+    const gaplyKeys = keys.filter(key => key.startsWith('gaply_'));
+    for (const key of gaplyKeys) {
+      localStorage.removeItem(key);
+    }
+  }
+
   async close(): Promise<void> {
     // localStorage doesn't need explicit cleanup
   }
@@ -464,6 +525,10 @@ export class StorageManager {
 
   async close(): Promise<void> {
     return this.strategy.close();
+  }
+
+  async resetDatabase(): Promise<void> {
+    return this.strategy.resetDatabase();
   }
 
   // Utility method to detect best available storage

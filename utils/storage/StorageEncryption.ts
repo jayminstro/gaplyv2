@@ -251,11 +251,16 @@ export class EncryptedStorageStrategy {
     return this.storage.initialize();
   }
 
-  async saveTasks(tasks: any[]): Promise<void> {
+  async saveTasks(tasks: any[], replaceAll?: boolean): Promise<void> {
     const encryptedTasks = await Promise.all(
       tasks.map(task => this.encryptObject(task))
     );
-    return this.storage.saveTasks(encryptedTasks);
+    return this.storage.saveTasks(encryptedTasks, replaceAll);
+  }
+
+  async saveTask(task: any): Promise<void> {
+    const encryptedTask = await this.encryptObject(task);
+    return this.storage.saveTask(encryptedTask);
   }
 
   async getTasks(): Promise<any[]> {

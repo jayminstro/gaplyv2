@@ -18,7 +18,7 @@ export interface StorageInfo {
 export class IndexedDBStorage {
   private db: IDBDatabase | null = null;
   private readonly dbName = 'GaplyStorage';
-  private readonly version = 1;
+  private readonly version = 2;
   private readonly userId: string;
 
   constructor(userId: string) {
@@ -45,7 +45,7 @@ export class IndexedDBStorage {
         
         // Create collections for different data types
         if (!db.objectStoreNames.contains('tasks')) {
-          const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
+          const taskStore = db.createObjectStore('tasks', { keyPath: 'data.id' });
           taskStore.createIndex('userId', 'userId', { unique: false });
           taskStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
@@ -72,37 +72,136 @@ export class IndexedDBStorage {
     });
   }
 
-  // Task operations
-  async saveTasks(tasks: Task[]): Promise<void> {
+  async resetDatabase(): Promise<void> {
     if (!this.db) throw new Error('IndexedDB not initialized');
+
+    console.log('🔄 Resetting IndexedDB database...');
+
+    const transaction = this.db.transaction(['tasks', 'gaps', 'preferences', 'calendar'], 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      const stores = ['tasks', 'gaps', 'preferences', 'calendar'];
+      let clearedCount = 0;
+      
+      for (const storeName of stores) {
+        const store = transaction.objectStore(storeName);
+        const clearRequest = store.clear();
+        
+        clearRequest.onsuccess = () => {
+          clearedCount++;
+          if (clearedCount === stores.length) {
+            console.log('✅ Database reset completed');
+            resolve();
+          }
+        };
+        
+        clearRequest.onerror = () => {
+          console.error(`❌ Failed to clear ${storeName}:`, clearRequest.error);
+          reject(clearRequest.error);
+        };
+      }
+      
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  // Task operations
+  async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB not initialized');
+
+    console.log(`💾 Saving ${tasks.length} tasks to IndexedDB...${replaceAll ? ' (replacing all)' : ''}`);
 
     const transaction = this.db.transaction(['tasks'], 'readwrite');
     const store = transaction.objectStore('tasks');
 
-    // Clear existing tasks for this user
-    const index = store.index('userId');
-    const existingKeys = await this.getKeysFromIndex(index, this.userId);
-    
-    for (const key of existingKeys) {
-      store.delete(key);
-    }
+    return new Promise((resolve, reject) => {
+      const saveOperation = async () => {
+        try {
+          if (replaceAll) {
+            // Clear all tasks only if replaceAll is true
+            await new Promise<void>((clearResolve, clearReject) => {
+              const clearRequest = store.clear();
+              clearRequest.onsuccess = () => {
+                console.log(`🗑️ Cleared all existing tasks, adding ${tasks.length} new tasks...`);
+                clearResolve();
+              };
+              clearRequest.onerror = () => clearReject(clearRequest.error);
+            });
+          }
 
-    // Save new tasks
+          // Add or update tasks
+          await this.addOrUpdateTasks(store, tasks, resolve, reject);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      saveOperation().catch(reject);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async saveTask(task: Task): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB not initialized');
+
+    console.log(`💾 Saving single task to IndexedDB: ${task.id}`);
+
+    const transaction = this.db.transaction(['tasks'], 'readwrite');
+    const store = transaction.objectStore('tasks');
+
+    return new Promise((resolve, reject) => {
+      const item: StorageItem = {
+        id: task.id,
+        data: { ...task, userId: this.userId },
+        createdAt: task.created_at || new Date().toISOString(),
+        updatedAt: task.updated_at || new Date().toISOString(),
+        version: 1
+      };
+
+      const request = store.put(item); // Use put instead of add to allow updates
+      request.onsuccess = () => {
+        console.log(`✅ Successfully saved task ${task.id} to IndexedDB`);
+        resolve();
+      };
+      request.onerror = () => {
+        console.error(`❌ Failed to save task ${task.id}:`, request.error);
+        reject(request.error);
+      };
+
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  private async addOrUpdateTasks(
+    store: IDBObjectStore, 
+    tasks: Task[], 
+    resolve: () => void, 
+    reject: (error: any) => void
+  ): Promise<void> {
+    let addedCount = 0;
+    
     for (const task of tasks) {
       const item: StorageItem = {
         id: task.id,
-        data: task,
-        createdAt: task.created_at,
-        updatedAt: task.updated_at,
+        data: { ...task, userId: this.userId },
+        createdAt: task.created_at || new Date().toISOString(),
+        updatedAt: task.updated_at || new Date().toISOString(),
         version: 1
       };
-      store.add(item);
+      
+      const request = store.put(item); // Use put instead of add to allow updates
+      request.onsuccess = () => {
+        addedCount++;
+        if (addedCount === tasks.length) {
+          console.log(`✅ Successfully saved ${addedCount} tasks to IndexedDB`);
+          resolve();
+        }
+      };
+      request.onerror = () => {
+        console.error(`❌ Failed to save task ${task.id}:`, request.error);
+        reject(request.error);
+      };
     }
-
-    return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
   }
 
   async getTasks(): Promise<Task[]> {
@@ -116,7 +215,12 @@ export class IndexedDBStorage {
       const request = index.getAll(this.userId);
       request.onsuccess = () => {
         const items: StorageItem[] = request.result;
-        const tasks = items.map(item => item.data as Task);
+        const tasks = items.map(item => {
+          const task = item.data as Task & { userId?: string };
+          // Remove userId from the returned task object
+          const { userId, ...cleanTask } = task;
+          return cleanTask as Task;
+        });
         resolve(tasks);
       };
       request.onerror = () => reject(request.error);
@@ -170,36 +274,65 @@ export class IndexedDBStorage {
   async saveGaps(gaps: TimeGap[], date: string): Promise<void> {
     if (!this.db) throw new Error('IndexedDB not initialized');
 
+    console.log(`💾 Saving ${gaps.length} gaps for date ${date} to IndexedDB...`);
+
     const transaction = this.db.transaction(['gaps'], 'readwrite');
     const store = transaction.objectStore('gaps');
 
-    // Clear existing gaps for this user and date
-    const index = store.index('userId');
-    const existingKeys = await this.getKeysFromIndex(index, this.userId);
-    
-    for (const key of existingKeys) {
-      const item = await this.getItemFromStore(store, key);
-      if (item && item.data.date === date) {
-        store.delete(key);
-      }
-    }
+    return new Promise((resolve, reject) => {
+      // First, clear ALL existing gaps (since we're replacing everything)
+      const clearRequest = store.clear();
+      
+      clearRequest.onsuccess = () => {
+        console.log(`🗑️ Cleared all existing gaps, adding ${gaps.length} new gaps for date ${date}...`);
+        this.addNewGaps(store, gaps, date, resolve, reject);
+      };
+      
+      clearRequest.onerror = () => {
+        console.error('❌ Failed to clear existing gaps:', clearRequest.error);
+        reject(clearRequest.error);
+      };
+      
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
 
-    // Save new gaps
+  private addNewGaps(
+    store: IDBObjectStore,
+    gaps: TimeGap[],
+    date: string,
+    resolve: () => void,
+    reject: (error: any) => void
+  ): void {
+    if (gaps.length === 0) {
+      console.log(`✅ No gaps to add for date ${date}`);
+      resolve();
+      return;
+    }
+    
+    let addedCount = 0;
     for (const gap of gaps) {
       const item: StorageItem = {
         id: gap.id,
-        data: gap,
-        createdAt: gap.created_at,
-        updatedAt: gap.updated_at || gap.created_at,
+        data: { ...gap, userId: this.userId }, // Include userId in the data
+        createdAt: gap.created_at || new Date().toISOString(),
+        updatedAt: gap.last_modified_at || gap.created_at || new Date().toISOString(),
         version: 1
       };
-      store.add(item);
+      
+      const addRequest = store.add(item);
+      addRequest.onsuccess = () => {
+        addedCount++;
+        if (addedCount === gaps.length) {
+          console.log(`✅ Successfully saved ${addedCount} gaps for date ${date} to IndexedDB`);
+          resolve();
+        }
+      };
+      addRequest.onerror = () => {
+        console.error(`❌ Failed to add gap ${gap.id}:`, addRequest.error);
+        reject(addRequest.error);
+      };
     }
-
-    return new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
   }
 
   async getGaps(date: string): Promise<TimeGap[]> {
@@ -214,7 +347,12 @@ export class IndexedDBStorage {
       request.onsuccess = () => {
         const items: StorageItem[] = request.result;
         const gaps = items
-          .map(item => item.data as TimeGap)
+          .map(item => {
+            const gap = item.data as TimeGap & { userId?: string };
+            // Remove userId from the returned gap object
+            const { userId, ...cleanGap } = gap;
+            return cleanGap as TimeGap;
+          })
           .filter(gap => gap.date === date);
         resolve(gaps);
       };
@@ -233,7 +371,12 @@ export class IndexedDBStorage {
       const request = index.getAll(this.userId);
       request.onsuccess = () => {
         const items: StorageItem[] = request.result;
-        const gaps = items.map(item => item.data as TimeGap);
+        const gaps = items.map(item => {
+          const gap = item.data as TimeGap & { userId?: string };
+          // Remove userId from the returned gap object
+          const { userId, ...cleanGap } = gap;
+          return cleanGap as TimeGap;
+        });
         resolve(gaps);
       };
       request.onerror = () => reject(request.error);
@@ -244,21 +387,29 @@ export class IndexedDBStorage {
   async savePreferences(preferences: UserPreferences): Promise<void> {
     if (!this.db) throw new Error('IndexedDB not initialized');
 
+    console.log(`💾 Saving preferences to IndexedDB...`);
+
     const transaction = this.db.transaction(['preferences'], 'readwrite');
     const store = transaction.objectStore('preferences');
 
-    const item: StorageItem = {
-      id: this.userId,
-      data: preferences,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      version: 1
+    // For preferences, store the data directly since the keyPath is 'userId'
+    const preferencesData = {
+      ...preferences,
+      userId: this.userId,
+      createdAt: preferences.created_at || new Date().toISOString(),
+      updatedAt: preferences.updated_at || new Date().toISOString()
     };
 
     return new Promise((resolve, reject) => {
-      const request = store.put(item);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      const request = store.put(preferencesData);
+      request.onsuccess = () => {
+        console.log('✅ Successfully saved preferences to IndexedDB');
+        resolve();
+      };
+      request.onerror = () => {
+        console.error('❌ Failed to save preferences:', request.error);
+        reject(request.error);
+      };
     });
   }
 
@@ -271,8 +422,15 @@ export class IndexedDBStorage {
     return new Promise((resolve, reject) => {
       const request = store.get(this.userId);
       request.onsuccess = () => {
-        const item: StorageItem = request.result;
-        resolve(item ? item.data as UserPreferences : null);
+        const preferences = request.result;
+        if (!preferences) {
+          resolve(null);
+          return;
+        }
+        
+        // Remove internal fields from the returned preferences object
+        const { userId, createdAt, updatedAt, ...cleanPreferences } = preferences;
+        resolve(cleanPreferences as UserPreferences);
       };
       request.onerror = () => reject(request.error);
     });
@@ -285,16 +443,17 @@ export class IndexedDBStorage {
     const transaction = this.db.transaction(['calendar'], 'readwrite');
     const store = transaction.objectStore('calendar');
 
-    const item: StorageItem = {
-      id: key,
-      data: { userId: this.userId, value },
+    // For calendar state, store the data directly since the keyPath is 'key'
+    const calendarData = {
+      key: key,
+      value: value,
+      userId: this.userId,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      version: 1
+      updatedAt: new Date().toISOString()
     };
 
     return new Promise((resolve, reject) => {
-      const request = store.put(item);
+      const request = store.put(calendarData);
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
@@ -309,8 +468,12 @@ export class IndexedDBStorage {
     return new Promise((resolve, reject) => {
       const request = store.get(key);
       request.onsuccess = () => {
-        const item: StorageItem = request.result;
-        resolve(item ? item.data.value : null);
+        const calendarData = request.result;
+        if (!calendarData) {
+          resolve(null);
+          return;
+        }
+        resolve(calendarData.value);
       };
       request.onerror = () => reject(request.error);
     });
