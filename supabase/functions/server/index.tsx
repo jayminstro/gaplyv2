@@ -993,7 +993,7 @@ app.post("/make-server-966d4846/gaps/create", async (c) => {
       is_available: body.is_available !== false,
       gap_source_id: body.gap_source_id || 'manual',
       modified_by: body.modified_by || 'user',
-      last_modified_at: body.last_modified_at || new Date().toISOString(),
+      updated_at: body.updated_at || new Date().toISOString(),
       created_at: new Date().toISOString()
     };
 
@@ -1106,7 +1106,7 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         is_available: true,
         gap_source_id: originalGap.gap_source_id,
         modified_by: modifiedBy || 'user',
-        last_modified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         origin_gap_id: originalGap.id,
         created_at: new Date().toISOString()
       });
@@ -1126,7 +1126,7 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         is_available: true,
         gap_source_id: originalGap.gap_source_id,
         modified_by: modifiedBy || 'user',
-        last_modified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         origin_gap_id: originalGap.id,
         created_at: new Date().toISOString()
       });

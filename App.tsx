@@ -225,86 +225,116 @@ export default function App() {
     initializeWithLoginSync();
   }, [isAuthenticated, user?.id]);
 
-  // Load data from local database using login sync service
+  // Load critical data first, then non-critical data in the background
   useEffect(() => {
     if (!loginSyncService || !localFirstService) return;
 
-    const loadLocalData = async () => {
+    const loadCriticalData = async () => {
       try {
-        console.log('📱 Loading local data...');
-        console.log('🔍 Using localFirstService for data loading...');
+        console.log('📱 Loading critical data...');
         
-        // Load tasks from local database using the same storage instance
-        const tasks = await localFirstService.getTasks();
-        console.log('📋 Tasks loaded from storage:', tasks);
-        setGlobalTasks(tasks);
-
-        // Load gaps for today from local database
+        // Load only today's tasks and gaps
         const today = new Date().toISOString().split('T')[0];
-        const gaps = await localFirstService.getGaps(today);
-        console.log('📅 Gaps loaded from storage for today:', gaps);
-        setGaps(gaps);
-
-        // Load preferences from local database
-        const prefs = await localFirstService.getPreferences();
-        console.log('⚙️ Preferences loaded from storage:', prefs);
-        if (prefs) {
-          setPreferences(prefs);
-        }
-
-        console.log(`✅ Local data loaded: ${tasks.length} tasks, ${gaps.length} gaps`);
+        const [allTasks, todayGaps] = await Promise.all([
+          localFirstService.getTasks(),
+          localFirstService.getGaps(today)
+        ]);
+        
+        // Filter tasks for today
+        const todayTasks = allTasks.filter(task => {
+          const taskDate = task.dueDate?.split('T')[0];
+          return taskDate === today;
+        });
+        
+        console.log('📋 Today\'s tasks loaded:', todayTasks);
+        console.log('📅 Today\'s gaps loaded:', todayGaps);
+        
+        setGlobalTasks(todayTasks);
+        setGaps(todayGaps);
         setIsDataLoading(false);
       } catch (error) {
-        console.error('❌ Error loading local data:', error);
+        console.error('❌ Error loading critical data:', error);
         setIsDataLoading(false);
       }
     };
 
-    loadLocalData();
+    const loadNonCriticalData = async () => {
+      try {
+        // Use requestIdleCallback for background loading
+        const requestIdleCallback = (window as any).requestIdleCallback || 
+          ((cb: Function) => setTimeout(cb, 1));
+
+        requestIdleCallback(async () => {
+          console.log('🔄 Loading non-critical data in background...');
+          
+          // Load past/future tasks
+          const allTasks = await localFirstService.getTasks();
+          setGlobalTasks(prev => {
+            const uniqueTasks = new Set([...prev, ...allTasks]);
+            return Array.from(uniqueTasks);
+          });
+
+          // Load preferences
+          const prefs = await localFirstService.getPreferences();
+          if (prefs) {
+            console.log('⚙️ Preferences loaded from storage:', prefs);
+            setPreferences(prefs);
+          }
+        });
+      } catch (error) {
+        console.error('⚠️ Error loading non-critical data:', error);
+      }
+    };
+
+    // Execute critical loading immediately
+    loadCriticalData();
+    // Start background loading after critical data is loaded
+    loadNonCriticalData();
   }, [loginSyncService, localFirstService]);
 
-  // Load user preferences and profile data when authenticated
+  // Load user preferences and profile data in the background when authenticated
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
 
     const loadUserData = async () => {
-      // Add a small delay to ensure session is available for API calls
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      try {
-        console.log('Loading user data for user:', user.id);
-        
-        const loadWithRetry = async (apiCall: () => Promise<any>, name: string) => {
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              const result = await apiCall();
-              console.log(`Loaded ${name} on attempt ${attempt + 1}:`, result);
-              return result;
-            } catch (error) {
-              console.error(`Error loading ${name} (attempt ${attempt + 1}):`, error);
-              if (attempt === 2) return null; // Last attempt failed
-              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      const requestIdleCallback = (window as any).requestIdleCallback || 
+        ((cb: Function) => setTimeout(cb, 1));
+
+      requestIdleCallback(async () => {
+        try {
+          console.log('Loading user data for user:', user.id);
+          
+          const loadWithRetry = async (apiCall: () => Promise<any>, name: string) => {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const result = await apiCall();
+                console.log(`Loaded ${name} on attempt ${attempt + 1}:`, result);
+                return result;
+              } catch (error) {
+                console.error(`Error loading ${name} (attempt ${attempt + 1}):`, error);
+                if (attempt === 2) return null; // Last attempt failed
+                await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+              }
             }
+          };
+          
+          // Load preferences first as they're more important
+          const prefsData = await loadWithRetry(() => preferencesAPI.get(), 'preferences');
+          if (prefsData) {
+            setPreferences(prefsData);
           }
-        };
-        
-        const [prefsData, profileData] = await Promise.all([
-          loadWithRetry(() => preferencesAPI.get(), 'preferences'),
-          loadWithRetry(() => profileAPI.get(), 'profile')
-        ]);
-        
-        if (prefsData) {
-          setPreferences(prefsData);
+
+          // Load profile data after preferences
+          const profileData = await loadWithRetry(() => profileAPI.get(), 'profile');
+          if (profileData) {
+            setProfile(profileData);
+          }
+          
+          console.log('✅ User data loaded successfully');
+        } catch (error) {
+          console.error('❌ Error loading user data:', error);
         }
-        
-        if (profileData) {
-          setProfile(profileData);
-        }
-        
-        console.log('✅ User data loaded successfully');
-      } catch (error) {
-        console.error('❌ Error loading user data:', error);
-      }
+      });
     };
 
     loadUserData();
@@ -393,11 +423,36 @@ export default function App() {
           console.log('📱 Keeping existing local tasks');
         }
 
-        if (gapsData && Array.isArray(gapsData)) {
-          setGaps(gapsData);
-          console.log('✅ Gaps updated from server');
+        // Handle gaps with local-first pattern
+        if (gapsData && Array.isArray(gapsData) && localFirstService) {
+          // Save gaps to local storage first
+          console.log('💾 Saving gaps to local storage...');
+          for (const gap of gapsData) {
+            await localFirstService.saveGaps([gap], gap.date || new Date().toISOString().split('T')[0]);
+          }
+          console.log('✅ Gaps saved to local storage');
+          
+          // Load gaps from local storage to ensure consistency
+          const today = new Date().toISOString().split('T')[0];
+          const localGaps = await localFirstService.getGaps(today);
+          setGaps(localGaps);
+          console.log('✅ Gaps loaded from local storage');
         } else {
-          console.log('📱 Keeping existing local gaps');
+          // Try to load from local storage if server data is not available
+          if (localFirstService) {
+            try {
+              const today = new Date().toISOString().split('T')[0];
+              const localGaps = await localFirstService.getGaps(today);
+              setGaps(localGaps);
+              console.log('📱 Using gaps from local storage');
+            } catch (error) {
+              console.log('📱 No local gaps available');
+              setGaps([]);
+            }
+          } else {
+            console.log('📱 No local storage service available');
+            setGaps([]);
+          }
         }
 
         console.log('✅ App data sync completed');
@@ -492,7 +547,23 @@ export default function App() {
     try {
       console.log(`Saving ${section} for user:`, user.id);
       
-      await preferencesAPI.save(preferences);
+      // Save to local storage first
+      if (localFirstService) {
+        console.log(`💾 Saving ${section} preferences to local storage...`);
+        await localFirstService.savePreferences(preferences);
+        console.log(`✅ ${section} preferences saved to local storage`);
+      }
+
+      // Then sync to remote API
+      try {
+        console.log(`🌐 Syncing ${section} preferences to remote API...`);
+        await preferencesAPI.save(preferences);
+        console.log(`✅ ${section} preferences synced to remote API`);
+      } catch (apiError) {
+        console.error(`⚠️ Failed to sync ${section} to remote API, but local save succeeded:`, apiError);
+        // Don't show error to user since local save worked
+      }
+
       setUnsavedChanges(prev => ({ ...prev, [section]: false }));
       toast.success('Preferences saved');
     } catch (error) {
@@ -733,6 +804,7 @@ export default function App() {
               preferences={preferences}
               onSignOut={handleSignOut}
               onPreferencesUpdate={updatePreferencesFromSettings}
+              localFirstService={localFirstService}
             />
           </div>
         );

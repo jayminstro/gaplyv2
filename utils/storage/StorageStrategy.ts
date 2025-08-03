@@ -20,6 +20,11 @@ export interface IStorageStrategy {
   cleanupOldData(daysToKeep?: number): Promise<number>;
   resetDatabase(): Promise<void>;
   close(): Promise<void>;
+  
+  // Activity storage methods
+  saveActivities(activities: any[]): Promise<void>;
+  getActivities(): Promise<any[]>;
+  updateActivity(activityId: string, updates: any): Promise<any | null>;
 }
 
 export class MemoryStorageStrategy implements IStorageStrategy {
@@ -27,6 +32,7 @@ export class MemoryStorageStrategy implements IStorageStrategy {
   private gaps: Map<string, TimeGap[]> = new Map();
   private preferences: UserPreferences | null = null;
   private calendarState: Map<string, any> = new Map();
+  private activities: any[] = [];
   private userId: string;
 
   constructor(userId: string) {
@@ -156,11 +162,37 @@ export class MemoryStorageStrategy implements IStorageStrategy {
     this.calendarState.clear();
   }
 
+  async saveActivities(activities: any[]): Promise<void> {
+    this.activities = activities.map(activity => ({
+      ...activity,
+      userId: this.userId,
+      createdAt: activity.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  async getActivities(): Promise<any[]> {
+    return this.activities.filter(activity => activity.userId === this.userId);
+  }
+
+  async updateActivity(activityId: string, updates: any): Promise<any | null> {
+    const index = this.activities.findIndex(a => a.id === activityId);
+    if (index === -1) return null;
+
+    this.activities[index] = {
+      ...this.activities[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    return this.activities[index];
+  }
+
   async close(): Promise<void> {
     this.tasks = [];
     this.gaps.clear();
     this.preferences = null;
     this.calendarState.clear();
+    this.activities = [];
   }
 }
 
@@ -424,6 +456,60 @@ export class LocalStorageStrategy implements IStorageStrategy {
     const gaplyKeys = keys.filter(key => key.startsWith('gaply_'));
     for (const key of gaplyKeys) {
       localStorage.removeItem(key);
+    }
+  }
+
+  async saveActivities(activities: any[]): Promise<void> {
+    try {
+      const enrichedActivities = activities.map(activity => ({
+        ...activity,
+        userId: this.userId,
+        createdAt: activity.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }));
+      localStorage.setItem(`gaply_activities_${this.userId}`, JSON.stringify(enrichedActivities));
+    } catch (error) {
+      console.error('Failed to save activities to localStorage:', error);
+      throw error;
+    }
+  }
+
+  async getActivities(): Promise<any[]> {
+    try {
+      const stored = localStorage.getItem(`gaply_activities_${this.userId}`);
+      if (!stored) return [];
+      
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        console.warn('Invalid activities data in localStorage, clearing corrupted data');
+        localStorage.removeItem(`gaply_activities_${this.userId}`);
+        return [];
+      }
+      
+      return parsed.filter(activity => activity.userId === this.userId);
+    } catch (error) {
+      console.error('Error reading activities from localStorage:', error);
+      return [];
+    }
+  }
+
+  async updateActivity(activityId: string, updates: any): Promise<any | null> {
+    try {
+      const activities = await this.getActivities();
+      const index = activities.findIndex(a => a.id === activityId);
+      if (index === -1) return null;
+
+      activities[index] = {
+        ...activities[index],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await this.saveActivities(activities);
+      return activities[index];
+    } catch (error) {
+      console.error('Error updating activity in localStorage:', error);
+      return null;
     }
   }
 

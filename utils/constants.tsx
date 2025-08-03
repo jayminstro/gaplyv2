@@ -61,7 +61,7 @@ export const DEFAULT_GAPS: TimeGap[] = [
     quality_score: 0.8,
     gap_source_id: 'default',
     modified_by: 'system',
-    last_modified_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     date: new Date().toISOString().split('T')[0]
   },
@@ -76,7 +76,7 @@ export const DEFAULT_GAPS: TimeGap[] = [
     quality_score: 0.7,
     gap_source_id: 'default',
     modified_by: 'system',
-    last_modified_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     date: new Date().toISOString().split('T')[0]
   }

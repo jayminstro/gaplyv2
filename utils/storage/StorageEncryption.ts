@@ -340,4 +340,17 @@ export class EncryptedStorageStrategy {
   async resetDatabase(): Promise<void> {
     return this.storage.resetDatabase();
   }
+
+  // Activity storage methods
+  async saveActivities(activities: any[]): Promise<void> {
+    return this.storage.saveActivities(activities);
+  }
+
+  async getActivities(): Promise<any[]> {
+    return this.storage.getActivities();
+  }
+
+  async updateActivity(activityId: string, updates: any): Promise<any | null> {
+    return this.storage.updateActivity(activityId, updates);
+  }
 } 

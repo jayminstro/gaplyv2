@@ -46,7 +46,7 @@ export class GapLogic {
       is_available: true,
       gap_source_id: 'default',
       modified_by: 'system',
-      last_modified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       created_at: new Date().toISOString()
     };
     
@@ -107,7 +107,7 @@ export class GapLogic {
               is_available: true,
               gap_source_id: 'calendar',
               modified_by: 'calendar_sync',
-              last_modified_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
               created_at: new Date().toISOString()
             });
           }
@@ -143,7 +143,7 @@ export class GapLogic {
           is_available: true,
           gap_source_id: 'calendar',
           modified_by: 'calendar_sync',
-          last_modified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           created_at: new Date().toISOString()
         });
       }
@@ -177,7 +177,7 @@ export class GapLogic {
         duration: taskStart - gapStart,
         duration_minutes: taskStart - gapStart,
         modified_by: modifiedBy,
-        last_modified_at: new Date().toISOString()
+        updated_at: new Date().toISOString()
       });
     }
     
@@ -190,7 +190,7 @@ export class GapLogic {
         duration: gapEnd - taskEnd,
         duration_minutes: gapEnd - taskEnd,
         modified_by: modifiedBy,
-        last_modified_at: new Date().toISOString()
+        updated_at: new Date().toISOString()
       });
     }
     

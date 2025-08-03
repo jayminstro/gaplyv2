@@ -26,6 +26,7 @@ import {
 } from './ui/alert-dialog';
 import { UserPreferences } from '../types/index';
 import { preferencesAPI, profileAPI } from '../utils/api';
+import { EnhancedStorageManager } from '../utils/storage/EnhancedStorageManager';
 import { CalendarSync } from './CalendarSync';
 import { DebugPanel } from './DebugPanel';
 import { WorkingDaysSelector } from './WorkingDaysSelector';
@@ -38,9 +39,10 @@ interface SettingsContentProps {
   preferences: UserPreferences;
   onSignOut: () => void;
   onPreferencesUpdate?: (preferences: UserPreferences) => void;
+  localFirstService?: EnhancedStorageManager | null;
 }
 
-export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpdate }: SettingsContentProps) {
+export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpdate, localFirstService }: SettingsContentProps) {
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState<UserPreferences>(preferences);
@@ -84,7 +86,17 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
 
   // Update local preferences when props change
   useEffect(() => {
-    setLocalPreferences(preferences);
+    // Ensure array fields are properly initialized
+    const safePreferences = {
+      ...preferences,
+      calendar_working_days: Array.isArray(preferences.calendar_working_days) 
+        ? preferences.calendar_working_days 
+        : [],
+      preferred_categories: Array.isArray(preferences.preferred_categories) 
+        ? preferences.preferred_categories 
+        : []
+    };
+    setLocalPreferences(safePreferences);
   }, [preferences]);
 
   // Simplified settings categories with better grouping
@@ -128,7 +140,23 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
   const savePreferences = async () => {
     setIsSaving(true);
     try {
-      await preferencesAPI.save(localPreferences);
+      // Save to local storage first
+      if (localFirstService) {
+        console.log('💾 Saving preferences to local storage...');
+        await localFirstService.savePreferences(localPreferences);
+        console.log('✅ Preferences saved to local storage');
+      }
+
+      // Then sync to remote API
+      try {
+        console.log('🌐 Syncing preferences to remote API...');
+        await preferencesAPI.save(localPreferences);
+        console.log('✅ Preferences synced to remote API');
+      } catch (apiError) {
+        console.error('⚠️ Failed to sync to remote API, but local save succeeded:', apiError);
+        // Don't show error to user since local save worked
+      }
+
       onPreferencesUpdate?.(localPreferences);
       toast.success('Settings saved');
     } catch (error) {

@@ -77,7 +77,7 @@ export function TodayTimeline({
       is_available: true,
       gap_source_id: 'manual',
       modified_by: 'user',
-      last_modified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       date: new Date().toISOString().split('T')[0]
     };
     
