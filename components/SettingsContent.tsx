@@ -84,7 +84,17 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
 
   // Update local preferences when props change
   useEffect(() => {
-    setLocalPreferences(preferences);
+    // Ensure array fields are properly initialized
+    const safePreferences = {
+      ...preferences,
+      calendar_working_days: Array.isArray(preferences.calendar_working_days) 
+        ? preferences.calendar_working_days 
+        : [],
+      preferred_categories: Array.isArray(preferences.preferred_categories) 
+        ? preferences.preferred_categories 
+        : []
+    };
+    setLocalPreferences(safePreferences);
   }, [preferences]);
 
   // Simplified settings categories with better grouping

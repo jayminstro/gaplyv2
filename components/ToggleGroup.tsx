@@ -19,10 +19,13 @@ export function ToggleGroup({
   className = '',
   columns = 2
 }: ToggleGroupProps) {
+  // Ensure selectedOptions is always an array
+  const safeSelectedOptions = Array.isArray(selectedOptions) ? selectedOptions : [];
+  
   const toggleOption = (option: string) => {
-    const newOptions = selectedOptions.includes(option)
-      ? selectedOptions.filter(o => o !== option)
-      : [...selectedOptions, option];
+    const newOptions = safeSelectedOptions.includes(option)
+      ? safeSelectedOptions.filter(o => o !== option)
+      : [...safeSelectedOptions, option];
     onChange(newOptions);
   };
 
@@ -43,7 +46,7 @@ export function ToggleGroup({
       
       <div className={`grid gap-2 ${gridCols}`}>
         {options.map((option) => {
-          const isSelected = selectedOptions.includes(option);
+          const isSelected = safeSelectedOptions.includes(option);
           
           return (
             <button

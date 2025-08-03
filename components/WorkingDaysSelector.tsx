@@ -17,10 +17,13 @@ const DAYS = [
 ];
 
 export function WorkingDaysSelector({ selectedDays, onChange, className = '' }: WorkingDaysSelectorProps) {
+  // Ensure selectedDays is always an array
+  const safeSelectedDays = Array.isArray(selectedDays) ? selectedDays : [];
+  
   const toggleDay = (dayFull: string) => {
-    const newDays = selectedDays.includes(dayFull)
-      ? selectedDays.filter(d => d !== dayFull)
-      : [...selectedDays, dayFull];
+    const newDays = safeSelectedDays.includes(dayFull)
+      ? safeSelectedDays.filter(d => d !== dayFull)
+      : [...safeSelectedDays, dayFull];
     onChange(newDays);
   };
 
@@ -33,7 +36,7 @@ export function WorkingDaysSelector({ selectedDays, onChange, className = '' }: 
       
       <div className="flex gap-1">
         {DAYS.map((day) => {
-          const isSelected = selectedDays.includes(day.full);
+          const isSelected = safeSelectedDays.includes(day.full);
           
           return (
             <button
