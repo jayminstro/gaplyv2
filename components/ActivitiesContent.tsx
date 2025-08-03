@@ -22,6 +22,7 @@ interface ActivitiesContentProps {
   globalTasks: Task[];
   setGlobalTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   onTimerOpen: (task: Task) => void;
+  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => Promise<void>;
 
   onTabChange: (tab: string) => void;
   editingTask: Task | null;
