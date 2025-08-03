@@ -54,7 +54,7 @@ export class EnhancedStorageManager {
     this.config = {
       storageType: 'auto',
       enableEncryption: false,
-      encryptFields: ['description', 'notes', 'title'], // Default sensitive fields
+      encryptFields: [], // Removed encryption from tasks to fix iOS offline issues
       enableSync: false,
       enableAnalytics: true,
       analyticsConfig: {
@@ -184,7 +184,7 @@ export class EnhancedStorageManager {
   /**
    * Handle task conflicts
    */
-  private async handleTaskConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
+  private async handleTaskConflict(_: any): Promise<'local' | 'remote' | 'merge'> {
     // For now, always use 'merge' strategy
     return 'merge';
   }
@@ -192,7 +192,7 @@ export class EnhancedStorageManager {
   /**
    * Handle gap conflicts
    */
-  private async handleGapConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
+  private async handleGapConflict(_: any): Promise<'local' | 'remote' | 'merge'> {
     // For now, always use 'merge' strategy
     return 'merge';
   }
@@ -200,7 +200,7 @@ export class EnhancedStorageManager {
   /**
    * Handle preference conflicts
    */
-  private async handlePreferenceConflict(conflict: any): Promise<'local' | 'remote' | 'merge'> {
+  private async handlePreferenceConflict(_: any): Promise<'local' | 'remote' | 'merge'> {
     // For now, always use 'merge' strategy
     return 'merge';
   }
@@ -208,8 +208,12 @@ export class EnhancedStorageManager {
   /**
    * Get the active storage strategy (with encryption if enabled)
    */
-  private getActiveStorage(): IStorageStrategy {
-    return this.encryptedStorage || this.storage;
+  private getActiveStorage(skipEncryption: boolean = false): IStorageStrategy {
+    // Skip encryption for tasks to prevent decryption issues on iOS
+    if (skipEncryption || !this.encryptedStorage) {
+      return this.storage;
+    }
+    return this.encryptedStorage;
   }
 
   async resetDatabase(): Promise<void> {
@@ -231,7 +235,7 @@ export class EnhancedStorageManager {
 
     try {
       console.log(`🔄 EnhancedStorageManager: Saving ${tasks.length} tasks...${replaceAll ? ' (replacing all)' : ''}`);
-      await this.getActiveStorage().saveTasks(tasks, replaceAll);
+      await this.getActiveStorage(true).saveTasks(tasks, replaceAll);
       await this.trackOperation('saveTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
       console.log(`✅ EnhancedStorageManager: Successfully saved ${tasks.length} tasks`);
     } catch (error) {
@@ -247,7 +251,7 @@ export class EnhancedStorageManager {
 
     try {
       console.log(`🔄 EnhancedStorageManager: Saving single task: ${task.id}`);
-      await this.getActiveStorage().saveTask(task);
+      await this.getActiveStorage(true).saveTask(task);
       await this.trackOperation('saveTask', task.id, 'task', 1, performance.now() - startTime);
       console.log(`✅ EnhancedStorageManager: Successfully saved task ${task.id}`);
     } catch (error) {
@@ -262,7 +266,7 @@ export class EnhancedStorageManager {
     const startTime = performance.now();
     
     try {
-      const tasks = await this.getActiveStorage().getTasks();
+      const tasks = await this.getActiveStorage(true).getTasks();
       await this.trackOperation('getTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
       return tasks;
     } catch (error) {
@@ -276,7 +280,7 @@ export class EnhancedStorageManager {
     const startTime = performance.now();
     
     try {
-      const result = await this.getActiveStorage().updateTask(taskId, updates);
+      const result = await this.getActiveStorage(true).updateTask(taskId, updates);
       await this.trackOperation('updateTask', taskId, 'task', 1, performance.now() - startTime);
       return result;
     } catch (error) {
@@ -290,7 +294,7 @@ export class EnhancedStorageManager {
     const startTime = performance.now();
     
     try {
-      const result = await this.getActiveStorage().deleteTask(taskId);
+      const result = await this.getActiveStorage(true).deleteTask(taskId);
       await this.trackOperation('deleteTask', taskId, 'task', 1, performance.now() - startTime);
       return result;
     } catch (error) {

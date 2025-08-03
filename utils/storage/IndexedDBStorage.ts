@@ -26,50 +26,78 @@ export class IndexedDBStorage {
   }
 
   async initialize(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version);
+    return new Promise<void>((resolve) => {
+      try {
+        // Test if IndexedDB is actually available
+        if (!window.indexedDB) {
+          console.warn('IndexedDB not available, falling back to localStorage');
+          this.fallbackToLocalStorage();
+          resolve();
+          return;
+        }
 
-      request.onerror = () => {
-        console.error('Failed to open IndexedDB:', request.error);
-        reject(new Error('Failed to initialize IndexedDB storage'));
-      };
+        const request = indexedDB.open(this.dbName, this.version);
 
-      request.onsuccess = () => {
-        this.db = request.result;
-        console.log('✅ IndexedDB storage initialized');
+        request.onerror = () => {
+          console.warn('Failed to open IndexedDB, falling back to localStorage:', request.error);
+          this.fallbackToLocalStorage();
+          resolve();
+        };
+
+        request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+          this.handleUpgradeNeeded(event);
+        };
+
+        request.onsuccess = () => {
+          this.db = request.result;
+          
+          // Test if the database is actually writable
+          this.testDatabaseWritable().then(() => {
+            console.log('✅ IndexedDB storage initialized and writable');
+            resolve();
+          }).catch(() => {
+            console.warn('IndexedDB not writable, falling back to localStorage');
+            this.fallbackToLocalStorage();
+            resolve();
+          });
+        };
+      } catch (error) {
+        console.warn('Error during initialization:', error);
+        this.fallbackToLocalStorage();
         resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        
-        // Create collections for different data types
-        if (!db.objectStoreNames.contains('tasks')) {
-          const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
-          taskStore.createIndex('userId', 'userId', { unique: false });
-          taskStore.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains('gaps')) {
-          const gapStore = db.createObjectStore('gaps', { keyPath: 'id' });
-          gapStore.createIndex('userId', 'userId', { unique: false });
-          gapStore.createIndex('date', 'date', { unique: false });
-          gapStore.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains('preferences')) {
-          const prefStore = db.createObjectStore('preferences', { keyPath: 'userId' });
-          prefStore.createIndex('updatedAt', 'updatedAt', { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains('calendar')) {
-          const calendarStore = db.createObjectStore('calendar', { keyPath: 'key' });
-          calendarStore.createIndex('userId', 'userId', { unique: false });
-        }
-
-        console.log('✅ IndexedDB schema created/updated');
-      };
+      }
     });
+  }
+
+  private handleUpgradeNeeded(event: IDBVersionChangeEvent): void {
+    const request = event.target as IDBOpenDBRequest;
+    const db = request.result;
+        
+    // Create collections for different data types
+    if (!db.objectStoreNames.contains('tasks')) {
+      const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
+      taskStore.createIndex('userId', 'userId', { unique: false });
+      taskStore.createIndex('createdAt', 'createdAt', { unique: false });
+    }
+
+    if (!db.objectStoreNames.contains('gaps')) {
+      const gapStore = db.createObjectStore('gaps', { keyPath: 'id' });
+      gapStore.createIndex('userId', 'userId', { unique: false });
+      gapStore.createIndex('date', 'date', { unique: false });
+      gapStore.createIndex('createdAt', 'createdAt', { unique: false });
+    }
+
+    if (!db.objectStoreNames.contains('preferences')) {
+      const prefStore = db.createObjectStore('preferences', { keyPath: 'userId' });
+      prefStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+    }
+
+    if (!db.objectStoreNames.contains('calendar')) {
+      const calendarStore = db.createObjectStore('calendar', { keyPath: 'key' });
+      calendarStore.createIndex('userId', 'userId', { unique: false });
+    }
+
+    console.log('✅ IndexedDB schema created/updated');
   }
 
   async resetDatabase(): Promise<void> {
@@ -107,38 +135,82 @@ export class IndexedDBStorage {
 
   // Task operations
   async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
-    if (!this.db) throw new Error('IndexedDB not initialized');
+    try {
+      console.log(`💾 Attempting to save ${tasks.length} tasks...${replaceAll ? ' (replacing all)' : ''}`);
 
-    console.log(`💾 Saving ${tasks.length} tasks to IndexedDB...${replaceAll ? ' (replacing all)' : ''}`);
-
-    const transaction = this.db.transaction(['tasks'], 'readwrite');
-    const store = transaction.objectStore('tasks');
-
-    return new Promise((resolve, reject) => {
-      const saveOperation = async () => {
-        try {
-          if (replaceAll) {
-            // Clear all tasks only if replaceAll is true
-            await new Promise<void>((clearResolve, clearReject) => {
-              const clearRequest = store.clear();
-              clearRequest.onsuccess = () => {
-                console.log(`🗑️ Cleared all existing tasks, adding ${tasks.length} new tasks...`);
-                clearResolve();
-              };
-              clearRequest.onerror = () => clearReject(clearRequest.error);
-            });
-          }
-
-          // Add or update tasks
-          await this.addOrUpdateTasks(store, tasks, resolve, reject);
-        } catch (error) {
-          reject(error);
+      if (!this.db) {
+        // Use localStorage fallback
+        console.log('Using localStorage fallback for saving tasks');
+        if (replaceAll) {
+          await this.fallbackSaveToLocalStorage('tasks', tasks);
+        } else {
+          // Merge with existing tasks
+          const existingTasks = await this.fallbackGetFromLocalStorage('tasks') || [];
+          const mergedTasks = tasks.reduce((acc, task) => {
+            const index = acc.findIndex(t => t.id === task.id);
+            if (index >= 0) {
+              acc[index] = task;
+            } else {
+              acc.push(task);
+            }
+            return acc;
+          }, [...existingTasks]);
+          await this.fallbackSaveToLocalStorage('tasks', mergedTasks);
         }
-      };
+        return;
+      }
 
-      saveOperation().catch(reject);
-      transaction.onerror = () => reject(transaction.error);
-    });
+      const transaction = this.db.transaction(['tasks'], 'readwrite');
+      const store = transaction.objectStore('tasks');
+
+      return new Promise((resolve, reject) => {
+        const saveOperation = async () => {
+          try {
+            if (replaceAll) {
+              await new Promise<void>((clearResolve, clearReject) => {
+                const clearRequest = store.clear();
+                clearRequest.onsuccess = () => {
+                  console.log(`🗑️ Cleared all existing tasks, adding ${tasks.length} new tasks...`);
+                  clearResolve();
+                };
+                clearRequest.onerror = () => {
+                  console.warn('Failed to clear IndexedDB, falling back to localStorage');
+                  this.fallbackSaveToLocalStorage('tasks', tasks)
+                    .then(clearResolve)
+                    .catch(clearReject);
+                };
+              });
+            }
+
+            // Add or update tasks
+            await this.addOrUpdateTasks(store, tasks, resolve, reject);
+          } catch (error) {
+            console.warn('Error in IndexedDB operation, falling back to localStorage');
+            this.fallbackSaveToLocalStorage('tasks', tasks)
+              .then(resolve)
+              .catch(reject);
+          }
+        };
+
+        saveOperation().catch(() => {
+          console.warn('Error in save operation, falling back to localStorage');
+          this.fallbackSaveToLocalStorage('tasks', tasks)
+            .then(resolve)
+            .catch(reject);
+        });
+        
+        transaction.onerror = () => {
+          console.warn('Transaction error, falling back to localStorage');
+          this.fallbackSaveToLocalStorage('tasks', tasks)
+            .then(resolve)
+            .catch(reject);
+        };
+      });
+    } catch (error) {
+      console.error('Critical error saving tasks:', error);
+      // Try one last time with localStorage
+      await this.fallbackSaveToLocalStorage('tasks', tasks);
+    }
   }
 
   async saveTask(task: Task): Promise<void> {
@@ -207,25 +279,40 @@ export class IndexedDBStorage {
   }
 
   async getTasks(): Promise<Task[]> {
-    if (!this.db) throw new Error('IndexedDB not initialized');
+    try {
+      if (!this.db) {
+        // Use localStorage fallback
+        const tasks = await this.fallbackGetFromLocalStorage('tasks') || [];
+        return Array.isArray(tasks) ? tasks : [];
+      }
 
-    const transaction = this.db.transaction(['tasks'], 'readonly');
-    const store = transaction.objectStore('tasks');
-    const index = store.index('userId');
+      const transaction = this.db.transaction(['tasks'], 'readonly');
+      const store = transaction.objectStore('tasks');
+      const index = store.index('userId');
 
-    return new Promise((resolve, reject) => {
-      const request = index.getAll(this.userId);
-      request.onsuccess = () => {
-        const items = request.result;
-        const tasks = items.map(item => {
-          // Remove internal fields from the task object
-          const { userId, createdAt, updatedAt, version, ...task } = item;
-          return task as Task;
-        });
-        resolve(tasks);
-      };
-      request.onerror = () => reject(request.error);
-    });
+      return new Promise((resolve, reject) => {
+        const request = index.getAll(this.userId);
+        request.onsuccess = () => {
+          const items = request.result;
+          const tasks = items.map(item => {
+            // Remove internal fields from the task object
+            const { userId, createdAt, updatedAt, version, ...task } = item;
+            return task as Task;
+          });
+          resolve(tasks);
+        };
+        request.onerror = () => {
+          console.warn('Failed to get tasks from IndexedDB, falling back to localStorage');
+          this.fallbackGetFromLocalStorage('tasks')
+            .then(tasks => resolve(Array.isArray(tasks) ? tasks : []))
+            .catch(reject);
+        };
+      });
+    } catch (error) {
+      console.error('Error getting tasks:', error);
+      // Return empty array as fallback
+      return [];
+    }
   }
 
   async updateTask(taskId: string, updates: Partial<Task>): Promise<Task | null> {
@@ -615,20 +702,72 @@ export class IndexedDBStorage {
   }
 
   // Utility methods
-  private async getKeysFromIndex(index: IDBIndex, value: any): Promise<string[]> {
-    return new Promise((resolve, reject) => {
-      const request = index.getAllKeys(value);
-      request.onsuccess = () => resolve(request.result as string[]);
-      request.onerror = () => reject(request.error);
-    });
+
+
+  private async testDatabaseWritable(): Promise<boolean> {
+    if (!this.db) return false;
+
+    try {
+      const transaction = this.db.transaction(['tasks'], 'readwrite');
+      const store = transaction.objectStore('tasks');
+      
+      // Try to add a test item
+      const testItem = {
+        id: '_test_' + Date.now(),
+        userId: this.userId,
+        title: 'Test Task',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const request = store.add(testItem);
+        request.onsuccess = () => {
+          // Clean up the test item
+          store.delete(testItem.id);
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Database write test failed:', error);
+      return false;
+    }
   }
 
-  private async getItemFromStore(store: IDBObjectStore, key: string): Promise<StorageItem | null> {
-    return new Promise((resolve, reject) => {
-      const request = store.get(key);
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
+  private fallbackToLocalStorage(): void {
+    // Create a proxy that redirects all operations to localStorage
+    this.db = null;
+    console.log('🔄 Switching to localStorage fallback');
+  }
+
+  private getLocalStorageKey(type: string, id?: string): string {
+    const base = `gaply_${type}_${this.userId}`;
+    return id ? `${base}_${id}` : base;
+  }
+
+  private async fallbackSaveToLocalStorage(type: string, data: any, id?: string): Promise<void> {
+    try {
+      const key = this.getLocalStorageKey(type, id);
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (error) {
+      console.error(`Failed to save to localStorage (${type}):`, error);
+      throw error;
+    }
+  }
+
+  private async fallbackGetFromLocalStorage(type: string, id?: string): Promise<any> {
+    try {
+      const key = this.getLocalStorageKey(type, id);
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error(`Failed to get from localStorage (${type}):`, error);
+      return null;
+    }
   }
 
   async close(): Promise<void> {

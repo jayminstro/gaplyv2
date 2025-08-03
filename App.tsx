@@ -56,10 +56,36 @@ export default function App() {
 
   // Widget mode detection
   const [isWidgetMode, setIsWidgetMode] = useState(false);
+  
+  // Offline state detection
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Local-first service
   const [localFirstService, setLocalFirstService] = useState<EnhancedStorageManager | null>(null);
   const [loginSyncService, setLoginSyncService] = useState<EnhancedLoginSyncService | null>(null);
+
+  // Handle online/offline state
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      console.log('🌐 Device is back online');
+      toast.success('Back online - changes will sync automatically');
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+      console.log('📱 Device is offline');
+      toast.message('Working offline - changes will sync when back online');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -250,6 +276,13 @@ export default function App() {
       try {
         console.log('Loading app data for user:', user.id);
         
+        // Check if we're offline
+        if (!navigator.onLine) {
+          console.log('📱 Device is offline - skipping server sync');
+          // Keep using local data
+          return;
+        }
+        
         const loadWithRetry = async (apiCall: () => Promise<any>, name: string, defaultValue: any) => {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
@@ -258,7 +291,10 @@ export default function App() {
               return result;
             } catch (error) {
               console.error(`Error loading ${name} (attempt ${attempt + 1}):`, error);
-              if (attempt === 2) return defaultValue; // Last attempt failed, use default
+              if (attempt === 2) {
+                console.log(`Failed to load ${name} from server - keeping local data`);
+                return null; // Return null instead of defaultValue to keep local data
+              }
               await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
             }
           }
@@ -266,22 +302,30 @@ export default function App() {
 
         // Load tasks and gaps with retry logic
         const [tasksData, gapsData] = await Promise.all([
-          loadWithRetry(() => tasksAPI.get(), 'tasks', []),
-          loadWithRetry(() => GapsAPI.getGapsForDate(new Date().toISOString().split('T')[0], ''), 'gaps', DEFAULT_GAPS)
+          loadWithRetry(() => tasksAPI.get(), 'tasks', null),
+          loadWithRetry(() => GapsAPI.getGapsForDate(new Date().toISOString().split('T')[0], ''), 'gaps', null)
         ]);
 
-        if (tasksData) {
+        // Only update state if we got valid data from server
+        if (tasksData && Array.isArray(tasksData)) {
           const sanitizedTasks = sanitizeTasks(tasksData);
           setGlobalTasks(sanitizedTasks);
+          console.log('✅ Tasks updated from server');
+        } else {
+          console.log('📱 Keeping existing local tasks');
         }
 
-        if (gapsData) {
+        if (gapsData && Array.isArray(gapsData)) {
           setGaps(gapsData);
+          console.log('✅ Gaps updated from server');
+        } else {
+          console.log('📱 Keeping existing local gaps');
         }
 
-        console.log('✅ App data loaded successfully');
+        console.log('✅ App data sync completed');
       } catch (error) {
-        console.error('❌ Error loading app data:', error);
+        console.error('❌ Error during app data sync:', error);
+        console.log('📱 Keeping existing local data');
       }
     };
 
@@ -652,6 +696,15 @@ export default function App() {
           {renderContent()}
         </ErrorBoundary>
       </div>
+
+      {/* Offline Indicator */}
+      {isOffline && (
+        <div className="fixed top-0 left-0 right-0 z-30 bg-yellow-600/90 backdrop-blur-sm">
+          <div className="flex items-center justify-center py-1 px-4 text-sm text-white safe-area-left safe-area-right safe-area-top">
+            <span>Working Offline</span>
+          </div>
+        </div>
+      )}
 
       {/* Fixed Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
