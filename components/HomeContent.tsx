@@ -141,7 +141,7 @@ export function HomeContent({
         <div className={COMPONENT_PATTERNS.GRID_2_COLS}>
           {(globalTasks || []).slice(0, 4).map((task, index) => (
             <CardWrapper
-              key={task.id}
+              key={`recent-${task.id}-${index}`}
               onClick={() => onOpenTask?.(task)}
               className="text-left"
             >

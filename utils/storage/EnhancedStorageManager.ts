@@ -229,6 +229,22 @@ export class EnhancedStorageManager {
     }
   }
 
+  // Debug method to force database reset for activities
+  async forceResetForActivities(): Promise<void> {
+    console.log('🔄 EnhancedStorageManager: Force resetting database for activities...');
+    try {
+      // Force a complete database reset
+      await this.resetDatabase();
+      
+      // Re-initialize the storage
+      await this.initialize();
+      console.log('✅ EnhancedStorageManager: Force reset completed');
+    } catch (error) {
+      console.error('❌ EnhancedStorageManager: Error in force reset:', error);
+      throw error;
+    }
+  }
+
     async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
     await this.ensureInitialized();
     const startTime = performance.now();
@@ -370,6 +386,51 @@ export class EnhancedStorageManager {
       return prefs;
     } catch (error) {
       await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime, false);
+      throw error;
+    }
+  }
+
+  // Activity storage methods
+  async saveActivities(activities: any[]): Promise<void> {
+    await this.ensureInitialized();
+    const startTime = performance.now();
+    
+    try {
+      console.log(`🔄 EnhancedStorageManager: Saving ${activities.length} activities...`);
+      await this.getActiveStorage().saveActivities(activities);
+      await this.trackOperation('saveActivities', 'batch', 'activities', activities.length, performance.now() - startTime);
+      console.log(`✅ EnhancedStorageManager: Successfully saved ${activities.length} activities`);
+    } catch (error) {
+      console.error(`❌ EnhancedStorageManager: Error saving activities:`, error);
+      await this.trackOperation('saveActivities', 'batch', 'activities', activities.length, performance.now() - startTime, false);
+      throw error;
+    }
+  }
+
+  async getActivities(): Promise<any[]> {
+    await this.ensureInitialized();
+    const startTime = performance.now();
+    
+    try {
+      const activities = await this.getActiveStorage().getActivities();
+      await this.trackOperation('getActivities', 'batch', 'activities', activities.length, performance.now() - startTime);
+      return activities;
+    } catch (error) {
+      await this.trackOperation('getActivities', 'batch', 'activities', 0, performance.now() - startTime, false);
+      throw error;
+    }
+  }
+
+  async updateActivity(activityId: string, updates: any): Promise<any | null> {
+    await this.ensureInitialized();
+    const startTime = performance.now();
+    
+    try {
+      const result = await this.getActiveStorage().updateActivity(activityId, updates);
+      await this.trackOperation('updateActivity', activityId, 'activity', 1, performance.now() - startTime);
+      return result;
+    } catch (error) {
+      await this.trackOperation('updateActivity', activityId, 'activity', 1, performance.now() - startTime, false);
       throw error;
     }
   }

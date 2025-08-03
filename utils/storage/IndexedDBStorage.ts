@@ -18,7 +18,7 @@ export interface StorageInfo {
 export class IndexedDBStorage {
   private db: IDBDatabase | null = null;
   private readonly dbName = 'GaplyStorage';
-  private readonly version = 3;
+  private readonly version = 5;
   private readonly userId: string;
 
   constructor(userId: string) {
@@ -95,6 +95,25 @@ export class IndexedDBStorage {
     if (!db.objectStoreNames.contains('calendar')) {
       const calendarStore = db.createObjectStore('calendar', { keyPath: 'key' });
       calendarStore.createIndex('userId', 'userId', { unique: false });
+    }
+
+    // Create or update activities store
+    if (!db.objectStoreNames.contains('activities')) {
+      const activityStore = db.createObjectStore('activities', { keyPath: 'id' });
+      activityStore.createIndex('userId', 'userId', { unique: false });
+      activityStore.createIndex('category', 'category', { unique: false });
+      activityStore.createIndex('createdAt', 'createdAt', { unique: false });
+      activityStore.createIndex('updated_at', 'updated_at', { unique: false });
+    } else {
+      // Add updated_at index if it doesn't exist
+      const request = event.target as IDBOpenDBRequest;
+      const transaction = request.transaction;
+      if (transaction) {
+        const activityStore = transaction.objectStore('activities');
+        if (activityStore && !activityStore.indexNames.contains('updated_at')) {
+          activityStore.createIndex('updated_at', 'updated_at', { unique: false });
+        }
+      }
     }
 
     console.log('✅ IndexedDB schema created/updated');
@@ -778,6 +797,155 @@ export class IndexedDBStorage {
       console.error(`Failed to get from localStorage (${type}):`, error);
       return null;
     }
+  }
+
+  async saveActivities(activities: any[]): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB not initialized');
+
+    return new Promise<void>((resolve, reject) => {
+      try {
+        const transaction = this.db!.transaction(['activities'], 'readwrite');
+        const store = transaction.objectStore('activities');
+
+        // Get existing activities first
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = async () => {
+          const existingActivities = getAllRequest.result || [];
+          const existingMap = new Map(existingActivities.map(a => [a.id, a]));
+
+          // Process each activity
+          for (const activity of activities) {
+            const existing = existingMap.get(activity.id);
+            
+            if (!existing) {
+              // New activity - add it
+              store.add({
+                ...activity,
+                userId: this.userId,
+                createdAt: activity.createdAt || new Date().toISOString(),
+                updated_at: activity.updated_at || new Date().toISOString()
+              });
+            } else {
+              // Compare updated_at timestamps
+              const serverTimestamp = new Date(activity.updated_at || '').getTime();
+              const localTimestamp = new Date(existing.updated_at || '').getTime();
+
+              if (serverTimestamp > localTimestamp) {
+                // Server version is newer - update local copy
+                store.put({
+                  ...activity,
+                  userId: this.userId,
+                  createdAt: existing.createdAt,
+                  updated_at: activity.updated_at
+                });
+              }
+            }
+          }
+
+          // Delete activities that no longer exist on server
+          const serverIds = new Set(activities.map(a => a.id));
+          for (const existingActivity of existingActivities) {
+            if (!serverIds.has(existingActivity.id)) {
+              store.delete(existingActivity.id);
+            }
+          }
+
+          transaction.oncomplete = () => {
+            console.log(`✅ Successfully synced ${activities.length} activities`);
+            resolve();
+          };
+        };
+
+        getAllRequest.onerror = () => {
+          console.error('❌ Error getting existing activities:', getAllRequest.error);
+          reject(getAllRequest.error);
+        };
+
+        transaction.onerror = () => {
+          console.error('❌ Error saving activities:', transaction.error);
+          reject(transaction.error);
+        };
+      } catch (error) {
+        console.error('❌ Error in saveActivities:', error);
+        reject(error);
+      }
+    });
+  }
+
+  async getActivities(): Promise<any[]> {
+    if (!this.db) throw new Error('IndexedDB not initialized');
+
+    return new Promise<any[]>((resolve, reject) => {
+      try {
+        const transaction = this.db!.transaction(['activities'], 'readonly');
+        const store = transaction.objectStore('activities');
+        const userIndex = store.index('userId');
+        const request = userIndex.getAll(this.userId);
+
+        request.onsuccess = () => {
+          const activities = request.result || [];
+          // Sort by updated_at to ensure consistent order
+          activities.sort((a, b) => {
+            const aTime = new Date(a.updated_at || '').getTime();
+            const bTime = new Date(b.updated_at || '').getTime();
+            return bTime - aTime; // Most recent first
+          });
+          console.log(`📱 Retrieved ${activities.length} activities from IndexedDB`);
+          resolve(activities);
+        };
+
+        request.onerror = () => {
+          console.error('❌ Error getting activities:', request.error);
+          reject(request.error);
+        };
+      } catch (error) {
+        console.error('❌ Error in getActivities:', error);
+        reject(error);
+      }
+    });
+  }
+
+  async updateActivity(activityId: string, updates: any): Promise<any | null> {
+    if (!this.db) throw new Error('IndexedDB not initialized');
+
+    return new Promise<any | null>((resolve, reject) => {
+      try {
+        const transaction = this.db!.transaction(['activities'], 'readwrite');
+        const store = transaction.objectStore('activities');
+        const request = store.get(activityId);
+
+        request.onsuccess = () => {
+          const activity = request.result;
+          if (!activity) {
+            resolve(null);
+            return;
+          }
+
+          const updatedActivity = {
+            ...activity,
+            ...updates,
+            updatedAt: new Date().toISOString()
+          };
+
+          const updateRequest = store.put(updatedActivity);
+          updateRequest.onsuccess = () => {
+            resolve(updatedActivity);
+          };
+          updateRequest.onerror = () => {
+            reject(updateRequest.error);
+          };
+        };
+
+        request.onerror = () => {
+          console.error('❌ Error updating activity:', request.error);
+          reject(request.error);
+        };
+      } catch (error) {
+        console.error('❌ Error in updateActivity:', error);
+        reject(error);
+      }
+    });
   }
 
   async close(): Promise<void> {

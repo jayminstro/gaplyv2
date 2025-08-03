@@ -235,7 +235,7 @@ export function CategorizedTasks({
             <div className={LAYOUT_CONSTANTS.CARD_SPACING_SMALL}>
               {category.tasks.map((task) => (
                 <TaskTile
-                  key={task.id}
+                  key={`${category.title.toLowerCase()}-${task.id}`}
                   task={task}
                   onEdit={() => onEdit(task)}
                   onTimer={() => onTimer(task)}

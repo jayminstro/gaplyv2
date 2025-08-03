@@ -56,41 +56,70 @@ export function ActivitiesContent({
   useEffect(() => {
     const loadDiscoverData = async () => {
       try {
-        const data = await exploreAPI.get();
-        
-        // Handle different data structures from the API
-        if (Array.isArray(data)) {
-          // If data is an array (from explore table), convert to expected structure
-          setDiscoverData({
-            popular: data.slice(0, 3) || [],
-            categories: [
-              { id: 'cat-1', title: 'Social', icon: 'Users', color: 'text-purple-400', count: data.filter(a => a.category === 'Social').length },
-              { id: 'cat-2', title: 'Focus', icon: 'Target', color: 'text-green-400', count: data.filter(a => a.category === 'Focus').length },
-              { id: 'cat-3', title: 'Wellness', icon: 'Heart', color: 'text-pink-400', count: data.filter(a => a.category === 'Wellness').length },
-              { id: 'cat-4', title: 'Learning', icon: 'BookOpen', color: 'text-blue-400', count: data.filter(a => a.category === 'Learning').length },
-            ],
-            allActivities: data || []
-          });
-        } else if (data && typeof data === 'object') {
-          // If data has expected structure
-          setDiscoverData({
-            popular: data.popular || [],
-            categories: data.categories || [],
-            allActivities: data.allActivities || []
-          });
-        } else {
-          // Fallback to default structure
-          setDiscoverData({
-            popular: [],
-            categories: [
-              { id: 'cat-1', title: 'Social', icon: 'Users', color: 'text-purple-400', count: 0 },
-              { id: 'cat-2', title: 'Focus', icon: 'Target', color: 'text-green-400', count: 0 },
-              { id: 'cat-3', title: 'Wellness', icon: 'Heart', color: 'text-pink-400', count: 0 },
-              { id: 'cat-4', title: 'Learning', icon: 'BookOpen', color: 'text-blue-400', count: 0 },
-            ],
-            allActivities: []
-          });
+        // Try to load from local storage first
+        let activities: any[] = [];
+        if (localFirstService) {
+          console.log('📱 Loading activities from local storage...');
+          try {
+            activities = await localFirstService.getActivities();
+            console.log('📱 Activities loaded from storage:', activities.length);
+          } catch (error) {
+            console.error('❌ Error loading activities from storage:', error);
+            activities = [];
+          }
         }
+
+        // Load local data first for immediate display
+        if (activities.length > 0) {
+          console.log('📱 Using cached activities from local storage');
+          updateDiscoverData(activities);
+        }
+
+        // Always fetch latest data from API
+        try {
+          console.log('🌐 Fetching latest activities from API...');
+          const apiData = await exploreAPI.get();
+          
+          if (Array.isArray(apiData)) {
+            console.log('🌐 API returned activities:', apiData.length);
+            // For now, use API data directly since storage is having issues
+            console.log('📱 Using API data directly due to storage issues');
+            updateDiscoverData(apiData);
+            
+            // Try to save to local storage in background (don't block UI)
+            if (localFirstService) {
+              setTimeout(async () => {
+                try {
+                  console.log('💾 Attempting to save activities to local storage in background...');
+                  await localFirstService.saveActivities(apiData);
+                  console.log('✅ Activities saved to local storage successfully');
+                } catch (storageError) {
+                  console.error('❌ Background save failed:', storageError);
+                }
+              }, 1000);
+            }
+          } else {
+            console.log('🌐 API returned non-array data:', apiData);
+            // Use local data if available
+            if (activities.length > 0) {
+              console.log('📱 Using cached activities due to invalid API response');
+              updateDiscoverData(activities);
+            }
+          }
+        } catch (error) {
+          console.error('⚠️ Error fetching activities:', error);
+          // Continue using local data if available
+          if (activities.length > 0) {
+            console.log('📱 Continuing with cached activities');
+            updateDiscoverData(activities);
+          }
+        }
+
+        // Process activities data
+        if (activities.length === 0) {
+          console.log('📱 No activities available, showing empty state');
+        }
+        updateDiscoverData(activities);
       } catch (error) {
         console.error('Error loading discover data:', error);
         setDiscoverData({
@@ -108,6 +137,40 @@ export function ActivitiesContent({
 
     loadDiscoverData();
   }, []);
+
+  const updateDiscoverData = (activities: any[]) => {
+    if (activities.length > 0) {
+      const categoryCounts = {
+        Social: activities.filter(a => a.category === 'Social').length,
+        Focus: activities.filter(a => a.category === 'Focus').length,
+        Wellness: activities.filter(a => a.category === 'Wellness').length,
+        Learning: activities.filter(a => a.category === 'Learning').length,
+      };
+
+      setDiscoverData({
+        popular: activities.slice(0, 3) || [],
+        categories: [
+          { id: 'cat-1', title: 'Social', icon: 'Users', color: 'text-purple-400', count: categoryCounts.Social },
+          { id: 'cat-2', title: 'Focus', icon: 'Target', color: 'text-green-400', count: categoryCounts.Focus },
+          { id: 'cat-3', title: 'Wellness', icon: 'Heart', color: 'text-pink-400', count: categoryCounts.Wellness },
+          { id: 'cat-4', title: 'Learning', icon: 'BookOpen', color: 'text-blue-400', count: categoryCounts.Learning },
+        ],
+        allActivities: activities
+      });
+    } else {
+      // Fallback to default structure if no data available
+      setDiscoverData({
+        popular: [],
+        categories: [
+          { id: 'cat-1', title: 'Social', icon: 'Users', color: 'text-purple-400', count: 0 },
+          { id: 'cat-2', title: 'Focus', icon: 'Target', color: 'text-green-400', count: 0 },
+          { id: 'cat-3', title: 'Wellness', icon: 'Heart', color: 'text-pink-400', count: 0 },
+          { id: 'cat-4', title: 'Learning', icon: 'BookOpen', color: 'text-blue-400', count: 0 },
+        ],
+        allActivities: []
+      });
+    }
+  };
 
   const handleCategoryClick = (categoryTitle: string) => {
     setSelectedCategory(categoryTitle);
