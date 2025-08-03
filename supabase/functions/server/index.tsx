@@ -726,6 +726,100 @@ app.post("/make-server-966d4846/tasks/create", async (c) => {
   }
 });
 
+// Sync endpoint for tasks with timestamp comparison
+app.put("/make-server-966d4846/tasks/:id/sync", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    const taskId = c.req.param('id');
+    const task = await c.req.json();
+
+    // Get the existing task to compare timestamps
+    const { data: existingTask } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .eq('user_id', user.id)
+      .single();
+
+    // Compare timestamps
+    const localTimestamp = new Date(task.updated_at || '').getTime();
+    const serverTimestamp = existingTask ? new Date(existingTask.updated_at || '').getTime() : 0;
+
+    // Only update if local version is newer
+    if (!existingTask || localTimestamp > serverTimestamp) {
+      const dbTask = {
+        id: taskId,
+        user_id: user.id,
+        title: task.title,
+        category: task.category || 'Personal',
+        duration: typeof task.duration === 'string' ? parseDurationToMinutes(task.duration) : (task.duration || 0),
+        energy_level: task.energyLevel || 'Medium',
+        notes: task.notes || null,
+        priority: task.priority || 'Medium',
+        completed: task.isCompleted || task.is_completed || false,
+        due_date: combineDateAndTime(task.dueDate, task.dueTime),
+        reminder_date: combineDateAndTime(task.reminderDate, task.reminderTime),
+        timerStoppedAt: task.timerStoppedAt || null,
+        created_at: task.created_at || new Date().toISOString(),
+        updated_at: task.updated_at || new Date().toISOString()
+      };
+
+      const { data: updatedTask, error: updateError } = await supabase
+        .from('tasks')
+        .upsert(dbTask)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.log("Error updating task:", updateError);
+        return c.json({ error: "Failed to update task" }, 500);
+      }
+
+      // Transform database task back to frontend format
+      const dueDateTime = splitTimestamp(updatedTask.due_date);
+      const reminderDateTime = splitTimestamp(updatedTask.reminder_date);
+      
+      const transformedTask = {
+        id: updatedTask.id,
+        user_id: updatedTask.user_id,
+        title: updatedTask.title,
+        category: updatedTask.category,
+        duration: formatDurationFromMinutes(updatedTask.duration),
+        dueDate: dueDateTime.date,
+        dueTime: dueDateTime.time,
+        status: updatedTask.completed ? 'completed' : 'draft',
+        isTimerRunning: false,
+        timerRemaining: updatedTask.duration * 60,
+        timerTotal: updatedTask.duration * 60,
+        iconColor: getDefaultIconColor(updatedTask.category),
+        icon: getDefaultIcon(updatedTask.category),
+        notes: updatedTask.notes,
+        energyLevel: updatedTask.energy_level,
+        reminderDate: reminderDateTime.date,
+        reminderTime: reminderDateTime.time,
+        priority: updatedTask.priority,
+        scheduledGapId: null,
+        googleCalendarEventId: null,
+        completedSessions: 0,
+        isCompleted: updatedTask.completed || false,
+        is_completed: updatedTask.completed || false,
+        timerStoppedAt: updatedTask.timerStoppedAt,
+        created_at: updatedTask.created_at,
+        updated_at: updatedTask.updated_at
+      };
+
+      return c.json(transformedTask);
+    } else {
+      // Local version is older or same, return server version
+      return c.json(existingTask);
+    }
+  } catch (error) {
+    console.log("Error syncing task:", error);
+    return c.json({ error: "Failed to sync task" }, 500);
+  }
+});
+
 app.put("/make-server-966d4846/tasks/:id", async (c) => {
   try {
     const user = c.get('user');

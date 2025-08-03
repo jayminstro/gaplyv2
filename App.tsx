@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { preferencesAPI, tasksAPI, profileAPI } from './utils/api';
+import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
 import { supabase } from './utils/supabase/client';
 import { toast } from 'sonner';
@@ -64,12 +64,54 @@ export default function App() {
   const [localFirstService, setLocalFirstService] = useState<EnhancedStorageManager | null>(null);
   const [loginSyncService, setLoginSyncService] = useState<EnhancedLoginSyncService | null>(null);
 
+  // Sync local tasks with server
+  const syncLocalTasks = async () => {
+    if (!localFirstService) return;
+
+    try {
+      console.log('🔄 Syncing local tasks with server...');
+      
+      // Get local tasks
+      const localTasks = await localFirstService.getTasks();
+      
+      // Get server tasks
+      const serverTasks = await tasksAPI.get();
+      
+      // Compare and sync tasks that are newer locally
+      for (const localTask of localTasks) {
+        const serverTask = serverTasks.find((t: Task) => t.id === localTask.id);
+        
+        if (!serverTask) {
+          // Task doesn't exist on server, create it
+          console.log(`📝 Creating new task on server: ${localTask.title}`);
+          await tasksAPIExtended.create(localTask);
+          continue;
+        }
+        
+        const localDate = new Date(localTask.updated_at || 0);
+        const serverDate = new Date(serverTask.updated_at || 0);
+        
+        if (localDate > serverDate) {
+          // Local task is newer, update server
+          console.log(`🔄 Updating server task with newer local version: ${localTask.title}`);
+          await tasksAPIExtended.update(localTask.id, localTask);
+        }
+      }
+      
+      console.log('✅ Task sync completed');
+    } catch (error) {
+      console.error('❌ Error syncing tasks:', error);
+      // Don't show error to user since local data is still intact
+    }
+  };
+
   // Handle online/offline state
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
       console.log('🌐 Device is back online');
-      toast.success('Back online - changes will sync automatically');
+      toast.success('Back online - syncing changes...');
+      syncLocalTasks(); // Sync when coming back online
     };
 
     const handleOffline = () => {
@@ -85,7 +127,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [localFirstService]); // Add localFirstService as dependency
 
   // Check for widget mode and authentication on app start
   useEffect(() => {
@@ -306,11 +348,47 @@ export default function App() {
           loadWithRetry(() => GapsAPI.getGapsForDate(new Date().toISOString().split('T')[0], ''), 'gaps', null)
         ]);
 
-        // Only update state if we got valid data from server
-        if (tasksData && Array.isArray(tasksData)) {
-          const sanitizedTasks = sanitizeTasks(tasksData);
-          setGlobalTasks(sanitizedTasks);
-          console.log('✅ Tasks updated from server');
+        // Compare server data with local data
+        if (tasksData && Array.isArray(tasksData) && localFirstService) {
+          const localTasks = await localFirstService.getTasks();
+          const sanitizedServerTasks = sanitizeTasks(tasksData);
+          
+          // Create a map of tasks by ID for easier lookup
+          const mergedTasks = new Map<string, Task>();
+          
+          // First add all local tasks
+          localTasks.forEach(task => {
+            mergedTasks.set(task.id, task);
+          });
+          
+          // Then merge server tasks, only overwriting if they're newer
+          sanitizedServerTasks.forEach(serverTask => {
+            const localTask = mergedTasks.get(serverTask.id);
+            
+            if (!localTask) {
+              // Task doesn't exist locally, add it
+              mergedTasks.set(serverTask.id, serverTask);
+            } else {
+              // Compare timestamps
+              const serverTimestamp = new Date(serverTask.updated_at || '').getTime();
+              const localTimestamp = new Date(localTask.updated_at || '').getTime();
+              
+              if (serverTimestamp > localTimestamp) {
+                // Server task is newer, use it
+                mergedTasks.set(serverTask.id, serverTask);
+              }
+              // Otherwise keep the local task
+            }
+          });
+          
+          // Convert map back to array and update state
+          const finalTasks = Array.from(mergedTasks.values());
+          setGlobalTasks(finalTasks);
+          
+          // Save merged tasks back to local storage
+          await localFirstService.saveTasks(finalTasks, true);
+          
+          console.log('✅ Tasks merged and updated');
         } else {
           console.log('📱 Keeping existing local tasks');
         }
@@ -505,19 +583,39 @@ export default function App() {
     }
   };
 
-  // Enhanced task update handler
+  // Enhanced task update handler with offline support
   const handleTaskUpdated = async (task: Task) => {
     try {
       if (localFirstService) {
-        console.log(`📝 Updating task: ${task.title}`);
+        // Add updated_at timestamp
+        const updatedTask = {
+          ...task,
+          updated_at: new Date().toISOString()
+        };
         
-        // Save the updated task
-        await localFirstService.saveTask(task);
+        console.log(`📝 Updating task: ${updatedTask.title}`);
+        
+        // Save the updated task locally
+        await localFirstService.saveTask(updatedTask);
         
         // Get all tasks and update local state
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
-        console.log(`✅ Task updated: ${task.title}`);
+        console.log(`✅ Task updated: ${updatedTask.title}`);
+
+        // If online, try to sync with server
+        if (navigator.onLine) {
+          try {
+            console.log('🔄 Syncing task update with server...');
+            await tasksAPIExtended.update(updatedTask.id, updatedTask);
+            console.log('✅ Task synced with server');
+          } catch (error) {
+            console.warn('⚠️ Failed to sync task with server - will sync later:', error);
+            // Don't show error to user since local update succeeded
+          }
+        } else {
+          console.log('📱 Task updated locally (offline) - will sync when online');
+        }
       }
     } catch (error) {
       console.error('❌ Error updating task:', error);
@@ -624,6 +722,7 @@ export default function App() {
             setEditingTask={setEditingTask}
             isNewTaskModalOpen={isNewTaskModalOpen}
             setIsNewTaskModalOpen={setIsNewTaskModalOpen}
+            localFirstService={localFirstService}
           />
         );
       case 'settings':

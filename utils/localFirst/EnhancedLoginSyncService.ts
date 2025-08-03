@@ -13,10 +13,7 @@ export interface LoginSyncResult {
 
 export class EnhancedLoginSyncService {
   private storage: EnhancedStorageManager;
-  private userId: string;
-
-  constructor(userId: string, existingStorage?: EnhancedStorageManager) {
-    this.userId = userId;
+  constructor(private userId: string, existingStorage?: EnhancedStorageManager) {
     if (existingStorage) {
       this.storage = existingStorage;
     } else {
@@ -219,11 +216,40 @@ export class EnhancedLoginSyncService {
         remotePreferences: !!remoteData.preferences
       });
 
-      // Merge tasks (remote takes precedence for now)
-      if (remoteData.tasks.length > 0) {
-        console.log('💾 Saving remote tasks (replacing all)...');
-        await this.storage.saveTasks(remoteData.tasks, true); // Use replaceAll=true for sync
-        result.tasksSynced = remoteData.tasks.length;
+      // Merge tasks based on timestamps
+      const mergedTasks = new Map<string, Task>();
+      
+      // First add all local tasks
+      localTasks.forEach(task => {
+        mergedTasks.set(task.id, task);
+      });
+
+      // Then merge remote tasks, only overwriting if they're newer
+      remoteData.tasks.forEach(remoteTask => {
+        const localTask = mergedTasks.get(remoteTask.id);
+        
+        if (!localTask) {
+          // Task doesn't exist locally, add it
+          mergedTasks.set(remoteTask.id, remoteTask);
+        } else {
+          // Compare timestamps
+          const remoteTimestamp = new Date(remoteTask.updated_at || '').getTime();
+          const localTimestamp = new Date(localTask.updated_at || '').getTime();
+          
+          if (remoteTimestamp > localTimestamp) {
+            // Remote task is newer, use it
+            mergedTasks.set(remoteTask.id, remoteTask);
+          }
+          // Otherwise keep the local task
+        }
+      });
+
+      // Save merged tasks
+      const finalTasks = Array.from(mergedTasks.values());
+      if (finalTasks.length > 0) {
+        console.log('💾 Saving merged tasks...');
+        await this.storage.saveTasks(finalTasks, true);
+        result.tasksSynced = finalTasks.length;
         console.log(`✅ Synced ${result.tasksSynced} tasks`);
       }
 
