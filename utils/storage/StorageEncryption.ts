@@ -336,4 +336,8 @@ export class EncryptedStorageStrategy {
   async close(): Promise<void> {
     return this.storage.close();
   }
+
+  async resetDatabase(): Promise<void> {
+    return this.storage.resetDatabase();
+  }
 } 
