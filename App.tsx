@@ -423,11 +423,36 @@ export default function App() {
           console.log('📱 Keeping existing local tasks');
         }
 
-        if (gapsData && Array.isArray(gapsData)) {
-          setGaps(gapsData);
-          console.log('✅ Gaps updated from server');
+        // Handle gaps with local-first pattern
+        if (gapsData && Array.isArray(gapsData) && localFirstService) {
+          // Save gaps to local storage first
+          console.log('💾 Saving gaps to local storage...');
+          for (const gap of gapsData) {
+            await localFirstService.saveGaps([gap], gap.date || new Date().toISOString().split('T')[0]);
+          }
+          console.log('✅ Gaps saved to local storage');
+          
+          // Load gaps from local storage to ensure consistency
+          const today = new Date().toISOString().split('T')[0];
+          const localGaps = await localFirstService.getGaps(today);
+          setGaps(localGaps);
+          console.log('✅ Gaps loaded from local storage');
         } else {
-          console.log('📱 Keeping existing local gaps');
+          // Try to load from local storage if server data is not available
+          if (localFirstService) {
+            try {
+              const today = new Date().toISOString().split('T')[0];
+              const localGaps = await localFirstService.getGaps(today);
+              setGaps(localGaps);
+              console.log('📱 Using gaps from local storage');
+            } catch (error) {
+              console.log('📱 No local gaps available');
+              setGaps([]);
+            }
+          } else {
+            console.log('📱 No local storage service available');
+            setGaps([]);
+          }
         }
 
         console.log('✅ App data sync completed');
@@ -522,7 +547,23 @@ export default function App() {
     try {
       console.log(`Saving ${section} for user:`, user.id);
       
-      await preferencesAPI.save(preferences);
+      // Save to local storage first
+      if (localFirstService) {
+        console.log(`💾 Saving ${section} preferences to local storage...`);
+        await localFirstService.savePreferences(preferences);
+        console.log(`✅ ${section} preferences saved to local storage`);
+      }
+
+      // Then sync to remote API
+      try {
+        console.log(`🌐 Syncing ${section} preferences to remote API...`);
+        await preferencesAPI.save(preferences);
+        console.log(`✅ ${section} preferences synced to remote API`);
+      } catch (apiError) {
+        console.error(`⚠️ Failed to sync ${section} to remote API, but local save succeeded:`, apiError);
+        // Don't show error to user since local save worked
+      }
+
       setUnsavedChanges(prev => ({ ...prev, [section]: false }));
       toast.success('Preferences saved');
     } catch (error) {
@@ -763,6 +804,7 @@ export default function App() {
               preferences={preferences}
               onSignOut={handleSignOut}
               onPreferencesUpdate={updatePreferencesFromSettings}
+              localFirstService={localFirstService}
             />
           </div>
         );

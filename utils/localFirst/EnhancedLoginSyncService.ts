@@ -321,6 +321,18 @@ export class EnhancedLoginSyncService {
     return this.storage.getPreferences();
   }
 
+  async savePreferences(preferences: UserPreferences): Promise<void> {
+    return this.storage.savePreferences(preferences);
+  }
+
+  async saveTasks(tasks: Task[], replaceAll: boolean = false): Promise<void> {
+    return this.storage.saveTasks(tasks, replaceAll);
+  }
+
+  async saveGaps(gaps: TimeGap[], date: string): Promise<void> {
+    return this.storage.saveGaps(gaps, date);
+  }
+
   async getSyncStatus(): Promise<{
     isOnline: boolean;
     lastSyncTime: Date | null;

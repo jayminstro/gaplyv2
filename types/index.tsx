@@ -47,7 +47,7 @@ export interface TimeGap {
   // Gap Logic Metadata (as per specification)
   gap_source_id: 'default' | 'calendar' | 'manual';
   modified_by: 'system' | 'calendar_sync' | 'user' | 'ai_assistant';
-  last_modified_at: string;
+  updated_at: string;
   origin_gap_id?: string; // Reference to original gap before splitting
 }
 
