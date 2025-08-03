@@ -219,6 +219,13 @@ export const tasksAPIExtended = {
     method: 'PUT',
     body: JSON.stringify(updates),
   }),
+  updateWithTimestamp: (id: string, task: any) => apiRequest(`/tasks/${id}/sync`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...task,
+      updated_at: task.updated_at || new Date().toISOString()
+    }),
+  }),
   delete: (id: string) => apiRequest(`/tasks/${id}`, {
     method: 'DELETE',
   }),

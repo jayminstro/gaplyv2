@@ -227,8 +227,11 @@ export class IndexedDBStorage {
         id: task.id,
         userId: this.userId,
         createdAt: task.created_at || new Date().toISOString(),
-        updatedAt: task.updated_at || new Date().toISOString(),
-        version: 1
+        updatedAt: task.updated_at || new Date().toISOString(), // Keep the original updated_at
+        version: 1,
+        // Store the original timestamps for sync
+        created_at: task.created_at || new Date().toISOString(),
+        updated_at: task.updated_at || new Date().toISOString()
       };
 
       const request = store.put(item); // Use put instead of add to allow updates
@@ -259,8 +262,11 @@ export class IndexedDBStorage {
         id: task.id,
         userId: this.userId,
         createdAt: task.created_at || new Date().toISOString(),
-        updatedAt: task.updated_at || new Date().toISOString(),
-        version: 1
+        updatedAt: task.updated_at || new Date().toISOString(), // Keep the original updated_at
+        version: 1,
+        // Store the original timestamps for sync
+        created_at: task.created_at || new Date().toISOString(),
+        updated_at: task.updated_at || new Date().toISOString()
       };
       
       const request = store.put(item); // Use put instead of add to allow updates
@@ -295,9 +301,13 @@ export class IndexedDBStorage {
         request.onsuccess = () => {
           const items = request.result;
           const tasks = items.map(item => {
-            // Remove internal fields from the task object
-            const { userId, createdAt, updatedAt, version, ...task } = item;
-            return task as Task;
+            // Remove internal fields but keep original timestamps
+            const { userId, createdAt, updatedAt, version, created_at, updated_at, ...task } = item;
+            return {
+              ...task,
+              created_at: created_at || createdAt,
+              updated_at: updated_at || updatedAt
+            } as Task;
           });
           resolve(tasks);
         };

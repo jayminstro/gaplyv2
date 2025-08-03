@@ -1,18 +1,12 @@
 import { useState, useEffect } from 'react';
-import { 
-  Star, Users, Heart, Brain, Target, Plus, ArrowLeft, 
-  Phone, MessageCircle, Share2, Calendar, FolderOpen, 
-  CheckSquare, Shield, Wind, Activity, MapPin, Droplets, 
-  BookOpen, Play, Zap, PenTool 
-} from 'lucide-react';
+import { Star, Plus, ArrowLeft } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Button } from "./ui/button";
-import { TaskTile } from "./TaskTile";
 import { CategorizedTasks } from "./CategorizedTasks";
 import { EditTaskModal } from "./EditTaskModal";
 import { NewTaskModal } from "./NewTaskModal";
 import { Task } from '../types/index';
-import { tasksAPI, exploreAPI } from '../utils/api';
+import { tasksAPIExtended, exploreAPI } from '../utils/api';
 import { renderSafeIcon } from '../utils/helpers';
 import { toast } from 'sonner';
 import { ActivitySchedulingModal } from './ActivitySchedulingModal';
@@ -20,7 +14,6 @@ import {
   LAYOUT_CONSTANTS, 
   COMPONENT_PATTERNS, 
   PageWrapper, 
-  SectionWrapper,
   CardWrapper,
   layoutClasses 
 } from '../utils/layout';
@@ -29,24 +22,26 @@ interface ActivitiesContentProps {
   globalTasks: Task[];
   setGlobalTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   onTimerOpen: (task: Task) => void;
-  onTimerUpdate: (task: Task, isRunning: boolean, remaining: number, total?: number) => void;
+
   onTabChange: (tab: string) => void;
   editingTask: Task | null;
   setEditingTask: React.Dispatch<React.SetStateAction<Task | null>>;
   isNewTaskModalOpen: boolean;
   setIsNewTaskModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  localFirstService?: any; // Add localFirstService prop
 }
 
 export function ActivitiesContent({ 
   globalTasks, 
   setGlobalTasks, 
   onTimerOpen, 
-  onTimerUpdate,
+
   onTabChange,
   editingTask,
   setEditingTask,
   isNewTaskModalOpen,
-  setIsNewTaskModalOpen
+  setIsNewTaskModalOpen,
+  localFirstService
 }: ActivitiesContentProps) {
   const [discoverData, setDiscoverData] = useState<any>({
     popular: [],
@@ -140,34 +135,61 @@ export function ActivitiesContent({
   
   const updateTasksInDatabase = async (tasks: Task[]) => {
     try {
-      console.log('💾 [ActivitiesContent] Saving tasks to database:', {
-        taskCount: tasks.length,
-        firstTask: tasks[0] ? {
-          id: tasks[0].id,
-          title: tasks[0].title,
-          status: tasks[0].status
-        } : null,
-        allTaskIds: tasks.map(t => t.id)
+      // Add updated_at timestamp to tasks that don't have it
+      const tasksWithTimestamp = tasks.map(task => {
+        if (!task.updated_at) {
+          return {
+            ...task,
+            updated_at: new Date().toISOString()
+          };
+        }
+        return task;
       });
-      
-      const result = await tasksAPI.save(tasks);
-      console.log('✅ [ActivitiesContent] Tasks saved successfully:', result);
-      
-      // Verify the save by fetching the data back
-      try {
-        const savedTasks = await tasksAPI.get();
-        console.log('🔍 [ActivitiesContent] Verification: Retrieved tasks after save:', {
-          savedCount: savedTasks.length,
-          savedIds: savedTasks.map(t => t.id)
+
+      // Always save locally first
+      if (localFirstService) {
+        console.log('💾 [ActivitiesContent] Saving tasks locally:', {
+          taskCount: tasksWithTimestamp.length,
+          firstTask: tasksWithTimestamp[0] ? {
+            id: tasksWithTimestamp[0].id,
+            title: tasksWithTimestamp[0].title,
+            status: tasksWithTimestamp[0].status
+          } : null,
+          allTaskIds: tasksWithTimestamp.map(t => t.id)
         });
-      } catch (verificationError) {
-        console.error('⚠️ [ActivitiesContent] Could not verify save:', verificationError);
+        
+        await localFirstService.saveTasks(tasksWithTimestamp);
+        console.log('✅ [ActivitiesContent] Tasks saved locally');
+      }
+
+      // Try to save to server if online
+      if (navigator.onLine) {
+        try {
+          // Save each task individually to preserve timestamps
+          for (const task of tasksWithTimestamp) {
+            if (task.id) {
+              await tasksAPIExtended.update(task.id, task);
+              console.log(`✅ [ActivitiesContent] Task ${task.id} saved to server`);
+            } else {
+              const result = await tasksAPIExtended.create(task);
+              console.log(`✅ [ActivitiesContent] New task created on server:`, result);
+            }
+          }
+        } catch (serverError) {
+          console.warn('⚠️ [ActivitiesContent] Could not save to server (will sync later):', serverError);
+          // Don't show error toast when offline - it's expected
+          if (serverError instanceof Error && serverError.message !== 'Failed to fetch') {
+            toast.error('Could not sync with server', {
+              description: 'Changes are saved locally and will sync when online.',
+            });
+          }
+        }
       }
       
     } catch (error) {
-      console.error('❌ [ActivitiesContent] Error saving tasks to database:', {
+      console.error('❌ [ActivitiesContent] Error saving tasks:', {
         error,
-        errorMessage: error.message,
+        errorMessage: error instanceof Error ? error.message : String(error),
         taskCount: tasks.length,
         tasks: tasks.map(t => ({ id: t.id, title: t.title }))
       });
@@ -175,7 +197,7 @@ export function ActivitiesContent({
       toast.error('Failed to save tasks', {
         description: 'Your changes may not be saved. Please try again.',
       });
-      throw error; // Re-throw to let caller handle if needed
+      throw error;
     }
   };
 
@@ -260,7 +282,7 @@ export function ActivitiesContent({
                             'w-10 h-10 rounded-full flex items-center justify-center',
                             activity.color
                           )}>
-                            {renderSafeIcon(activity.icon, 'w-5 h-5')}
+                            {renderSafeIcon(activity.icon)}
                           </div>
                           <div className="flex-1">
                             <div className="font-medium">{activity.title}</div>
@@ -271,7 +293,7 @@ export function ActivitiesContent({
                         </div>
                         <div className={COMPONENT_PATTERNS.FLEX_START}>
                           <div className="flex items-center gap-2">
-                            <div className={layoutClasses('text-yellow-400', LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                            <div className={layoutClasses('text-yellow-400 ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
                               {activity.rating}
                             </div>
                             <Star className="w-4 h-4 text-yellow-400 fill-current" />
@@ -315,11 +337,11 @@ export function ActivitiesContent({
                               'w-10 h-10 rounded-full flex items-center justify-center',
                               activity.color
                             )}>
-                              {renderSafeIcon(activity.icon, 'w-5 h-5')}
+                              {renderSafeIcon(activity.icon)}
                             </div>
                             <div className="flex-1">
                               <div className="font-medium">{activity.title}</div>
-                              <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                              <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
                                 {activity.category} • {activity.duration} min
                               </div>
                             </div>
@@ -366,9 +388,9 @@ export function ActivitiesContent({
                           'transition-colors'
                         )}
                       >
-                        {renderSafeIcon(category.icon, `w-8 h-8 mx-auto mb-2 ${category.color}`)}
+                        {renderSafeIcon(category.icon)}
                         <div className="font-medium">{category.title}</div>
-                        <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                        <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
                           {category.count} activities
                         </div>
                       </button>
@@ -421,8 +443,13 @@ export function ActivitiesContent({
         isOpen={!!editingTask}
         onClose={() => setEditingTask(null)}
         onSave={(updatedTask) => {
+          // Add updated_at timestamp when task is modified
+          const taskWithTimestamp = {
+            ...updatedTask,
+            updated_at: new Date().toISOString()
+          };
           const updatedTasks = globalTasks.map(t => 
-            t.id === updatedTask.id ? updatedTask : t
+            t.id === taskWithTimestamp.id ? taskWithTimestamp : t
           );
           setGlobalTasks(updatedTasks);
           updateTasksInDatabase(updatedTasks);
@@ -435,7 +462,13 @@ export function ActivitiesContent({
         isOpen={isNewTaskModalOpen}
         onClose={() => setIsNewTaskModalOpen(false)}
         onCreate={(newTask) => {
-          const updatedTasks = [...globalTasks, newTask as Task];
+          // Add timestamps for new tasks
+          const taskWithTimestamps = {
+            ...newTask,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          } as Task;
+          const updatedTasks = [...globalTasks, taskWithTimestamps];
           setGlobalTasks(updatedTasks);
           updateTasksInDatabase(updatedTasks);
           setIsNewTaskModalOpen(false);
