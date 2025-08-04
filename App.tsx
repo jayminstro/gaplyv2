@@ -8,13 +8,15 @@ import { LoginScreen } from './components/LoginScreen';
 import { SignUpScreen } from './components/SignUpScreen';
 import { HomeContent } from './components/HomeContent';
 import { ActivitiesContent } from './components/ActivitiesContent';
+import { PlannerContent } from './components/PlannerContent';
 import { SettingsContent } from './components/SettingsContent';
 import { MobileOptimizations } from './components/MobileOptimizations';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from './components/ui/sonner';
-import { Home as HomeIcon, Activity, Settings } from 'lucide-react';
+import { Home as HomeIcon, Activity, Settings, Calendar } from 'lucide-react';
 import { TimerModal } from "./components/TimerModal";
 import { FloatingTimer } from "./components/FloatingTimer";
+import { GapUtilizationModal } from "./components/GapUtilizationModal";
 import { WidgetView } from './components/WidgetView';
 import { Task, TimeGap, UserPreferences } from './types/index';
 import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './utils/constants';
@@ -30,6 +32,10 @@ export default function App() {
   const [timerTask, setTimerTask] = useState<Task | null>(null);
   const [isTimerModalOpen, setIsTimerModalOpen] = useState(false);
   const [gaps, setGaps] = useState<TimeGap[]>([]);
+  
+  // Gap utilization state
+  const [selectedGap, setSelectedGap] = useState<TimeGap | null>(null);
+  const [isGapModalOpen, setIsGapModalOpen] = useState(false);
   
   // Authentication state
   const [isLoading, setIsLoading] = useState(true);
@@ -931,6 +937,22 @@ export default function App() {
             localFirstService={localFirstService}
           />
         );
+      case 'planner':
+        return (
+          <PlannerContent 
+            globalTasks={globalTasks}
+            gaps={gaps}
+            onTaskOpen={(task) => {
+              setTimerTask(task);
+              setIsTimerModalOpen(true);
+            }}
+            onGapUtilize={(gap) => {
+              setSelectedGap(gap);
+              setIsGapModalOpen(true);
+            }}
+            userPreferences={preferences}
+          />
+        );
       case 'settings':
         return (
           <div className="space-y-6">
@@ -1082,6 +1104,17 @@ export default function App() {
             </button>
             
             <button
+              onClick={() => setActiveTab('planner')}
+              className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+                activeTab === 'planner' ? 'text-white' : 'text-slate-400'
+              }`}
+              type="button"
+            >
+              <Calendar className="w-6 h-6" />
+              <span className="text-xs">Planner</span>
+            </button>
+            
+            <button
               onClick={() => setActiveTab('settings')}
               className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
                 activeTab === 'settings' ? 'text-white' : 'text-slate-400'
@@ -1094,16 +1127,29 @@ export default function App() {
           </div>
         </div>
 
-        {/* Timer Modal */}
-        <TimerModal
-          isOpen={isTimerModalOpen}
-          onClose={() => setIsTimerModalOpen(false)}
-          task={timerTask}
-          onTimerUpdate={handleGlobalTimerUpdate}
-        />
-      </div>
-    );
-  }
+              {/* Timer Modal */}
+      <TimerModal
+        isOpen={isTimerModalOpen}
+        onClose={() => setIsTimerModalOpen(false)}
+        task={timerTask}
+        onTimerUpdate={handleGlobalTimerUpdate}
+      />
+
+      {/* Gap Utilization Modal */}
+      <GapUtilizationModal
+        isOpen={isGapModalOpen}
+        onClose={() => {
+          setIsGapModalOpen(false);
+          setSelectedGap(null);
+        }}
+        gap={selectedGap}
+        existingTasks={globalTasks}
+        onTaskCreated={handleTaskCreated}
+        userPreferences={preferences}
+      />
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white relative overflow-hidden">
@@ -1183,6 +1229,17 @@ export default function App() {
           </button>
           
           <button
+            onClick={() => setActiveTab('planner')}
+            className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+              activeTab === 'planner' ? 'text-white' : 'text-slate-400'
+            }`}
+            type="button"
+          >
+            <Calendar className="w-6 h-6" />
+            <span className="text-xs">Planner</span>
+          </button>
+          
+          <button
             onClick={() => setActiveTab('settings')}
             className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
               activeTab === 'settings' ? 'text-white' : 'text-slate-400'
@@ -1201,6 +1258,19 @@ export default function App() {
         onClose={() => setIsTimerModalOpen(false)}
         task={timerTask}
         onTimerUpdate={handleGlobalTimerUpdate}
+      />
+
+      {/* Gap Utilization Modal */}
+      <GapUtilizationModal
+        isOpen={isGapModalOpen}
+        onClose={() => {
+          setIsGapModalOpen(false);
+          setSelectedGap(null);
+        }}
+        gap={selectedGap}
+        existingTasks={globalTasks}
+        onTaskCreated={handleTaskCreated}
+        userPreferences={preferences}
       />
     </div>
   );

@@ -505,7 +505,7 @@ export function GapUtilizationModal({
         </div>
         
         {/* Content */}
-        <div className="px-6 pb-8 space-y-4 max-h-[calc(85vh-200px)] overflow-y-auto scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
+        <div className="px-6 pb-8 space-y-4 max-h-[calc(85vh-150px)] overflow-y-auto scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
           {/* Gap Info */}
           <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
             <div className="flex items-center gap-3">
@@ -513,7 +513,7 @@ export function GapUtilizationModal({
                 <Clock className="w-6 h-6 text-blue-400" />
               </div>
               <div className="flex-1">
-                <div className="text-white font-medium">Available Time Slot</div>
+                <div className="text-white font-medium">Gap</div>
                 <div className="text-slate-400 text-sm">
                   {formatDuration(gapDurationMinutes)} to accomplish a task
                 </div>
@@ -564,111 +564,120 @@ export function GapUtilizationModal({
 
             {/* Activities List */}
             {selectedOption === 'activities' && (
-              <div className="ml-4 space-y-3 max-h-64 overflow-y-auto">
-                {isLoadingActivities ? (
-                  <div className="text-center py-4">
-                    <div className="text-slate-400">Loading activities...</div>
-                  </div>
-                ) : suitableActivities.length === 0 ? (
-                  <div className="text-center py-4">
-                    <div className="text-slate-400 text-sm">
-                      No activities found that fit in this {formatDuration(gapDurationMinutes)} gap.
+              <div className="ml-4 space-y-3">
+                <div className="max-h-32 overflow-y-auto">
+                  {isLoadingActivities ? (
+                    <div className="text-center py-4">
+                      <div className="text-slate-400">Loading activities...</div>
                     </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Calendar Toggle for Activities */}
-                    {isCalendarConnected && (
-                      <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-blue-400" />
-                            <span className="text-white text-sm">Add to Google Calendar</span>
+                  ) : suitableActivities.length === 0 ? (
+                    <div className="text-center py-4">
+                      <div className="text-slate-400 text-sm">
+                        No activities found that fit in this {formatDuration(gapDurationMinutes)} gap.
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Calendar Toggle for Activities */}
+                      {isCalendarConnected && (
+                        <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-blue-400" />
+                              <span className="text-white text-sm">Add to Google Calendar</span>
+                            </div>
+                            <button
+                              onClick={() => setNewTaskForm(prev => ({ ...prev, addToCalendar: !prev.addToCalendar }))}
+                              className={`w-11 h-6 rounded-full transition-colors ${
+                                newTaskForm.addToCalendar ? 'bg-blue-600' : 'bg-slate-600'
+                              }`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                                newTaskForm.addToCalendar ? 'translate-x-6' : 'translate-x-1'
+                              }`} />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => setNewTaskForm(prev => ({ ...prev, addToCalendar: !prev.addToCalendar }))}
-                            className={`w-11 h-6 rounded-full transition-colors ${
-                              newTaskForm.addToCalendar ? 'bg-blue-600' : 'bg-slate-600'
-                            }`}
-                          >
-                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                              newTaskForm.addToCalendar ? 'translate-x-6' : 'translate-x-1'
-                            }`} />
-                          </button>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Suggestions Section */}
-                    {suggestedActivities.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
-                          <Sparkles className="w-4 h-4" />
-                          Suggestions ({suggestedActivities.length})
-                        </div>
-                        {suggestedActivities.map((activity) => (
-                          <button
-                            key={`suggestion-${activity.id}`}
-                            onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
-                            className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 ${activity.color} rounded-full flex items-center justify-center`}>
-                                  {renderSafeIcon(activity.icon, 'w-4 h-4')}
-                                </div>
-                                <div>
-                                  <div className="text-white text-sm font-medium">{activity.title}</div>
-                                  <div className="text-slate-400 text-xs">
-                                    {activity.category} • {formatDuration(activity.duration)}
-                                    {activity.rating && (
-                                      <>
-                                        {' • '}
-                                        <span className="text-yellow-400">★ {activity.rating}</span>
-                                      </>
-                                    )}
+                      {/* Suggestions Section */}
+                      {suggestedActivities.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
+                            <Sparkles className="w-4 h-4" />
+                            Suggestions ({suggestedActivities.length})
+                          </div>
+                          {suggestedActivities.map((activity) => (
+                            <button
+                              key={`suggestion-${activity.id}`}
+                              onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
+                              className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 ${activity.color} rounded-full flex items-center justify-center`}>
+                                    {renderSafeIcon(activity.icon)}
+                                  </div>
+                                  <div>
+                                    <div className="text-white text-sm font-medium">{activity.title}</div>
+                                    <div className="text-slate-400 text-xs">
+                                      {activity.category} • {formatDuration(activity.duration)}
+                                      {activity.rating && (
+                                        <>
+                                          {' • '}
+                                          <span className="text-yellow-400">★ {activity.rating}</span>
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
+                                <Zap className="w-4 h-4 text-purple-400" />
                               </div>
-                              <Zap className="w-4 h-4 text-purple-400" />
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* My Tasks Section */}
-                    {suitableTasks.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
-                          <User className="w-4 h-4" />
-                          My Tasks ({suitableTasks.length})
+                            </button>
+                          ))}
                         </div>
-                        {suitableTasks.map((activity) => (
-                          <button
-                            key={`task-${activity.id}`}
-                            onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
-                            className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 ${activity.color.replace('text-', 'bg-').replace('-400', '-500/20')} rounded-full flex items-center justify-center`}>
-                                  {renderSafeIcon(activity.icon, 'w-4 h-4')}
-                                </div>
-                                <div>
-                                  <div className="text-white text-sm font-medium">{activity.title}</div>
-                                  <div className="text-slate-400 text-xs">
-                                    {activity.category} • {formatDuration(activity.duration)}
+                      )}
+
+                      {/* My Tasks Section */}
+                      {suitableTasks.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
+                            <User className="w-4 h-4" />
+                            My Tasks ({suitableTasks.length})
+                          </div>
+                          {suitableTasks.map((activity) => (
+                            <button
+                              key={`task-${activity.id}`}
+                              onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
+                              className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 ${activity.color.replace('text-', 'bg-').replace('-400', '-500/20')} rounded-full flex items-center justify-center`}>
+                                    {renderSafeIcon(activity.icon)}
+                                  </div>
+                                  <div>
+                                    <div className="text-white text-sm font-medium">{activity.title}</div>
+                                    <div className="text-slate-400 text-xs">
+                                      {activity.category} • {formatDuration(activity.duration)}
+                                    </div>
                                   </div>
                                 </div>
+                                <Zap className="w-4 h-4 text-blue-400" />
                               </div>
-                              <Zap className="w-4 h-4 text-blue-400" />
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                {/* Scroll Indicator */}
+                {suitableActivities.length > 4 && (
+                  <div className="text-center py-2">
+                    <div className="text-slate-400 text-xs">Scroll for more activities</div>
+                  </div>
                 )}
               </div>
             )}
