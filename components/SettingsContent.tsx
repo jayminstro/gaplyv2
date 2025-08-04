@@ -49,6 +49,8 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
   const [editingProfile, setEditingProfile] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [cacheHealthData, setCacheHealthData] = useState<any>(null);
+  const [showCacheHealth, setShowCacheHealth] = useState(false);
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -83,6 +85,18 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
 
     loadProfile();
   }, []);
+
+  // Load cache health data
+  const loadCacheHealth = async () => {
+    if (!localFirstService) return;
+    
+    try {
+      const healthReport = localFirstService.getCacheHealthReport();
+      setCacheHealthData(healthReport);
+    } catch (error) {
+      console.error('Error loading cache health:', error);
+    }
+  };
 
   // Update local preferences when props change
   useEffect(() => {
@@ -130,6 +144,12 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
       icon: SettingsIcon,
       title: 'Preferences',
       description: 'Theme & advanced options',
+    },
+    {
+      id: 'cache',
+      icon: Zap,
+      title: 'Cache Health',
+      description: 'Performance & storage monitoring',
     }
   ];
 
@@ -557,6 +577,121 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
             <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
               {isSaving ? 'Saving...' : 'Save'}
             </Button>
+          </div>
+        );
+
+      case 'cache':
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium">Cache Health</h3>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={loadCacheHealth}
+                disabled={!localFirstService}
+              >
+                <Zap className="w-4 h-4" />
+                Refresh
+              </Button>
+            </div>
+
+            {cacheHealthData ? (
+              <div className="space-y-4">
+                {/* Memory Cache Stats */}
+                {cacheHealthData.memoryCache && (
+                  <div className="p-4 bg-slate-800/30 rounded-lg">
+                    <h4 className="text-sm font-medium text-slate-300 mb-3">Memory Cache</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-slate-400">Hit Rate:</span>
+                        <span className="ml-2 text-white">
+                          {(cacheHealthData.memoryCache.hitRate * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Size:</span>
+                        <span className="ml-2 text-white">
+                          {cacheHealthData.memoryCache.size} items
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Hits:</span>
+                        <span className="ml-2 text-white">
+                          {cacheHealthData.memoryCache.hits}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Misses:</span>
+                        <span className="ml-2 text-white">
+                          {cacheHealthData.memoryCache.misses}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Limit Violations */}
+                {cacheHealthData.limitViolations && cacheHealthData.limitViolations.length > 0 && (
+                  <div className="p-4 bg-red-900/20 rounded-lg border border-red-700/30">
+                    <h4 className="text-sm font-medium text-red-400 mb-3">⚠️ Storage Limits</h4>
+                    <div className="space-y-2">
+                      {cacheHealthData.limitViolations.map((violation: any, index: number) => (
+                        <div key={index} className="text-sm">
+                          <span className="text-red-400">{violation.type}:</span>
+                          <span className="ml-2 text-white">
+                            {violation.current} / {violation.limit} ({violation.percentage.toFixed(1)}%)
+                          </span>
+                          <div className="text-xs text-red-400/70 mt-1">
+                            {violation.recommendation}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Predictive Analytics */}
+                {cacheHealthData.predictiveAnalytics && (
+                  <div className="p-4 bg-slate-800/30 rounded-lg">
+                    <h4 className="text-sm font-medium text-slate-300 mb-3">Predictive Cache</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-slate-400">Total Accesses:</span>
+                        <span className="ml-2 text-white">
+                          {cacheHealthData.predictiveAnalytics.totalAccesses}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Frequently Accessed:</span>
+                        <span className="ml-2 text-white">
+                          {cacheHealthData.predictiveAnalytics.frequentlyAccessed?.length || 0} items
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recommendations */}
+                {cacheHealthData.recommendations && cacheHealthData.recommendations.length > 0 && (
+                  <div className="p-4 bg-blue-900/20 rounded-lg border border-blue-700/30">
+                    <h4 className="text-sm font-medium text-blue-400 mb-3">💡 Recommendations</h4>
+                    <div className="space-y-2">
+                      {cacheHealthData.recommendations.map((rec: string, index: number) => (
+                        <div key={index} className="text-sm text-blue-300">
+                          • {rec}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Zap className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                <p className="text-slate-400">Click "Refresh" to load cache health data</p>
+              </div>
+            )}
           </div>
         );
 

@@ -298,12 +298,31 @@ export default function App() {
           encryptFields: ['description', 'notes', 'title'], // Encrypt sensitive fields
           enableAnalytics: true, // Enable storage analytics
           enableSync: false, // Disable sync for now (using LoginSyncService instead)
+          enableMemoryCache: true, // Enable ultra-fast memory caching
+          enablePredictiveCache: true, // Enable AI-driven predictive caching
+          enableCacheLimits: true, // Enable intelligent storage management
           analyticsConfig: {
             trackAccessPatterns: true,
             trackSizeChanges: true,
             trackPerformance: true,
             retentionDays: 30,
             sampleRate: 0.1
+          },
+          memoryCacheConfig: {
+            maxSize: 200, // Increased for better performance
+            defaultTTL: 15 * 60 * 1000, // 15 minutes TTL
+            enableStats: true,
+            evictionPolicy: 'lru'
+          },
+          cacheLimits: {
+            maxTasks: 2000, // Increased for power users
+            maxGaps: 10000, // 14 days worth of gaps
+            maxActivities: 1000,
+            maxStorageSize: 100 * 1024 * 1024, // 100MB
+            maxMemoryUsage: 200, // 200MB
+            maxCacheEntries: 2000,
+            maxSessionData: 20, // 20MB
+            cleanupThreshold: 0.8
           }
         });
         await enhancedStorage.initialize();
