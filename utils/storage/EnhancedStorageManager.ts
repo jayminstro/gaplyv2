@@ -168,6 +168,9 @@ export class EnhancedStorageManager {
       this.isInitialized = true;
       console.log('✅ Enhanced storage system initialized successfully');
 
+      // Add iOS memory pressure handling
+      this.handleIOSMemoryPressure();
+
     } catch (error) {
       console.error('❌ Failed to initialize enhanced storage:', error);
       throw error;
@@ -876,5 +879,49 @@ export class EnhancedStorageManager {
     }
 
     return recommendations;
+  }
+
+  /**
+   * Handle iOS memory pressure events
+   */
+  private handleIOSMemoryPressure(): void {
+    // Listen for memory pressure events (iOS-specific)
+    if ('onmemorywarning' in window) {
+      window.addEventListener('memorywarning', () => {
+        console.log('⚠️ iOS memory pressure detected - clearing cache');
+        
+        // Clear memory cache immediately
+        if (this.memoryCache) {
+          this.memoryCache.clear();
+          console.log('🗑️ Memory cache cleared due to iOS memory pressure');
+        }
+        
+        // Reduce cache limits temporarily
+        if (this.cacheLimitManager) {
+          this.cacheLimitManager.updateLimits({
+            maxMemoryUsage: 25, // Reduce to 25MB
+            maxCacheEntries: 100 // Reduce to 100 entries
+          });
+          console.log('📏 Cache limits reduced due to memory pressure');
+        }
+      });
+    }
+
+    // Alternative: Listen for visibility change to detect app backgrounding
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // App is backgrounded - reduce cache size
+        if (this.memoryCache) {
+          const currentSize = this.memoryCache.size();
+          if (currentSize > 20) {
+            // Clear half the cache when backgrounded
+            const keys = this.memoryCache.keys();
+            const keysToRemove = keys.slice(0, Math.floor(keys.length / 2));
+            keysToRemove.forEach(key => this.memoryCache?.delete(key));
+            console.log('📱 App backgrounded - reduced cache size');
+          }
+        }
+      }
+    });
   }
 } 
