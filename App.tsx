@@ -309,20 +309,20 @@ export default function App() {
             sampleRate: 0.1
           },
           memoryCacheConfig: {
-            maxSize: 200, // Increased for better performance
-            defaultTTL: 15 * 60 * 1000, // 15 minutes TTL
-            enableStats: true,
+            maxSize: 50, // Reduced for iPhone energy efficiency
+            defaultTTL: 10 * 60 * 1000, // 10 minutes TTL (reduced for energy)
+            enableStats: false, // Disable stats in production for energy savings
             evictionPolicy: 'lru'
           },
           cacheLimits: {
-            maxTasks: 2000, // Increased for power users
-            maxGaps: 10000, // 14 days worth of gaps
-            maxActivities: 1000,
-            maxStorageSize: 100 * 1024 * 1024, // 100MB
-            maxMemoryUsage: 200, // 200MB
-            maxCacheEntries: 2000,
-            maxSessionData: 20, // 20MB
-            cleanupThreshold: 0.8
+            maxTasks: 1000, // Reduced for iPhone
+            maxGaps: 5000, // 7 days worth of gaps
+            maxActivities: 500,
+            maxStorageSize: 50 * 1024 * 1024, // 50MB (reduced for energy)
+            maxMemoryUsage: 50, // 50MB (reduced for iPhone)
+            maxCacheEntries: 500, // Reduced for energy
+            maxSessionData: 10, // 10MB (reduced for energy)
+            cleanupThreshold: 0.7 // More aggressive cleanup
           }
         });
         await enhancedStorage.initialize();
@@ -356,6 +356,43 @@ export default function App() {
 
     initializeWithLoginSync();
   }, [isAuthenticated, user?.id]);
+
+  // Battery-aware cache optimization
+  useEffect(() => {
+    const enableBatteryOptimization = () => {
+      // Check battery level periodically
+      const batteryCheckInterval = setInterval(() => {
+        if ('getBattery' in navigator && typeof navigator.getBattery === 'function') {
+          (navigator as any).getBattery().then((battery: any) => {
+            if (battery.level < 0.2) { // Below 20%
+              // Enable low battery mode
+              if (localFirstService) {
+                localFirstService.updateConfig({
+                  enablePredictiveCache: false,
+                  memoryCacheConfig: { maxSize: 10 }
+                });
+                console.log('🔋 Low battery mode: Reduced cache operations');
+              }
+            } else if (battery.level > 0.5) { // Above 50%
+              // Restore normal cache operations
+              if (localFirstService) {
+                localFirstService.updateConfig({
+                  enablePredictiveCache: true,
+                  memoryCacheConfig: { maxSize: 50 }
+                });
+                console.log('🔋 Normal battery mode: Restored cache operations');
+              }
+            }
+          });
+        }
+      }, 60000); // Check every minute
+
+      return () => clearInterval(batteryCheckInterval);
+    };
+
+    const cleanup = enableBatteryOptimization();
+    return cleanup;
+  }, [localFirstService]);
 
   // Load critical data first, then non-critical data in the background
   useEffect(() => {

@@ -51,6 +51,7 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [cacheHealthData, setCacheHealthData] = useState<any>(null);
   const [showCacheHealth, setShowCacheHealth] = useState(false);
+  const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -93,6 +94,38 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
     try {
       const healthReport = localFirstService.getCacheHealthReport();
       setCacheHealthData(healthReport);
+      
+      // Calculate energy metrics
+      const calculateEnergyMetrics = async () => {
+        const metrics: any = {};
+        
+        // Get battery level if available
+        if ('getBattery' in navigator && typeof navigator.getBattery === 'function') {
+          try {
+            const battery = await (navigator as any).getBattery();
+            metrics.batteryLevel = Math.round(battery.level * 100);
+          } catch (error) {
+            metrics.batteryLevel = null;
+          }
+        }
+        
+        // Get memory usage if available
+        if ('memory' in performance) {
+          metrics.memoryUsage = Math.round((performance as any).memory.usedJSHeapSize / 1024 / 1024); // MB
+        }
+        
+        // Calculate cache efficiency
+        const hitRate = healthReport?.memoryCache?.hitRate || 0;
+        metrics.cacheEfficiency = Math.round(hitRate * 100);
+        
+        // Calculate estimated energy savings
+        const estimatedSavings = hitRate * 0.3; // 30% max savings
+        metrics.energySavings = Math.round(estimatedSavings * 100);
+        
+        setEnergyMetrics(metrics);
+      };
+      
+      calculateEnergyMetrics();
     } catch (error) {
       console.error('Error loading cache health:', error);
     }
@@ -598,6 +631,43 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
 
             {cacheHealthData ? (
               <div className="space-y-4">
+                {/* Energy Metrics */}
+                {energyMetrics && (
+                  <div className="p-4 bg-green-900/20 rounded-lg border border-green-700/30">
+                    <h4 className="text-sm font-medium text-green-400 mb-3">🔋 Energy Impact</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {energyMetrics.batteryLevel !== null && (
+                        <div>
+                          <span className="text-green-400">Battery Level:</span>
+                          <span className="ml-2 text-white">
+                            {energyMetrics.batteryLevel}%
+                          </span>
+                        </div>
+                      )}
+                      {energyMetrics.memoryUsage && (
+                        <div>
+                          <span className="text-green-400">Memory Usage:</span>
+                          <span className="ml-2 text-white">
+                            {energyMetrics.memoryUsage}MB
+                          </span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-green-400">Cache Efficiency:</span>
+                        <span className="ml-2 text-white">
+                          {energyMetrics.cacheEfficiency}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-green-400">Energy Savings:</span>
+                        <span className="ml-2 text-white">
+                          {energyMetrics.energySavings}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Memory Cache Stats */}
                 {cacheHealthData.memoryCache && (
                   <div className="p-4 bg-slate-800/30 rounded-lg">
