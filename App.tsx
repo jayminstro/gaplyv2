@@ -64,6 +64,10 @@ export default function App() {
   const [localFirstService, setLocalFirstService] = useState<EnhancedStorageManager | null>(null);
   const [loginSyncService, setLoginSyncService] = useState<EnhancedLoginSyncService | null>(null);
 
+  // App lifecycle state
+  const [isAppInitialized, setIsAppInitialized] = useState(false);
+  const [isAppVisible, setIsAppVisible] = useState(true);
+
   // Sync local tasks with server
   const syncLocalTasks = async () => {
     if (!localFirstService) return;
@@ -129,6 +133,112 @@ export default function App() {
     };
   }, [localFirstService]); // Add localFirstService as dependency
 
+  // App lifecycle management - handle background/foreground transitions
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isVisible = !document.hidden;
+      console.log(`📱 App ${isVisible ? 'foregrounded' : 'backgrounded'}`);
+      setIsAppVisible(isVisible);
+      
+      // When app comes back to foreground, check if we need to refresh data
+      if (isVisible && isAppInitialized && isAuthenticated && !isDataLoading) {
+        console.log('📱 App returned to foreground - checking for data updates...');
+        // Only trigger a light refresh if we've been away for a while
+        const lastActiveTime = sessionStorage.getItem('lastActiveTime');
+        const now = Date.now();
+        const timeSinceLastActive = lastActiveTime ? now - parseInt(lastActiveTime) : 0;
+        
+        // If more than 5 minutes have passed, do a light refresh
+        if (timeSinceLastActive > 5 * 60 * 1000) {
+          console.log('📱 App was away for more than 5 minutes - triggering background refresh...');
+          // Set a flag to trigger background refresh in the main data loading effect
+          sessionStorage.setItem('needsBackgroundRefresh', 'true');
+        }
+      }
+      
+      // Update last active time
+      sessionStorage.setItem('lastActiveTime', Date.now().toString());
+    };
+
+    const handleFocus = () => {
+      console.log('📱 App gained focus');
+      setIsAppVisible(true);
+      sessionStorage.setItem('lastActiveTime', Date.now().toString());
+    };
+
+    const handleBlur = () => {
+      console.log('📱 App lost focus');
+      setIsAppVisible(false);
+    };
+
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+
+    // Initialize last active time
+    sessionStorage.setItem('lastActiveTime', Date.now().toString());
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [isAppInitialized, isAuthenticated, isDataLoading]);
+
+  // Persist app state to sessionStorage to survive background/foreground transitions
+  useEffect(() => {
+    const saveAppState = () => {
+      if (isAuthenticated && user) {
+        const appState = {
+          isAuthenticated: true,
+          userId: user.id,
+          activeTab,
+          isDataLoading,
+          timestamp: Date.now()
+        };
+        sessionStorage.setItem('gaplyAppState', JSON.stringify(appState));
+      }
+    };
+
+    // Save state when key values change
+    saveAppState();
+  }, [isAuthenticated, user, activeTab, isDataLoading]);
+
+  // Restore app state on mount
+  useEffect(() => {
+    const restoreAppState = () => {
+      try {
+        const savedState = sessionStorage.getItem('gaplyAppState');
+        if (savedState) {
+          const appState = JSON.parse(savedState);
+          const timeSinceSaved = Date.now() - appState.timestamp;
+          
+          // Only restore state if it's recent (less than 1 hour old)
+          if (timeSinceSaved < 60 * 60 * 1000) {
+            console.log('📱 Restoring app state from session storage');
+            setActiveTab(appState.activeTab || 'home');
+            
+            // If we were authenticated, don't show loading screen
+            if (appState.isAuthenticated && appState.userId) {
+              console.log('📱 User was previously authenticated - skipping loading screen');
+              setIsLoading(false);
+              setIsAppInitialized(true);
+            }
+          } else {
+            console.log('📱 Saved app state is too old - starting fresh');
+            sessionStorage.removeItem('gaplyAppState');
+          }
+        }
+      } catch (error) {
+        console.error('📱 Error restoring app state:', error);
+        sessionStorage.removeItem('gaplyAppState');
+      }
+    };
+
+    restoreAppState();
+  }, []);
+
   // Check for widget mode and authentication on app start
   useEffect(() => {
     // Check if widget mode is enabled via URL parameter
@@ -142,6 +252,7 @@ export default function App() {
           setIsAuthenticated(true);
           setUser(session.user);
           setIsDataLoading(true); // Start data loading for existing session
+          setIsAppInitialized(true); // Mark app as initialized
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -159,11 +270,13 @@ export default function App() {
         setUser(session.user);
         setIsLoading(false);
         setIsDataLoading(true); // Start data loading when user is authenticated
+        setIsAppInitialized(true); // Mark app as initialized
       } else {
         setIsAuthenticated(false);
         setUser(null);
         setIsLoading(false);
         setIsDataLoading(false);
+        setIsAppInitialized(false); // Reset app initialization
       }
     });
 
@@ -185,12 +298,31 @@ export default function App() {
           encryptFields: ['description', 'notes', 'title'], // Encrypt sensitive fields
           enableAnalytics: true, // Enable storage analytics
           enableSync: false, // Disable sync for now (using LoginSyncService instead)
+          enableMemoryCache: true, // Enable ultra-fast memory caching
+          enablePredictiveCache: true, // Enable AI-driven predictive caching
+          enableCacheLimits: true, // Enable intelligent storage management
           analyticsConfig: {
             trackAccessPatterns: true,
             trackSizeChanges: true,
             trackPerformance: true,
             retentionDays: 30,
             sampleRate: 0.1
+          },
+          memoryCacheConfig: {
+            maxSize: 200, // Increased for better performance
+            defaultTTL: 15 * 60 * 1000, // 15 minutes TTL
+            enableStats: true,
+            evictionPolicy: 'lru'
+          },
+          cacheLimits: {
+            maxTasks: 2000, // Increased for power users
+            maxGaps: 10000, // 14 days worth of gaps
+            maxActivities: 1000,
+            maxStorageSize: 100 * 1024 * 1024, // 100MB
+            maxMemoryUsage: 200, // 200MB
+            maxCacheEntries: 2000,
+            maxSessionData: 20, // 20MB
+            cleanupThreshold: 0.8
           }
         });
         await enhancedStorage.initialize();
@@ -346,7 +478,14 @@ export default function App() {
 
     const loadAppData = async () => {
       try {
-        console.log('Loading app data for user:', user.id);
+        // Check if this is a background refresh
+        const needsBackgroundRefresh = sessionStorage.getItem('needsBackgroundRefresh') === 'true';
+        if (needsBackgroundRefresh) {
+          console.log('📱 Performing background refresh...');
+          sessionStorage.removeItem('needsBackgroundRefresh');
+        } else {
+          console.log('Loading app data for user:', user.id);
+        }
         
         // Check if we're offline
         if (!navigator.onLine) {
@@ -720,48 +859,7 @@ export default function App() {
   const runningTimerTask = globalTasks.find(task => task.isTimerRunning);
   const shouldShowFloatingTimer = !!runningTimerTask && activeTab !== 'activities';
 
-  // Show loading screen while checking authentication
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-
-  // Show loading screen if authenticated but data is still loading
-  if (isAuthenticated && isDataLoading) {
-    return <LoadingScreen isDataLoading={true} userName={profile?.first_name} />;
-  }
-
-  // Show authentication screens if not authenticated
-  if (!isAuthenticated) {
-    if (showSignUp) {
-      return (
-        <SignUpScreen 
-          onAuthSuccess={handleAuthSuccess}
-          onToggleAuth={() => setShowSignUp(false)}
-        />
-      );
-    } else {
-      return (
-        <LoginScreen 
-          onAuthSuccess={handleAuthSuccess}
-          onToggleAuth={() => setShowSignUp(true)}
-        />
-      );
-    }
-  }
-
-  // If in widget mode, render the widget view
-  if (isAuthenticated && !isDataLoading && isWidgetMode) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white flex items-center justify-center">
-        <WidgetView 
-          tasks={globalTasks}
-          gaps={gaps}
-          userName={profile?.first_name || ''}
-        />
-      </div>
-    );
-  }
-
+  // Define renderContent function before using it
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
@@ -824,6 +922,151 @@ export default function App() {
         );
     }
   };
+
+  // Show loading screen while checking authentication (only if app is not initialized)
+  if (isLoading && !isAppInitialized) {
+    return <LoadingScreen />;
+  }
+
+  // Show loading screen if authenticated but data is still loading (only if app is not initialized)
+  if (isAuthenticated && isDataLoading && !isAppInitialized) {
+    return <LoadingScreen isDataLoading={true} userName={profile?.first_name} />;
+  }
+
+  // Show authentication screens if not authenticated
+  if (!isAuthenticated) {
+    if (showSignUp) {
+      return (
+        <SignUpScreen 
+          onAuthSuccess={handleAuthSuccess}
+          onToggleAuth={() => setShowSignUp(false)}
+        />
+      );
+    } else {
+      return (
+        <LoginScreen 
+          onAuthSuccess={handleAuthSuccess}
+          onToggleAuth={() => setShowSignUp(true)}
+        />
+      );
+    }
+  }
+
+  // If in widget mode, render the widget view
+  if (isAuthenticated && !isDataLoading && isWidgetMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white flex items-center justify-center">
+        <WidgetView 
+          tasks={globalTasks}
+          gaps={gaps}
+          userName={profile?.first_name || ''}
+        />
+      </div>
+    );
+  }
+
+  // If app is initialized and authenticated, show main content even if data is still loading
+  if (isAuthenticated && isAppInitialized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white relative overflow-hidden">
+        {/* Mobile optimizations */}
+        <MobileOptimizations />
+        
+        {/* Toast notifications */}
+        <Toaster 
+          position="bottom-center"
+          toastOptions={{
+            duration: 4000,
+          }}
+          expand={false}
+          richColors={false}
+          closeButton={false}
+          offset="100px"
+        />
+        
+        {/* Background blur elements */}
+        <div className="absolute top-10 left-5 w-20 h-20 bg-pink-400/30 rounded-full blur-xl"></div>
+        <div className="absolute top-32 right-8 w-16 h-16 bg-purple-400/20 rounded-full blur-lg"></div>
+        <div className="absolute bottom-40 left-8 w-24 h-24 bg-orange-400/20 rounded-full blur-xl"></div>
+        
+        {/* Floating Timer - Show everywhere except My Activities tab */}
+        <div className="safe-area-right safe-area-bottom">
+          <FloatingTimer
+            task={runningTimerTask || null}
+            isVisible={shouldShowFloatingTimer}
+            onTimerUpdate={handleGlobalTimerUpdate}
+            onExpand={handleFloatingTimerExpand}
+          />
+        </div>
+        
+        {/* Main content - with padding for fixed navigation and enhanced mobile scrolling */}
+        <div 
+          className="relative z-10 overflow-y-auto pb-20 safe-area-top scroll-smooth ios-scroll android-scroll no-bounce" 
+          style={{ height: 'calc(100vh - 80px)' }}
+          data-scrollable="true"
+        >
+          <ErrorBoundary>
+            {renderContent()}
+          </ErrorBoundary>
+        </div>
+
+        {/* Offline Indicator */}
+        {isOffline && (
+          <div className="fixed top-0 left-0 right-0 z-30 bg-yellow-600/90 backdrop-blur-sm">
+            <div className="flex items-center justify-center py-1 px-4 text-sm text-white safe-area-left safe-area-right safe-area-top">
+              <span>Working Offline</span>
+            </div>
+          </div>
+        )}
+
+        {/* Fixed Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
+          <div className="flex justify-around items-center py-4 px-6 safe-area-left safe-area-right">
+            <button
+              onClick={() => setActiveTab('home')}
+              className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+                activeTab === 'home' ? 'text-white' : 'text-slate-400'
+              }`}
+              type="button"
+            >
+              <HomeIcon className="w-6 h-6" />
+              <span className="text-xs">Home</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('activities')}
+              className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+                activeTab === 'activities' ? 'text-white' : 'text-slate-400'
+              }`}
+              type="button"
+            >
+              <Activity className="w-6 h-6" />
+              <span className="text-xs">Activities</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+                activeTab === 'settings' ? 'text-white' : 'text-slate-400'
+              }`}
+              type="button"
+            >
+              <Settings className="w-6 h-6" />
+              <span className="text-xs">Settings</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Timer Modal */}
+        <TimerModal
+          isOpen={isTimerModalOpen}
+          onClose={() => setIsTimerModalOpen(false)}
+          task={timerTask}
+          onTimerUpdate={handleGlobalTimerUpdate}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white relative overflow-hidden">

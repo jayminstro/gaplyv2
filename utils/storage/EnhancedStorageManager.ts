@@ -6,6 +6,9 @@ import { MemoryStorageStrategy } from './StorageStrategy';
 import { EncryptedStorageStrategy } from './StorageEncryption';
 import { StorageSync, SyncResult } from './StorageSync';
 import { StorageAnalytics, StorageRecommendation } from './StorageAnalytics';
+import { MemoryCache, MemoryCacheConfig } from './MemoryCache';
+import { CacheLimitManager, CacheLimits } from './CacheLimits';
+import { PredictiveCache } from './PredictiveCache';
 
 export interface EnhancedStorageConfig {
   storageType: 'indexeddb' | 'localstorage' | 'memory' | 'auto';
@@ -14,6 +17,9 @@ export interface EnhancedStorageConfig {
   encryptFields: string[];
   enableSync: boolean;
   enableAnalytics: boolean;
+  enableMemoryCache: boolean;
+  enablePredictiveCache: boolean;
+  enableCacheLimits: boolean;
   analyticsConfig?: {
     trackAccessPatterns: boolean;
     trackSizeChanges: boolean;
@@ -27,6 +33,8 @@ export interface EnhancedStorageConfig {
     retryAttempts: number;
     batchSize: number;
   };
+  memoryCacheConfig?: Partial<MemoryCacheConfig>;
+  cacheLimits?: Partial<CacheLimits>;
 }
 
 export interface StorageHealth {
@@ -45,6 +53,9 @@ export class EnhancedStorageManager {
   private encryptedStorage?: EncryptedStorageStrategy;
   private sync?: StorageSync;
   private analytics?: StorageAnalytics;
+  private memoryCache?: MemoryCache;
+  private cacheLimitManager?: CacheLimitManager;
+  private predictiveCache?: PredictiveCache;
   private config: EnhancedStorageConfig;
   private userId: string;
   private isInitialized = false;
@@ -57,6 +68,9 @@ export class EnhancedStorageManager {
       encryptFields: [], // Removed encryption from tasks to fix iOS offline issues
       enableSync: false,
       enableAnalytics: true,
+      enableMemoryCache: true,
+      enablePredictiveCache: true,
+      enableCacheLimits: true,
       analyticsConfig: {
         trackAccessPatterns: true,
         trackSizeChanges: true,
@@ -69,6 +83,22 @@ export class EnhancedStorageManager {
         syncInterval: 30000,
         retryAttempts: 3,
         batchSize: 50
+      },
+      memoryCacheConfig: {
+        maxSize: 100,
+        defaultTTL: 5 * 60 * 1000, // 5 minutes
+        enableStats: true,
+        evictionPolicy: 'lru'
+      },
+      cacheLimits: {
+        maxTasks: 1000,
+        maxGaps: 5000,
+        maxActivities: 500,
+        maxStorageSize: 50 * 1024 * 1024, // 50MB
+        maxMemoryUsage: 100, // 100MB
+        maxCacheEntries: 1000,
+        maxSessionData: 10, // 10MB
+        cleanupThreshold: 0.8
       },
       ...config
     };
@@ -115,6 +145,24 @@ export class EnhancedStorageManager {
       if (this.config.enableSync) {
         await this.initializeSync();
         console.log('🔄 Sync enabled');
+      }
+
+      // 7. Initialize memory cache if enabled
+      if (this.config.enableMemoryCache) {
+        this.memoryCache = new MemoryCache(this.config.memoryCacheConfig);
+        console.log('⚡ Memory cache enabled');
+      }
+
+      // 8. Initialize cache limit manager if enabled
+      if (this.config.enableCacheLimits) {
+        this.cacheLimitManager = new CacheLimitManager(this.config.cacheLimits);
+        console.log('📏 Cache limits enabled');
+      }
+
+      // 9. Initialize predictive cache if enabled
+      if (this.config.enablePredictiveCache && this.memoryCache) {
+        this.predictiveCache = new PredictiveCache(this.memoryCache);
+        console.log('🔮 Predictive cache enabled');
       }
 
       this.isInitialized = true;
@@ -252,6 +300,13 @@ export class EnhancedStorageManager {
     try {
       console.log(`🔄 EnhancedStorageManager: Saving ${tasks.length} tasks...${replaceAll ? ' (replacing all)' : ''}`);
       await this.getActiveStorage(true).saveTasks(tasks, replaceAll);
+      
+      // Invalidate memory cache for tasks
+      if (this.memoryCache) {
+        this.memoryCache.delete(`tasks_${this.userId}`);
+        console.log('🗑️ Invalidated tasks cache');
+      }
+      
       await this.trackOperation('saveTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
       console.log(`✅ EnhancedStorageManager: Successfully saved ${tasks.length} tasks`);
     } catch (error) {
@@ -280,9 +335,51 @@ export class EnhancedStorageManager {
   async getTasks(): Promise<Task[]> {
     await this.ensureInitialized();
     const startTime = performance.now();
+    const cacheKey = `tasks_${this.userId}`;
     
     try {
+      // Check memory cache first
+      if (this.memoryCache) {
+        const cachedTasks = this.memoryCache.get<Task[]>(cacheKey);
+        if (cachedTasks) {
+          console.log('⚡ Tasks retrieved from memory cache');
+          await this.trackOperation('getTasks', 'batch', 'tasks', cachedTasks.length, performance.now() - startTime);
+          
+          // Record access pattern for predictive cache
+          if (this.predictiveCache) {
+            this.predictiveCache.recordAccess({
+              type: 'task_access',
+              userId: this.userId,
+              context: this.getTimeContext()
+            });
+          }
+          
+          return cachedTasks;
+        }
+      }
+
+      // Get from storage
       const tasks = await this.getActiveStorage(true).getTasks();
+      
+      // Store in memory cache
+      if (this.memoryCache) {
+        this.memoryCache.set(cacheKey, tasks, 10 * 60 * 1000); // 10 minutes TTL
+      }
+      
+      // Update cache limits
+      if (this.cacheLimitManager) {
+        this.cacheLimitManager.updateUsage('tasks', tasks.length, JSON.stringify(tasks).length);
+      }
+      
+      // Record access pattern for predictive cache
+      if (this.predictiveCache) {
+        this.predictiveCache.recordAccess({
+          type: 'task_access',
+          userId: this.userId,
+          context: this.getTimeContext()
+        });
+      }
+      
       await this.trackOperation('getTasks', 'batch', 'tasks', tasks.length, performance.now() - startTime);
       return tasks;
     } catch (error) {
@@ -326,6 +423,13 @@ export class EnhancedStorageManager {
     try {
       console.log(`🔄 EnhancedStorageManager: Saving ${gaps.length} gaps for date ${date}...`);
       await this.getActiveStorage().saveGaps(gaps, date);
+      
+      // Invalidate memory cache for gaps
+      if (this.memoryCache) {
+        this.memoryCache.delete(`gaps_${this.userId}_${date}`);
+        console.log(`🗑️ Invalidated gaps cache for ${date}`);
+      }
+      
       await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime);
       console.log(`✅ EnhancedStorageManager: Successfully saved ${gaps.length} gaps for date ${date}`);
     } catch (error) {
@@ -338,9 +442,53 @@ export class EnhancedStorageManager {
   async getGaps(date: string): Promise<TimeGap[]> {
     await this.ensureInitialized();
     const startTime = performance.now();
+    const cacheKey = `gaps_${this.userId}_${date}`;
     
     try {
+      // Check memory cache first
+      if (this.memoryCache) {
+        const cachedGaps = this.memoryCache.get<TimeGap[]>(cacheKey);
+        if (cachedGaps) {
+          console.log(`⚡ Gaps for ${date} retrieved from memory cache`);
+          await this.trackOperation('getGaps', date, 'gaps', cachedGaps.length, performance.now() - startTime);
+          
+          // Record access pattern for predictive cache
+          if (this.predictiveCache) {
+            this.predictiveCache.recordAccess({
+              type: 'gap_access',
+              userId: this.userId,
+              itemId: date,
+              context: this.getTimeContext()
+            });
+          }
+          
+          return cachedGaps;
+        }
+      }
+
+      // Get from storage
       const gaps = await this.getActiveStorage().getGaps(date);
+      
+      // Store in memory cache
+      if (this.memoryCache) {
+        this.memoryCache.set(cacheKey, gaps, 30 * 60 * 1000); // 30 minutes TTL
+      }
+      
+      // Update cache limits
+      if (this.cacheLimitManager) {
+        this.cacheLimitManager.updateUsage('gaps', gaps.length, JSON.stringify(gaps).length);
+      }
+      
+      // Record access pattern for predictive cache
+      if (this.predictiveCache) {
+        this.predictiveCache.recordAccess({
+          type: 'gap_access',
+          userId: this.userId,
+          itemId: date,
+          context: this.getTimeContext()
+        });
+      }
+      
       await this.trackOperation('getGaps', date, 'gaps', gaps.length, performance.now() - startTime);
       return gaps;
     } catch (error) {
@@ -369,6 +517,13 @@ export class EnhancedStorageManager {
     
     try {
       await this.getActiveStorage().savePreferences(preferences);
+      
+      // Invalidate memory cache for preferences
+      if (this.memoryCache) {
+        this.memoryCache.delete(`preferences_${this.userId}`);
+        console.log('🗑️ Invalidated preferences cache');
+      }
+      
       await this.trackOperation('savePreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
     } catch (error) {
       await this.trackOperation('savePreferences', 'preferences', 'preferences', 1, performance.now() - startTime, false);
@@ -379,9 +534,51 @@ export class EnhancedStorageManager {
   async getPreferences(): Promise<UserPreferences | null> {
     await this.ensureInitialized();
     const startTime = performance.now();
+    const cacheKey = `preferences_${this.userId}`;
     
     try {
+      // Check memory cache first
+      if (this.memoryCache) {
+        const cachedPreferences = this.memoryCache.get<UserPreferences>(cacheKey);
+        if (cachedPreferences) {
+          console.log('⚡ Preferences retrieved from memory cache');
+          await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
+          
+          // Record access pattern for predictive cache
+          if (this.predictiveCache) {
+            this.predictiveCache.recordAccess({
+              type: 'preference_access',
+              userId: this.userId,
+              context: this.getTimeContext()
+            });
+          }
+          
+          return cachedPreferences;
+        }
+      }
+
+      // Get from storage
       const prefs = await this.getActiveStorage().getPreferences();
+      
+      // Store in memory cache
+      if (this.memoryCache && prefs) {
+        this.memoryCache.set(cacheKey, prefs, 60 * 60 * 1000); // 1 hour TTL
+      }
+      
+      // Update cache limits
+      if (this.cacheLimitManager && prefs) {
+        this.cacheLimitManager.updateUsage('preferences', 1, JSON.stringify(prefs).length);
+      }
+      
+      // Record access pattern for predictive cache
+      if (this.predictiveCache) {
+        this.predictiveCache.recordAccess({
+          type: 'preference_access',
+          userId: this.userId,
+          context: this.getTimeContext()
+        });
+      }
+      
       await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
       return prefs;
     } catch (error) {
@@ -602,5 +799,82 @@ export class EnhancedStorageManager {
 
   getConfig(): EnhancedStorageConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Get time context for predictive caching
+   */
+  private getTimeContext(): string {
+    const hour = new Date().getHours();
+    const dayOfWeek = new Date().getDay();
+    
+    if (hour >= 6 && hour < 12) return 'morning';
+    if (hour >= 12 && hour < 17) return 'afternoon';
+    if (hour >= 17 && hour < 21) return 'evening';
+    if (hour >= 21 || hour < 6) return 'night';
+    
+    if (dayOfWeek === 0 || dayOfWeek === 6) return 'weekend';
+    
+    return 'weekday';
+  }
+
+  /**
+   * Get memory cache statistics
+   */
+  getMemoryCacheStats() {
+    return this.memoryCache?.getStats();
+  }
+
+  /**
+   * Get cache limit violations
+   */
+  getCacheLimitViolations() {
+    return this.cacheLimitManager?.checkViolations();
+  }
+
+  /**
+   * Get predictive cache analytics
+   */
+  getPredictiveCacheAnalytics() {
+    return this.predictiveCache?.getAnalytics();
+  }
+
+  /**
+   * Get comprehensive cache health report
+   */
+  getCacheHealthReport() {
+    const memoryStats = this.getMemoryCacheStats();
+    const violations = this.getCacheLimitViolations();
+    const analytics = this.getPredictiveCacheAnalytics();
+    const predictionReport = this.predictiveCache?.generateReport();
+
+    return {
+      memoryCache: memoryStats,
+      limitViolations: violations,
+      predictiveAnalytics: analytics,
+      predictionReport,
+      recommendations: this.generateCacheRecommendations(memoryStats, violations)
+    };
+  }
+
+  /**
+   * Generate cache recommendations
+   */
+  private generateCacheRecommendations(memoryStats: any, violations: any[] | undefined): string[] {
+    const recommendations: string[] = [];
+
+    if (memoryStats?.hitRate < 0.5) {
+      recommendations.push('Consider increasing memory cache size or TTL for better hit rates');
+    }
+
+    if (violations && violations.length > 0) {
+      recommendations.push('Cache limits exceeded - consider cleanup or increasing limits');
+    }
+
+    if (memoryStats?.evictions > 100) {
+      recommendations.push('High eviction rate - consider increasing cache size or optimizing access patterns');
+    }
+
+    return recommendations;
   }
 } 

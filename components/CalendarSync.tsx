@@ -131,7 +131,26 @@ export function CalendarSync({ onStatusChange }: CalendarSyncProps) {
         const storage = new EnhancedStorageManager(session.user.id, {
           storageType: 'auto',
           enableEncryption: false, // Calendar state doesn't need encryption
-          enableAnalytics: false
+          enableAnalytics: false,
+          enableMemoryCache: true, // Enable memory caching for calendar state
+          enablePredictiveCache: false, // Disable predictive cache for calendar
+          enableCacheLimits: true, // Enable storage limits
+          memoryCacheConfig: {
+            maxSize: 20, // Small cache for calendar state
+            defaultTTL: 30 * 60 * 1000, // 30 minutes TTL
+            enableStats: false,
+            evictionPolicy: 'lru'
+          },
+          cacheLimits: {
+            maxTasks: 0, // No tasks for calendar
+            maxGaps: 0, // No gaps for calendar
+            maxActivities: 0, // No activities for calendar
+            maxStorageSize: 5 * 1024 * 1024, // 5MB for calendar state
+            maxMemoryUsage: 10, // 10MB
+            maxCacheEntries: 50,
+            maxSessionData: 5, // 5MB
+            cleanupThreshold: 0.8
+          }
         });
         await storage.initialize();
         

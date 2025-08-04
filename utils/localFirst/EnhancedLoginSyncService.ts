@@ -23,12 +23,31 @@ export class EnhancedLoginSyncService {
         encryptFields: ['description', 'notes', 'title'],
         enableAnalytics: true,
         enableSync: false, // We'll handle sync manually here
+        enableMemoryCache: true, // Enable memory caching for sync operations
+        enablePredictiveCache: false, // Disable predictive cache for sync service
+        enableCacheLimits: true, // Enable storage limits
         analyticsConfig: {
           trackAccessPatterns: true,
           trackSizeChanges: true,
           trackPerformance: true,
           retentionDays: 30,
           sampleRate: 0.1
+        },
+        memoryCacheConfig: {
+          maxSize: 50, // Smaller cache for sync operations
+          defaultTTL: 5 * 60 * 1000, // 5 minutes TTL
+          enableStats: true,
+          evictionPolicy: 'lru'
+        },
+        cacheLimits: {
+          maxTasks: 2000,
+          maxGaps: 10000,
+          maxActivities: 1000,
+          maxStorageSize: 100 * 1024 * 1024, // 100MB
+          maxMemoryUsage: 100, // 100MB
+          maxCacheEntries: 1000,
+          maxSessionData: 20,
+          cleanupThreshold: 0.8
         }
       });
     }
