@@ -94,6 +94,8 @@ export interface UserPreferences {
   dark_mode: boolean;
   sound_enabled: boolean;
   vibration_enabled: boolean;
+  time_format?: '12h' | '24h';
+  show_duration_in_planner?: boolean;
   
   // Advanced Features
   learning_enabled: boolean;
