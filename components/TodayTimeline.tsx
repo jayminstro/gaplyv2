@@ -72,13 +72,12 @@ export function TodayTimeline({
       id: syntheticId,
       start_time: item.startTime, // Should already be in HH:MM format from timeline generation
       end_time: item.endTime, // Should already be in HH:MM format from timeline generation
-      duration: item.duration,
       duration_minutes: item.duration,
-      is_available: true,
-      gap_source_id: 'manual',
-      modified_by: 'user',
+      user_id: 'synthetic-user',
+      date: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      date: new Date().toISOString().split('T')[0]
+      modified_by: 'user'
     };
     
     console.log('🔧 Opening gap utilization modal for synthetic timeline gap:', {

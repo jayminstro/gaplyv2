@@ -47,24 +47,22 @@ export function ActivitySchedulingModal({
       const today = new Date().toISOString().split('T')[0];
       const gaps = await GapsAPI.getGapsForDate(today, session.access_token);
       
-      // Filter gaps that can fit this activity and are available
+      // Filter gaps that can fit this activity
       const activityDuration = activity.duration; // in minutes
       console.log('🔍 [ActivitySchedulingModal] Filtering gaps:', {
         totalGaps: gaps.length,
         activityDuration,
         gaps: gaps.map(g => ({ 
           id: g.id, 
-          duration: g.duration, 
           duration_minutes: g.duration_minutes,
-          is_available: g.is_available, 
           start_time: g.start_time, 
           end_time: g.end_time 
         }))
       });
       
       const suitableGaps = gaps.filter(gap => {
-        const gapDuration = gap.duration_minutes || gap.duration || 0;
-        return gap.is_available !== false && gapDuration >= activityDuration;
+        const gapDuration = gap.duration_minutes;
+        return gapDuration >= activityDuration;
       });
       
       console.log('✅ [ActivitySchedulingModal] Suitable gaps found:', suitableGaps.length);
@@ -110,26 +108,28 @@ export function ActivitySchedulingModal({
       const endMinutes = startMinutes + activity.duration;
       const taskEndTime = minutesToTime(endMinutes);
 
-      // Split the gap using the gap logic API
-      await GapsAPI.scheduleTaskInGap(
+      // Schedule task in gap using new API
+      const result = await GapsAPI.scheduleTaskInGap(
         gap.id,
         gap.start_time,
         taskEndTime,
-        'user',
+        newTask,
         session.access_token
       );
 
-      onTaskCreated(newTask);
-      
-      toast.success(`Scheduled "${activity.title}"`, {
-        description: `Added to ${gap.start_time} - ${gap.end_time} on ${gap.date}`,
-      });
-      
-      onClose();
-    } catch (error) {
+      if (result.success) {
+        onTaskCreated(result.task);
+        
+        toast.success(`Scheduled "${activity.title}"`, {
+          description: `Added to ${gap.start_time} - ${gap.end_time} on ${gap.date}`,
+        });
+        
+        onClose();
+      }
+    } catch (error: unknown) {
       console.error('Error scheduling activity:', error);
       toast.error('Failed to schedule activity', {
-        description: 'Could not schedule the activity. Please try again.',
+        description: error instanceof Error ? error.message : 'Could not schedule the activity. Please try again.',
       });
     }
   };
@@ -252,7 +252,7 @@ export function ActivitySchedulingModal({
           <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 ${activity.color} rounded-full flex items-center justify-center`}>
-                {renderSafeIcon(activity.icon, 'w-6 h-6')}
+                {renderSafeIcon(activity.icon)}
               </div>
               <div className="flex-1">
                 <div className="text-white font-medium">{activity.title}</div>
@@ -322,7 +322,7 @@ export function ActivitySchedulingModal({
                             {formatGapTime(gap)}
                           </div>
                           <div className="text-slate-400 text-xs">
-                            {formatGapDuration(gap.duration_minutes || gap.duration || 0)} available
+                            {formatGapDuration(gap.duration_minutes || 0)} available
                           </div>
                         </div>
                         <Zap className="w-4 h-4 text-blue-400" />

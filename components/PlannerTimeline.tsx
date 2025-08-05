@@ -55,24 +55,26 @@ function PlannerTimeline({
 
   // Get gap source icon and color
   const getGapSourceInfo = (gap: TimeGap) => {
-    const source = gap.gap_source_id || gap.source;
+    // In new architecture, all gaps are treated equally
+    // We can use the modified_by field to determine the source
+    const source = gap.modified_by;
     
     switch (source) {
-      case 'calendar':
+      case 'calendar_sync':
         return {
           icon: <Calendar className="w-4 h-4 text-blue-400" />,
           color: 'bg-blue-500/20',
           borderColor: 'border-blue-500/30',
           label: 'Calendar'
         };
-      case 'manual':
+      case 'user':
         return {
           icon: <Settings className="w-4 h-4 text-purple-400" />,
           color: 'bg-purple-500/20',
           borderColor: 'border-purple-500/30',
           label: 'Manual'
         };
-      case 'default':
+      case 'system':
       default:
         return {
           icon: <Sparkles className="w-4 h-4 text-green-400" />,
@@ -253,7 +255,7 @@ function PlannerTimeline({
           duration: segmentDurationText,
           icon: gapSourceInfo.icon,
           iconColor: gapSourceInfo.color,
-          gapSource: gap.gap_source_id || gap.source,
+          gapSource: gap.modified_by,
           data: gap
         });
       } else {
@@ -305,7 +307,7 @@ function PlannerTimeline({
             duration: segmentDurationText,
             icon: gapSourceInfo.icon,
             iconColor: gapSourceInfo.color,
-            gapSource: gap.gap_source_id || gap.source,
+            gapSource: gap.modified_by,
             data: gap
           });
         }
@@ -477,12 +479,136 @@ function PlannerTimeline({
                   );
                 })
               ) : (
-                // Show empty state for working hours with no content
-                <div className="w-full rounded-2xl p-4 border border-slate-700/20 bg-slate-800/10">
-                  <div className="text-center">
-                    <span className="text-slate-500 text-sm">Available time</span>
-                  </div>
-                </div>
+                // Check if there are gaps for this hour that should be displayed
+                (() => {
+                  // Find gaps that span this hour
+                  const gapsForThisHour = gaps.filter(gap => {
+                    if (!gap.start_time || !gap.end_time) return false;
+                    
+                    try {
+                      let gapStart: Date;
+                      let gapEnd: Date;
+                      
+                      if (gap.start_time.includes('T')) {
+                        gapStart = parseISO(gap.start_time);
+                      } else {
+                        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                        gapStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
+                      }
+                      
+                      if (gap.end_time.includes('T')) {
+                        gapEnd = parseISO(gap.end_time);
+                      } else {
+                        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                        gapEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
+                      }
+                      
+                      // Check if gap overlaps with this hour
+                      const gapStartHour = gapStart.getHours();
+                      const gapEndHour = gapEnd.getHours();
+                      
+                      return (gapStartHour <= slot.hour24 && gapEndHour >= slot.hour24) ||
+                             (gapStartHour === slot.hour24) ||
+                             (gapEndHour === slot.hour24);
+                    } catch (error) {
+                      return false;
+                    }
+                  });
+                  
+                  if (gapsForThisHour.length > 0) {
+                    // Display the gaps for this hour
+                    return gapsForThisHour.map((gap) => {
+                      const gapSourceInfo = getGapSourceInfo(gap);
+                      
+                      // Calculate the portion of the gap that falls within this hour
+                      let displayStart: Date;
+                      let displayEnd: Date;
+                      
+                      try {
+                        if (gap.start_time.includes('T')) {
+                          displayStart = parseISO(gap.start_time);
+                        } else {
+                          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                          displayStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
+                        }
+                        
+                        if (gap.end_time.includes('T')) {
+                          displayEnd = parseISO(gap.end_time);
+                        } else {
+                          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                          displayEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
+                        }
+                        
+                        // Adjust to show only the portion within this hour
+                        const hourStart = new Date(displayStart);
+                        hourStart.setHours(slot.hour24, 0, 0, 0);
+                        const hourEnd = new Date(displayStart);
+                        hourEnd.setHours(slot.hour24 + 1, 0, 0, 0);
+                        
+                        displayStart = displayStart < hourStart ? hourStart : displayStart;
+                        displayEnd = displayEnd > hourEnd ? hourEnd : displayEnd;
+                        
+                        const durationMinutes = Math.round((displayEnd.getTime() - displayStart.getTime()) / (1000 * 60));
+                        const durationText = durationMinutes >= 60 
+                          ? `${Math.floor(durationMinutes / 60)}h${durationMinutes % 60 > 0 ? ` ${durationMinutes % 60}m` : ''}`
+                          : `${durationMinutes}m`;
+                        
+                        return (
+                          <button
+                            key={`gap-${gap.id}-${slot.hour24}`}
+                            onClick={() => onGapUtilize(gap)}
+                            className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`}
+                            type="button"
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Icon */}
+                              <div 
+                                className={`w-10 h-10 ${gapSourceInfo.color} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                              >
+                                {gapSourceInfo.icon}
+                              </div>
+                              
+                              {/* Content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <h3 className="text-white font-medium truncate text-base">
+                                    Gap
+                                  </h3>
+                                  <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full">
+                                    {gapSourceInfo.label}
+                                  </span>
+                                </div>
+                                
+                                <div className="flex items-center gap-3 text-sm text-slate-400">
+                                  <span className="truncate font-medium">
+                                    {formatTimeRange(displayStart, displayEnd)}
+                                  </span>
+                                  {userPreferences?.show_duration_in_planner && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{durationText}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      } catch (error) {
+                        return null;
+                      }
+                    });
+                  } else {
+                    // Show empty state for working hours with no content
+                    return (
+                      <div className="w-full rounded-2xl p-4 border border-slate-700/20 bg-slate-800/10">
+                        <div className="text-center">
+                          <span className="text-slate-500 text-sm">Available time</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                })()
               )}
             </div>
           </div>

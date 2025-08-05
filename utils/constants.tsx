@@ -52,32 +52,27 @@ export const DEFAULT_GAPS: TimeGap[] = [
   {
     id: 'gap-1',
     user_id: 'default-user',
-    start_time: '18:30',
-    end_time: '19:00',
-    duration: 30,
-    duration_minutes: 30,
-    is_available: true,
-    next_event_title: 'Dinner',
-    quality_score: 0.8,
-    gap_source_id: 'default',
-    modified_by: 'system',
-    updated_at: new Date().toISOString(),
+    date: new Date().toISOString().split('T')[0],
+    start_time: '09:00',
+    end_time: '10:00',
+    duration_minutes: 60,
+    parent_gap_id: null,
+    original_gap_id: null,
     created_at: new Date().toISOString(),
-    date: new Date().toISOString().split('T')[0]
+    updated_at: new Date().toISOString(),
+    modified_by: 'system'
   },
   {
     id: 'gap-2',
     user_id: 'default-user', 
-    start_time: '19:30',
-    end_time: '20:00',
-    duration: 30,
-    duration_minutes: 30,
-    is_available: true,
-    quality_score: 0.7,
-    gap_source_id: 'default',
-    modified_by: 'system',
-    updated_at: new Date().toISOString(),
+    date: new Date().toISOString().split('T')[0],
+    start_time: '10:00',
+    end_time: '11:00',
+    duration_minutes: 60,
+    parent_gap_id: null,
+    original_gap_id: null,
     created_at: new Date().toISOString(),
-    date: new Date().toISOString().split('T')[0]
+    updated_at: new Date().toISOString(),
+    modified_by: 'system'
   }
 ];

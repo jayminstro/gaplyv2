@@ -165,17 +165,17 @@ export function useCalendarScheduling() {
     const taskDuration = parseInt(task.duration.split(':')[1]) + (parseInt(task.duration.split(':')[0]) * 60);
     
     // Filter gaps that can fit the task
+    // In new architecture, all gaps in the table are available by definition
     const validGaps = gaps.filter(gap => 
-      gap.is_available && 
-      gap.duration >= taskDuration
+      gap.duration_minutes >= taskDuration
     );
     
     if (validGaps.length === 0) return null;
     
-    // Sort by quality score (highest first), then by start time (earliest first)
+    // Sort by duration (longest first), then by start time (earliest first)
     validGaps.sort((a, b) => {
-      const scoreDiff = (b.quality_score || 0) - (a.quality_score || 0);
-      if (scoreDiff !== 0) return scoreDiff;
+      const durationDiff = b.duration_minutes - a.duration_minutes;
+      if (durationDiff !== 0) return durationDiff;
       
       return a.start_time.localeCompare(b.start_time);
     });

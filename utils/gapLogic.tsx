@@ -1,22 +1,20 @@
 import { TimeGap, UserPreferences, Task } from '../types/index';
-import { LocalTask } from './database/schema';
-import { timeToMinutes, minutesToTime, safeTimeToMinutes } from './helpers';
+import { timeToMinutes, minutesToTime } from './helpers';
 import { generateUUID } from './uuid';
 
-export type GapSource = 'default' | 'calendar' | 'manual';
-export type GapModifier = 'system' | 'calendar_sync' | 'user' | 'ai_assistant';
+export type GapModifier = 'system' | 'user' | 'calendar_sync';
 
 /**
  * Core Gap Logic Implementation
- * Implements the priority system: manual > calendar > default
+ * Simplified architecture: gaps represent available time only
  */
 export class GapLogic {
   
   /**
-   * Create default gaps for a given date
-   * Called on app launch or when no calendar data is available
+   * Create default free hour gaps for a given date
+   * Called on app launch or when no gaps exist
    */
-  static createDefaultGaps(
+  static createFreeHourGaps(
     date: string, 
     preferences: UserPreferences, 
     userId: string
@@ -35,207 +33,96 @@ export class GapLogic {
       return [];
     }
     
-    const gap: TimeGap = {
-      id: generateUUID(),
-      user_id: userId,
-      date,
-      start_time: preferences.calendar_work_start,
-      end_time: preferences.calendar_work_end,
-      duration: this.calculateDuration(preferences.calendar_work_start, preferences.calendar_work_end),
-      duration_minutes: this.calculateDuration(preferences.calendar_work_start, preferences.calendar_work_end),
-      is_available: true,
-      gap_source_id: 'default',
-      modified_by: 'system',
-      updated_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    };
-    
-    return [gap];
-  }
-  
-  /**
-   * Create calendar-based gaps from event data
-   * Replaces default gaps but respects manual gaps
-   */
-  static createCalendarGaps(
-    date: string,
-    calendarEvents: Array<{start: string, end: string, title: string}>,
-    preferences: UserPreferences,
-    userId: string,
-    existingGaps: TimeGap[] = []
-  ): TimeGap[] {
-    // Filter out default gaps (will be replaced)
-    // Keep manual gaps (higher priority)
-    const manualGaps = existingGaps.filter(gap => gap.gap_source_id === 'manual');
-    
-    // Sort events by start time
-    const sortedEvents = calendarEvents.sort((a, b) => 
-      safeTimeToMinutes(a.start) - safeTimeToMinutes(b.start)
-    );
-    
     const gaps: TimeGap[] = [];
-    let currentTime = safeTimeToMinutes(preferences.calendar_work_start);
-    const workEndTime = safeTimeToMinutes(preferences.calendar_work_end);
+    const workStart = timeToMinutes(preferences.calendar_work_start);
+    const workEnd = timeToMinutes(preferences.calendar_work_end);
     
-    for (const event of sortedEvents) {
-      const eventStartTime = safeTimeToMinutes(event.start);
-      const eventEndTime = safeTimeToMinutes(event.end);
+    // Create one gap per hour
+    for (let hour = workStart; hour < workEnd; hour += 60) {
+      const startTime = minutesToTime(hour);
+      const endTime = minutesToTime(Math.min(hour + 60, workEnd));
       
-      // Create gap before this event if there's time
-      if (eventStartTime > currentTime + preferences.calendar_min_gap) {
-        const gapStart = currentTime;
-        const gapEnd = Math.max(gapStart, eventStartTime - preferences.calendar_buffer_time);
-        
-        if (gapEnd > gapStart) {
-          // Check if this gap conflicts with any manual gaps
-          const conflictsWithManual = manualGaps.some(manualGap => 
-            this.doGapsOverlap(
-              { start_time: minutesToTime(gapStart), end_time: minutesToTime(gapEnd) },
-              manualGap
-            )
-          );
-          
-          if (!conflictsWithManual) {
-            gaps.push({
-              id: generateUUID(),
-              user_id: userId,
-              date,
-              start_time: minutesToTime(gapStart),
-              end_time: minutesToTime(gapEnd),
-              duration: gapEnd - gapStart,
-              duration_minutes: gapEnd - gapStart,
-              is_available: true,
-              gap_source_id: 'calendar',
-              modified_by: 'calendar_sync',
-              updated_at: new Date().toISOString(),
-              created_at: new Date().toISOString()
-            });
-          }
-        }
-      }
-      
-      // Update current time to end of this event
-      currentTime = Math.max(currentTime, eventEndTime);
-    }
-    
-    // Create final gap if time remains
-    if (currentTime < workEndTime - preferences.calendar_min_gap) {
-      const gapStart = currentTime;
-      const gapEnd = workEndTime;
-      
-      // Check if this gap conflicts with any manual gaps
-      const conflictsWithManual = manualGaps.some(manualGap => 
-        this.doGapsOverlap(
-          { start_time: minutesToTime(gapStart), end_time: minutesToTime(gapEnd) },
-          manualGap
-        )
-      );
-      
-      if (!conflictsWithManual) {
-        gaps.push({
-          id: generateUUID(),
-          user_id: userId,
-          date,
-          start_time: minutesToTime(gapStart),
-          end_time: minutesToTime(gapEnd),
-          duration: gapEnd - gapStart,
-          duration_minutes: gapEnd - gapStart,
-          is_available: true,
-          gap_source_id: 'calendar',
-          modified_by: 'calendar_sync',
-          updated_at: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        });
-      }
+      gaps.push({
+        id: generateUUID(),
+        user_id: userId,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        duration_minutes: Math.min(60, workEnd - hour),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        modified_by: 'system'
+      });
     }
     
     return gaps;
   }
 
   /**
-   * Split a gap to accommodate a task
+   * Schedule task in gap - returns new gaps after splitting
+   * If task fills entire gap, returns empty array (gap should be deleted)
+   * If task partially fills gap, returns remaining gap(s)
    */
-  static splitGapForTask(
+  static scheduleTaskInGap(
     originalGap: TimeGap,
     taskStartTime: string,
     taskEndTime: string,
     modifiedBy: GapModifier = 'user'
-  ): TimeGap[] {
+  ): { deletedGap: boolean; newGaps: TimeGap[] } {
     const gapStart = timeToMinutes(originalGap.start_time);
     const gapEnd = timeToMinutes(originalGap.end_time);
     const taskStart = timeToMinutes(taskStartTime);
     const taskEnd = timeToMinutes(taskEndTime);
     
-    const gaps: TimeGap[] = [];
+    // Validate task fits within gap
+    if (taskStart < gapStart || taskEnd > gapEnd) {
+      throw new Error('Task time range exceeds gap boundaries');
+    }
     
-    // Create gap before task if there's time
+    const newGaps: TimeGap[] = [];
+    
+    // Case 1: Task fills entire gap - no new gaps needed
+    if (taskStart === gapStart && taskEnd === gapEnd) {
+      return { deletedGap: true, newGaps: [] };
+    }
+    
+    // Case 2: Task partially fills gap - create remaining gaps
+    
+    // Gap before task (if any)
     if (taskStart > gapStart) {
-      gaps.push({
-        ...originalGap,
+      newGaps.push({
         id: generateUUID(),
+        user_id: originalGap.user_id,
+        date: originalGap.date,
+        start_time: originalGap.start_time,
         end_time: taskStartTime,
-        duration: taskStart - gapStart,
         duration_minutes: taskStart - gapStart,
-        modified_by: modifiedBy,
-        updated_at: new Date().toISOString()
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        modified_by: modifiedBy
       });
     }
     
-    // Create gap after task if there's time
+    // Gap after task (if any)
     if (taskEnd < gapEnd) {
-      gaps.push({
-        ...originalGap,
+      newGaps.push({
         id: generateUUID(),
+        user_id: originalGap.user_id,
+        date: originalGap.date,
         start_time: taskEndTime,
-        duration: gapEnd - taskEnd,
+        end_time: originalGap.end_time,
         duration_minutes: gapEnd - taskEnd,
-        modified_by: modifiedBy,
-        updated_at: new Date().toISOString()
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        modified_by: modifiedBy
       });
     }
     
-    return gaps;
-  }
-
-  /**
-   * Filter gaps by priority (manual > calendar > default)
-   */
-  static filterGapsByPriority(gaps: TimeGap[], _date: string): TimeGap[] {
-    // Group gaps by source
-    const manualGaps = gaps.filter(gap => gap.gap_source_id === 'manual');
-    const calendarGaps = gaps.filter(gap => gap.gap_source_id === 'calendar');
-    const defaultGaps = gaps.filter(gap => gap.gap_source_id === 'default');
-    
-    // Return manual gaps if any exist, otherwise calendar gaps, otherwise default gaps
-    if (manualGaps.length > 0) {
-      return manualGaps;
-    } else if (calendarGaps.length > 0) {
-      return calendarGaps;
-    } else {
-      return defaultGaps;
-    }
-  }
-
-  /**
-   * Check if calendar gaps should override existing gaps
-   */
-  static shouldOverrideWithCalendar(existingGaps: TimeGap[], date: string): boolean {
-    const existingGapsForDate = existingGaps.filter(gap => gap.date === date);
-    return existingGapsForDate.every(gap => gap.gap_source_id !== 'manual');
-  }
-
-  /**
-   * Validate that no gaps overlap
-   */
-  static validateNoOverlaps(gaps: TimeGap[]): boolean {
-    for (let i = 0; i < gaps.length; i++) {
-      for (let j = i + 1; j < gaps.length; j++) {
-        if (this.doGapsOverlap(gaps[i], gaps[j])) {
-          return false;
-        }
-      }
-    }
-    return true;
+    return { deletedGap: true, newGaps };
   }
 
   /**
@@ -258,82 +145,6 @@ export class GapLogic {
   }
 
   /**
-   * Group overlapping gaps for processing
-   */
-  private static _groupOverlappingGaps(gaps: TimeGap[]): TimeGap[][] {
-    const groups: TimeGap[][] = [];
-    const processed = new Set<string>();
-    
-    for (const gap of gaps) {
-      if (processed.has(gap.id)) continue;
-      
-      const group = [gap];
-      processed.add(gap.id);
-      
-      for (const otherGap of gaps) {
-        if (processed.has(otherGap.id)) continue;
-        
-        if (this.doGapsOverlap(gap, otherGap)) {
-          group.push(otherGap);
-          processed.add(otherGap.id);
-        }
-      }
-      
-      groups.push(group);
-    }
-    
-    return groups;
-  }
-
-  /**
-   * Calculate gaps from local tasks and events
-   * Enhanced version for local-first architecture
-   */
-  static calculateLocalGaps(
-    date: string,
-    tasks: (Task | LocalTask)[],
-    preferences: UserPreferences,
-    userId: string,
-    existingGaps: TimeGap[] = []
-  ): TimeGap[] {
-    // Filter tasks for the specific date
-    const dateTasks = tasks.filter(task => 
-      task.dueDate === date && 
-      task.status !== 'completed' &&
-      !('deleted_at' in task && task.deleted_at)
-    );
-
-    // Convert tasks to calendar events
-    const calendarEvents = dateTasks.map(task => ({
-      start: task.dueTime!,
-      end: this.calculateTaskEndTime(task),
-      title: task.title
-    }));
-
-    // Use existing calendar gap logic
-    return this.createCalendarGaps(
-      date,
-      calendarEvents,
-      preferences,
-      userId,
-      existingGaps
-    );
-  }
-
-  /**
-   * Calculate task end time based on duration
-   */
-  private static calculateTaskEndTime(task: Task): string {
-    if (!task.dueTime || !task.duration) return task.dueTime!;
-    
-    const startMinutes = timeToMinutes(task.dueTime);
-    const durationMinutes = parseInt(task.duration.split(':')[1]) + (parseInt(task.duration.split(':')[0]) * 60);
-    const endMinutes = startMinutes + durationMinutes;
-    
-    return minutesToTime(endMinutes);
-  }
-
-  /**
    * Validate gap consistency
    */
   static validateGapConsistency(gaps: TimeGap[]): {
@@ -347,7 +158,7 @@ export class GapLogic {
     // Check for overlaps
     for (let i = 0; i < gaps.length; i++) {
       for (let j = i + 1; j < gaps.length; j++) {
-        if (this.doGapsOverlap(gaps[i], gaps[j])) {
+        if (gaps[i].date === gaps[j].date && this.doGapsOverlap(gaps[i], gaps[j])) {
           errors.push(`Gap overlap detected: ${gaps[i].id} and ${gaps[j].id}`);
         }
       }
@@ -377,40 +188,179 @@ export class GapLogic {
     const minGapDuration = preferences.calendar_min_gap || 15;
     
     return gaps.filter(gap => {
-      const duration = gap.duration_minutes || gap.duration;
-      return duration >= minGapDuration;
-    }).map(gap => ({
-      ...gap,
-      quality_score: this.calculateGapQuality(gap, preferences)
-    }));
+      return gap.duration_minutes >= minGapDuration;
+    });
   }
 
   /**
-   * Calculate gap quality score
+   * Handle working time changes and update gaps accordingly
    */
-  private static calculateGapQuality(gap: TimeGap, preferences: UserPreferences): number {
-    let score = 100;
-    
-    // Prefer longer gaps
-    const duration = gap.duration_minutes || gap.duration;
-    if (duration < 30) score -= 20;
-    if (duration < 15) score -= 30;
-    
-    // Prefer gaps during work hours
-    const startMinutes = timeToMinutes(gap.start_time);
-    const workStart = timeToMinutes(preferences.calendar_work_start);
-    const workEnd = timeToMinutes(preferences.calendar_work_end);
-    
-    if (startMinutes < workStart || startMinutes > workEnd) {
-      score -= 15;
+  static handleWorkingTimeChange(
+    existingGaps: TimeGap[],
+    oldPreferences: UserPreferences,
+    newPreferences: UserPreferences,
+    userId: string
+  ): { gapsToCreate: TimeGap[], gapsToDelete: string[], gapsToUpdate: TimeGap[] } {
+    const gapsToCreate: TimeGap[] = [];
+    const gapsToDelete: string[] = [];
+    const gapsToUpdate: TimeGap[] = [];
+
+    // Group gaps by date for easier processing
+    const gapsByDate = new Map<string, TimeGap[]>();
+    existingGaps.forEach(gap => {
+      if (!gapsByDate.has(gap.date)) {
+        gapsByDate.set(gap.date, []);
+      }
+      gapsByDate.get(gap.date)!.push(gap);
+    });
+
+    // Process each date
+    for (const [date, gaps] of gapsByDate) {
+      const dayOfWeek = new Date(date).getDay();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDay = dayNames[dayOfWeek];
+
+      // Check if this day is still a working day
+      const wasWorkingDay = oldPreferences.calendar_working_days.includes(currentDay);
+      const isWorkingDay = newPreferences.calendar_working_days.includes(currentDay);
+
+      if (!isWorkingDay && wasWorkingDay) {
+        // Day is no longer a working day - delete all gaps
+        gaps.forEach(gap => gapsToDelete.push(gap.id));
+        continue;
+      }
+
+      if (isWorkingDay && !wasWorkingDay) {
+        // Day is now a working day - create new gaps
+        const newGaps = this.createFreeHourGaps(date, newPreferences, userId);
+        gapsToCreate.push(...newGaps);
+        continue;
+      }
+
+      if (!isWorkingDay) {
+        // Not a working day in either case - skip
+        continue;
+      }
+
+      // Day is still a working day - check for time changes
+      const oldWorkStart = timeToMinutes(oldPreferences.calendar_work_start);
+      const oldWorkEnd = timeToMinutes(oldPreferences.calendar_work_end);
+      const newWorkStart = timeToMinutes(newPreferences.calendar_work_start);
+      const newWorkEnd = timeToMinutes(newPreferences.calendar_work_end);
+
+      // Process each gap on this date
+      gaps.forEach(gap => {
+        const gapStart = timeToMinutes(gap.start_time);
+        const gapEnd = timeToMinutes(gap.end_time);
+
+        // Check if gap is completely outside new working hours
+        if (gapEnd <= newWorkStart || gapStart >= newWorkEnd) {
+          gapsToDelete.push(gap.id);
+          return;
+        }
+
+        // Check if gap needs to be updated (partially outside or needs adjustment)
+        let needsUpdate = false;
+        let newStartTime = gap.start_time;
+        let newEndTime = gap.end_time;
+
+        // Adjust start time if gap starts before new work start
+        if (gapStart < newWorkStart) {
+          newStartTime = minutesToTime(newWorkStart);
+          needsUpdate = true;
+        }
+
+        // Adjust end time if gap ends after new work end
+        if (gapEnd > newWorkEnd) {
+          newEndTime = minutesToTime(newWorkEnd);
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          const newDuration = timeToMinutes(newEndTime) - timeToMinutes(newStartTime);
+          
+          // Only update if the gap still has meaningful duration
+          if (newDuration >= (newPreferences.calendar_min_gap || 15)) {
+            gapsToUpdate.push({
+              ...gap,
+              start_time: newStartTime,
+              end_time: newEndTime,
+              duration_minutes: newDuration,
+              updated_at: new Date().toISOString(),
+              modified_by: 'system'
+            });
+          } else {
+            // Gap is too small after adjustment - delete it
+            gapsToDelete.push(gap.id);
+          }
+        }
+      });
+
+      // Create new gaps for extended working hours
+      if (newWorkStart < oldWorkStart) {
+        // Work starts earlier - create gaps for the new early period
+        const earlyGaps = this.createGapsForTimeRange(
+          date,
+          newWorkStart,
+          oldWorkStart,
+          newPreferences,
+          userId
+        );
+        gapsToCreate.push(...earlyGaps);
+      }
+
+      if (newWorkEnd > oldWorkEnd) {
+        // Work ends later - create gaps for the new late period
+        const lateGaps = this.createGapsForTimeRange(
+          date,
+          oldWorkEnd,
+          newWorkEnd,
+          newPreferences,
+          userId
+        );
+        gapsToCreate.push(...lateGaps);
+      }
     }
-    
-    // Prefer manual gaps
-    if (gap.gap_source_id === 'manual') {
-      score += 10;
+
+    return { gapsToCreate, gapsToDelete, gapsToUpdate };
+  }
+
+  /**
+   * Create gaps for a specific time range
+   */
+  private static createGapsForTimeRange(
+    date: string,
+    startMinutes: number,
+    endMinutes: number,
+    preferences: UserPreferences,
+    userId: string
+  ): TimeGap[] {
+    const gaps: TimeGap[] = [];
+    const minGapDuration = preferences.calendar_min_gap || 15;
+
+    // Create one gap per hour in the specified range
+    for (let hour = startMinutes; hour < endMinutes; hour += 60) {
+      const gapStart = minutesToTime(hour);
+      const gapEnd = minutesToTime(Math.min(hour + 60, endMinutes));
+      const gapDuration = Math.min(60, endMinutes - hour);
+
+      // Only create gap if it meets minimum duration requirement
+      if (gapDuration >= minGapDuration) {
+        gaps.push({
+          id: generateUUID(),
+          user_id: userId,
+          date,
+          start_time: gapStart,
+          end_time: gapEnd,
+          duration_minutes: gapDuration,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          modified_by: 'system'
+        });
+      }
     }
-    
-    return Math.max(0, Math.min(100, score));
+
+    return gaps;
   }
 }
 
@@ -428,33 +378,13 @@ export class GapManager {
     preferences: UserPreferences,
     existingGaps: TimeGap[] = []
   ): Promise<TimeGap[]> {
-    // Check if we should use calendar data
-    if (GapLogic.shouldOverrideWithCalendar(existingGaps, date)) {
-      // For now, return default gaps
-      // In a real implementation, you'd fetch calendar data here
-      return GapLogic.createDefaultGaps(date, preferences, userId);
+    // If gaps already exist, return them
+    if (existingGaps.length > 0) {
+      return existingGaps;
     }
     
-    return existingGaps;
-  }
-
-  /**
-   * Handle calendar sync for a date
-   */
-  static async handleCalendarSync(
-    date: string,
-    calendarEvents: Array<{start: string, end: string, title: string}>,
-    userId: string,
-    preferences: UserPreferences,
-    existingGaps: TimeGap[] = []
-  ): Promise<TimeGap[]> {
-    return GapLogic.createCalendarGaps(
-      date,
-      calendarEvents,
-      preferences,
-      userId,
-      existingGaps
-    );
+    // Create default free hour gaps
+    return GapLogic.createFreeHourGaps(date, preferences, userId);
   }
 
   /**
@@ -467,6 +397,7 @@ export class GapManager {
     modifiedBy: GapModifier = 'user'
   ): TimeGap[] {
     const taskEndTime = minutesToTime(timeToMinutes(taskStartTime) + taskDurationMinutes);
-    return GapLogic.splitGapForTask(gap, taskStartTime, taskEndTime, modifiedBy);
+    const result = GapLogic.scheduleTaskInGap(gap, taskStartTime, taskEndTime, modifiedBy);
+    return result.newGaps;
   }
 }

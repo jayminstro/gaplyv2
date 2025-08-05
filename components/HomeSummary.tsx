@@ -124,7 +124,7 @@ export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
       // If the gap is in the future, count the full duration
       else if (startTime > now) {
         // Use the duration_minutes field if available, otherwise calculate
-        const gapDuration = gap.duration_minutes || gap.duration || 0;
+        const gapDuration = gap.duration_minutes;
         if (gapDuration > 0) {
           totalFreeMinutes += gapDuration;
         } else {

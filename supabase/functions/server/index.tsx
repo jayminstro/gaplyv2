@@ -988,17 +988,16 @@ app.post("/make-server-966d4846/gaps/create", async (c) => {
       date: body.date,
       start_time: body.start_time,
       end_time: body.end_time,
-      duration: body.duration_minutes || calculateDuration(body.start_time, body.end_time),
       duration_minutes: body.duration_minutes || calculateDuration(body.start_time, body.end_time),
-      is_available: body.is_available !== false,
-      gap_source_id: body.gap_source_id || 'manual',
-      modified_by: body.modified_by || 'user',
+      parent_gap_id: body.parent_gap_id || null,
+      original_gap_id: body.original_gap_id || null,
+      created_at: new Date().toISOString(),
       updated_at: body.updated_at || new Date().toISOString(),
-      created_at: new Date().toISOString()
+      modified_by: body.modified_by || 'user'
     };
 
     const { data: newGap, error: insertError } = await supabase
-      .from('calendar_gaps')
+      .from('gaps')
       .insert(gapData)
       .select()
       .single();
@@ -1017,31 +1016,31 @@ app.post("/make-server-966d4846/gaps/create", async (c) => {
   }
 });
 
-// Calendar gaps endpoints with gap logic support
+// Calendar gaps endpoints with simplified gap logic
 app.post("/make-server-966d4846/gaps/schedule", async (c) => {
   try {
     const user = c.get('user');
     const supabase = createSupabaseClient();
     const body = await c.req.json();
     
-    const { gapId, taskStartTime, taskEndTime, modifiedBy } = body;
+    const { gapId, taskStartTime, taskEndTime, taskData } = body;
     
     console.log('🔄 [Gap Schedule] Request:', {
       gapId,
       taskStartTime,
       taskEndTime,
-      modifiedBy,
+      taskData: taskData?.title,
       userId: user.id
     });
 
     // Validate input
-    if (!gapId || !taskStartTime || !taskEndTime) {
-      return c.json({ error: "Missing required fields: gapId, taskStartTime, taskEndTime" }, 400);
+    if (!gapId || !taskStartTime || !taskEndTime || !taskData) {
+      return c.json({ error: "Missing required fields: gapId, taskStartTime, taskEndTime, taskData" }, 400);
     }
 
     // Find the gap to split
     const { data: originalGap, error: findError } = await supabase
-      .from('calendar_gaps')
+      .from('gaps')
       .select('*')
       .eq('id', gapId)
       .eq('user_id', user.id)
@@ -1056,7 +1055,7 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
       id: originalGap.id,
       start_time: originalGap.start_time,
       end_time: originalGap.end_time,
-      duration: originalGap.duration_minutes
+      duration_minutes: originalGap.duration_minutes
     });
 
     // Helper function to convert minutes to HH:MM
@@ -1100,15 +1099,13 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         user_id: user.id,
         date: originalGap.date,
         start_time: originalGap.start_time,
-        end_time: minutesToTimeLocal(taskStartMinutes),
-        duration: beforeGapDuration,
+        end_time: taskStartTime,
         duration_minutes: beforeGapDuration,
-        is_available: true,
-        gap_source_id: originalGap.gap_source_id,
-        modified_by: modifiedBy || 'user',
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        origin_gap_id: originalGap.id,
-        created_at: new Date().toISOString()
+        modified_by: 'user'
       });
     }
 
@@ -1119,23 +1116,21 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         id: generateUUID(),
         user_id: user.id,
         date: originalGap.date,
-        start_time: minutesToTimeLocal(taskEndMinutes),
+        start_time: taskEndTime,
         end_time: originalGap.end_time,
-        duration: afterGapDuration,
         duration_minutes: afterGapDuration,
-        is_available: true,
-        gap_source_id: originalGap.gap_source_id,
-        modified_by: modifiedBy || 'user',
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        origin_gap_id: originalGap.id,
-        created_at: new Date().toISOString()
+        modified_by: 'user'
       });
     }
 
     // Execute the split in a transaction
     // 1. Delete original gap
     const { error: deleteError } = await supabase
-      .from('calendar_gaps')
+      .from('gaps')
       .delete()
       .eq('id', gapId)
       .eq('user_id', user.id);
@@ -1148,7 +1143,7 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
     // 2. Insert new gaps (if any)
     if (newGaps.length > 0) {
       const { error: insertError } = await supabase
-        .from('calendar_gaps')
+        .from('gaps')
         .insert(newGaps);
 
       if (insertError) {
@@ -1157,21 +1152,47 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
       }
     }
 
-    console.log('✅ [Gap Schedule] Successfully split gap:', {
+    // 3. Create/update the task
+    const taskWithGap = {
+      ...taskData,
+      id: taskData.id || generateUUID(),
+      user_id: user.id,
+      scheduled_gap_id: gapId,
+      dueDate: originalGap.date,
+      dueTime: taskStartTime,
+      status: 'scheduled',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data: createdTask, error: taskError } = await supabase
+      .from('tasks')
+      .upsert(taskWithGap)
+      .select()
+      .single();
+
+    if (taskError) {
+      console.log('❌ [Gap Schedule] Error creating task:', taskError);
+      return c.json({ error: "Failed to create task" }, 500);
+    }
+
+    console.log('✅ [Gap Schedule] Successfully scheduled task:', {
       originalGapId: gapId,
       newGapsCount: newGaps.length,
+      taskId: createdTask.id,
       newGaps: newGaps.map(g => ({ id: g.id, start_time: g.start_time, end_time: g.end_time }))
     });
 
     return c.json({ 
       success: true, 
       originalGapId: gapId,
-      newGaps: newGaps
+      newGaps: newGaps,
+      task: createdTask
     });
 
   } catch (error) {
     console.log('❌ [Gap Schedule] Unexpected error:', error);
-    return c.json({ error: "Failed to schedule in gap" }, 500);
+    return c.json({ error: "Failed to schedule task" }, 500);
   }
 });
 
@@ -1182,7 +1203,7 @@ app.get("/make-server-966d4846/gaps", async (c) => {
     const date = c.req.query('date'); // Optional date filter
 
     let query = supabase
-      .from('calendar_gaps')
+      .from('gaps')
       .select('*')
       .eq('user_id', user.id)
       .order('start_time', { ascending: true });
@@ -1200,10 +1221,107 @@ app.get("/make-server-966d4846/gaps", async (c) => {
 
     return c.json(gaps || []);
   } catch (error) {
-    console.log("Error fetching gaps:", error);
-    return c.json({ error: "Failed to fetch gaps" }, 500);
+    console.log("Error in gaps endpoint:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
+
+app.post("/make-server-966d4846/gaps/initialize", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    const body = await c.req.json();
+    
+    const { date, preferences } = body;
+    
+    console.log('🚀 [Gap Initialize] Request:', {
+      date,
+      userId: user.id
+    });
+
+    if (!date || !preferences) {
+      return c.json({ error: "Missing required fields: date, preferences" }, 400);
+    }
+
+    // Check if gaps already exist for this date
+    const { data: existingGaps, error: checkError } = await supabase
+      .from('gaps')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('date', date);
+
+    if (checkError) {
+      console.log('❌ [Gap Initialize] Error checking existing gaps:', checkError);
+      return c.json({ error: "Failed to check existing gaps" }, 500);
+    }
+
+    if (existingGaps && existingGaps.length > 0) {
+      console.log('✅ [Gap Initialize] Gaps already exist for date:', date);
+      return c.json({ message: "Gaps already exist for this date", gaps: existingGaps });
+    }
+
+    // Create default free hour gaps
+    const workStart = timeToMinutes(preferences.calendar_work_start);
+    const workEnd = timeToMinutes(preferences.calendar_work_end);
+    const gaps = [];
+
+    // Create one gap per hour
+    for (let hour = workStart; hour < workEnd; hour += 60) {
+      const startTime = minutesToTime(hour);
+      const endTime = minutesToTime(Math.min(hour + 60, workEnd));
+      
+      gaps.push({
+        id: generateUUID(),
+        user_id: user.id,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        duration_minutes: Math.min(60, workEnd - hour),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        modified_by: 'system'
+      });
+    }
+
+    // Insert gaps
+    const { data: insertedGaps, error: insertError } = await supabase
+      .from('gaps')
+      .insert(gaps)
+      .select();
+
+    if (insertError) {
+      console.log('❌ [Gap Initialize] Error inserting gaps:', insertError);
+      return c.json({ error: "Failed to create gaps" }, 500);
+    }
+
+    console.log('✅ [Gap Initialize] Successfully created gaps:', {
+      date,
+      gapCount: insertedGaps.length
+    });
+
+    return c.json({ 
+      success: true, 
+      message: `Created ${insertedGaps.length} gaps for ${date}`,
+      gaps: insertedGaps
+    });
+
+  } catch (error) {
+    console.log('❌ [Gap Initialize] Unexpected error:', error);
+    return c.json({ error: "Failed to initialize gaps" }, 500);
+  }
+});
+
+// Helper functions
+const timeToMinutes = (time) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (minutes) => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
 
 // Discover/explore endpoints for activity suggestions
 app.get("/make-server-966d4846/discover", async (c) => {
@@ -1277,7 +1395,7 @@ app.get("/make-server-966d4846/google-calendar/status", async (c) => {
 
     // Count available gaps
     const { data: gaps, error: gapsError } = await supabase
-      .from('calendar_gaps')
+      .from('gaps')
       .select('id')
       .eq('user_id', user.id)
       .eq('is_available', true);
@@ -1592,6 +1710,329 @@ app.get("/make-server-966d4846/discover", async (c) => {
     });
   }
 });
+
+// Working time change endpoint
+app.post("/make-server-966d4846/gaps/update-working-time", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    const body = await c.req.json();
+    
+    const { oldPreferences, newPreferences } = body;
+    
+    console.log('🔄 [Working Time Update] Request:', {
+      userId: user.id,
+      oldWorkStart: oldPreferences.calendar_work_start,
+      oldWorkEnd: oldPreferences.calendar_work_end,
+      newWorkStart: newPreferences.calendar_work_start,
+      newWorkEnd: newPreferences.calendar_work_end
+    });
+
+    // Get all existing gaps for the user
+    const { data: existingGaps, error: gapsError } = await supabase
+      .from('gaps')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (gapsError) {
+      console.log('❌ [Working Time Update] Error fetching gaps:', gapsError);
+      return c.json({ error: "Failed to fetch existing gaps" }, 500);
+    }
+
+    // Process the working time change using local logic
+    const { gapsToCreate, gapsToDelete, gapsToUpdate } = handleWorkingTimeChange(
+      existingGaps || [],
+      oldPreferences,
+      newPreferences,
+      user.id
+    );
+
+    console.log('📊 [Working Time Update] Changes:', {
+      gapsToCreate: gapsToCreate.length,
+      gapsToDelete: gapsToDelete.length,
+      gapsToUpdate: gapsToUpdate.length
+    });
+
+    // Execute changes in a transaction
+    let created = 0;
+    let deleted = 0;
+    let updated = 0;
+
+    // Delete gaps that are no longer valid
+    if (gapsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('gaps')
+        .delete()
+        .in('id', gapsToDelete);
+
+      if (deleteError) {
+        console.log('❌ [Working Time Update] Error deleting gaps:', deleteError);
+        return c.json({ error: "Failed to delete invalid gaps" }, 500);
+      }
+      deleted = gapsToDelete.length;
+    }
+
+    // Update existing gaps that need adjustment
+    if (gapsToUpdate.length > 0) {
+      for (const gap of gapsToUpdate) {
+        const { error: updateError } = await supabase
+          .from('gaps')
+          .update({
+            start_time: gap.start_time,
+            end_time: gap.end_time,
+            duration_minutes: gap.duration_minutes,
+            updated_at: gap.updated_at,
+            modified_by: gap.modified_by
+          })
+          .eq('id', gap.id);
+
+        if (updateError) {
+          console.log('❌ [Working Time Update] Error updating gap:', updateError);
+          continue;
+        }
+        updated++;
+      }
+    }
+
+    // Create new gaps for extended working hours
+    if (gapsToCreate.length > 0) {
+      const { error: createError } = await supabase
+        .from('gaps')
+        .insert(gapsToCreate);
+
+      if (createError) {
+        console.log('❌ [Working Time Update] Error creating gaps:', createError);
+        return c.json({ error: "Failed to create new gaps" }, 500);
+      }
+      created = gapsToCreate.length;
+    }
+
+    console.log('✅ [Working Time Update] Success:', {
+      created,
+      deleted,
+      updated
+    });
+
+    return c.json({ 
+      success: true, 
+      created,
+      deleted,
+      updated
+    });
+
+  } catch (error) {
+    console.log('❌ [Working Time Update] Unexpected error:', error);
+    return c.json({ error: "Failed to update working time" }, 500);
+  }
+});
+
+// Working time change logic (local implementation)
+function handleWorkingTimeChange(
+  existingGaps: any[],
+  oldPreferences: any,
+  newPreferences: any,
+  userId: string
+): { gapsToCreate: any[], gapsToDelete: string[], gapsToUpdate: any[] } {
+  const gapsToCreate: any[] = [];
+  const gapsToDelete: string[] = [];
+  const gapsToUpdate: any[] = [];
+
+  // Group gaps by date for easier processing
+  const gapsByDate = new Map();
+  existingGaps.forEach(gap => {
+    if (!gapsByDate.has(gap.date)) {
+      gapsByDate.set(gap.date, []);
+    }
+    gapsByDate.get(gap.date).push(gap);
+  });
+
+  // Process each date
+  for (const [date, gaps] of gapsByDate) {
+    const dayOfWeek = new Date(date).getDay();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const currentDay = dayNames[dayOfWeek];
+
+    // Check if this day is still a working day
+    const wasWorkingDay = oldPreferences.calendar_working_days.includes(currentDay);
+    const isWorkingDay = newPreferences.calendar_working_days.includes(currentDay);
+
+    if (!isWorkingDay && wasWorkingDay) {
+      // Day is no longer a working day - delete all gaps
+      gaps.forEach(gap => gapsToDelete.push(gap.id));
+      continue;
+    }
+
+    if (isWorkingDay && !wasWorkingDay) {
+      // Day is now a working day - create new gaps
+      const newGaps = createFreeHourGaps(date, newPreferences, userId);
+      gapsToCreate.push(...newGaps);
+      continue;
+    }
+
+    if (!isWorkingDay) {
+      // Not a working day in either case - skip
+      continue;
+    }
+
+    // Day is still a working day - check for time changes
+    const oldWorkStart = timeToMinutes(oldPreferences.calendar_work_start);
+    const oldWorkEnd = timeToMinutes(oldPreferences.calendar_work_end);
+    const newWorkStart = timeToMinutes(newPreferences.calendar_work_start);
+    const newWorkEnd = timeToMinutes(newPreferences.calendar_work_end);
+
+    // Process each gap on this date
+    gaps.forEach(gap => {
+      const gapStart = timeToMinutes(gap.start_time);
+      const gapEnd = timeToMinutes(gap.end_time);
+
+      // Check if gap is completely outside new working hours
+      if (gapEnd <= newWorkStart || gapStart >= newWorkEnd) {
+        gapsToDelete.push(gap.id);
+        return;
+      }
+
+      // Check if gap needs to be updated (partially outside or needs adjustment)
+      let needsUpdate = false;
+      let newStartTime = gap.start_time;
+      let newEndTime = gap.end_time;
+
+      // Adjust start time if gap starts before new work start
+      if (gapStart < newWorkStart) {
+        newStartTime = minutesToTime(newWorkStart);
+        needsUpdate = true;
+      }
+
+      // Adjust end time if gap ends after new work end
+      if (gapEnd > newWorkEnd) {
+        newEndTime = minutesToTime(newWorkEnd);
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        const newDuration = timeToMinutes(newEndTime) - timeToMinutes(newStartTime);
+        
+        // Only update if the gap still has meaningful duration
+        if (newDuration >= (newPreferences.calendar_min_gap || 15)) {
+          gapsToUpdate.push({
+            ...gap,
+            start_time: newStartTime,
+            end_time: newEndTime,
+            duration_minutes: newDuration,
+            updated_at: new Date().toISOString(),
+            modified_by: 'system'
+          });
+        } else {
+          // Gap is too small after adjustment - delete it
+          gapsToDelete.push(gap.id);
+        }
+      }
+    });
+
+    // Create new gaps for extended working hours
+    if (newWorkStart < oldWorkStart) {
+      // Work starts earlier - create gaps for the new early period
+      const earlyGaps = createGapsForTimeRange(
+        date,
+        newWorkStart,
+        oldWorkStart,
+        newPreferences,
+        userId
+      );
+      gapsToCreate.push(...earlyGaps);
+    }
+
+    if (newWorkEnd > oldWorkEnd) {
+      // Work ends later - create gaps for the new late period
+      const lateGaps = createGapsForTimeRange(
+        date,
+        oldWorkEnd,
+        newWorkEnd,
+        newPreferences,
+        userId
+      );
+      gapsToCreate.push(...lateGaps);
+    }
+  }
+
+  return { gapsToCreate, gapsToDelete, gapsToUpdate };
+}
+
+// Helper function to create gaps for a specific time range
+function createGapsForTimeRange(
+  date: string,
+  startMinutes: number,
+  endMinutes: number,
+  preferences: any,
+  userId: string
+): any[] {
+  const gaps: any[] = [];
+  const minGapDuration = preferences.calendar_min_gap || 15;
+
+  // Create one gap per hour in the specified range
+  for (let hour = startMinutes; hour < endMinutes; hour += 60) {
+    const gapStart = minutesToTime(hour);
+    const gapEnd = minutesToTime(Math.min(hour + 60, endMinutes));
+    const gapDuration = Math.min(60, endMinutes - hour);
+
+    // Only create gap if it meets minimum duration requirement
+    if (gapDuration >= minGapDuration) {
+      gaps.push({
+        id: generateUUID(),
+        user_id: userId,
+        date,
+        start_time: gapStart,
+        end_time: gapEnd,
+        duration_minutes: gapDuration,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        modified_by: 'system'
+      });
+    }
+  }
+
+  return gaps;
+}
+
+// Helper function to create free hour gaps
+function createFreeHourGaps(date: string, preferences: any, userId: string): any[] {
+  const dayOfWeek = new Date(date).getDay();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const currentDay = dayNames[dayOfWeek];
+  
+  // Check if this day is in working days
+  if (!preferences.calendar_working_days.includes(currentDay)) {
+    return [];
+  }
+  
+  // Skip weekends if not included
+  if (!preferences.calendar_include_weekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
+    return [];
+  }
+  
+  const gaps: any[] = [];
+  const workStart = timeToMinutes(preferences.calendar_work_start);
+  const workEnd = timeToMinutes(preferences.calendar_work_end);
+  
+  // Create one gap per hour
+  for (let hour = workStart; hour < workEnd; hour += 60) {
+    const startTime = minutesToTime(hour);
+    const endTime = minutesToTime(Math.min(hour + 60, workEnd));
+    
+    gaps.push({
+      id: generateUUID(),
+      user_id: userId,
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      duration_minutes: Math.min(60, workEnd - hour),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      modified_by: 'system'
+    });
+  }
+  
+  return gaps;
+}
 
 // Start the server
 Deno.serve(app.fetch);
