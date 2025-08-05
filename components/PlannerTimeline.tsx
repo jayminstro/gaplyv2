@@ -321,7 +321,7 @@ function PlannerTimeline({
     const slots = [];
     const is24Hour = userPreferences?.time_format === '24h';
 
-    // Always use user's working hours as the primary range
+    // Always use full working hours range
     let startHour, endHour;
     
     if (userPreferences?.calendar_work_start && userPreferences?.calendar_work_end) {
@@ -339,6 +339,7 @@ function PlannerTimeline({
       endHour = 17;
     }
 
+    // Always show full working hours range for scrolling
     for (let hour = startHour; hour <= endHour; hour++) {
       const timeString = `${hour.toString().padStart(2, '0')}:00`;
       let displayTime;
@@ -409,14 +410,9 @@ function PlannerTimeline({
               {slot.display}
             </div>
             
-            {/* Current time marker */}
+            {/* Current time marker - just the line */}
             {shouldShowCurrentTime && slot.hour24 === currentHour && (
-              <div className="absolute left-20 top-0 bottom-0 w-0.5 bg-red-500 z-10 flex items-center">
-                <div className="w-3 h-3 bg-red-500 rounded-full -ml-1.5 shadow-lg"></div>
-                <div className="absolute left-4 bg-red-500 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                  Now
-                </div>
-              </div>
+              <div className="absolute left-20 top-0 bottom-0 w-0.5 bg-red-500 z-10" />
             )}
             
             {/* Timeline items */}
