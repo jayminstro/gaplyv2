@@ -202,7 +202,7 @@ function PlannerContent({
       const currentTimeOffset = (currentHour - workStartHour) * timeSlotHeight + (currentMinute / 60) * timeSlotHeight;
       
       // Position current time at the top with some padding
-      const scrollTop = Math.max(0, currentTimeOffset - 80); // 80px padding from top
+      const scrollTop = Math.max(0, currentTimeOffset - 120); // More padding from top
       
       // Smooth scroll to current time
       timelineRef.current.scrollTo({
@@ -225,9 +225,9 @@ function PlannerContent({
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Fixed Header Section */}
-      <div className="flex-shrink-0 p-6 pb-4 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800/50">
+      <div className="flex-shrink-0 px-6 pt-2 pb-4">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-4">
           <h1 className="text-3xl font-semibold mb-2 text-white">
             Planner
           </h1>
@@ -239,22 +239,7 @@ function PlannerContent({
           </p>
         </div>
 
-        {/* Now button - positioned above Date Navigation */}
-        <div className="flex justify-end mb-2">
-          <button
-            onClick={() => {
-              setSelectedDate(startOfDay(new Date()));
-              setTimeout(scrollToCurrentTime, 150);
-            }}
-            className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium border border-blue-500/30 hover:border-blue-500/50 shadow-lg"
-            type="button"
-            title="Jump to today and current time"
-          >
-            Now
-          </button>
-        </div>
-
-        {/* Date Navigation */}
+        {/* Date Navigation with integrated Now button */}
         <div className="relative mb-2">
           {/* Left scroll indicator */}
           <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none flex items-center justify-center">
@@ -307,6 +292,19 @@ function PlannerContent({
                 {tab.label}
               </button>
             ))}
+            
+            {/* Now button integrated into the date navigation */}
+            <button
+              onClick={() => {
+                setSelectedDate(startOfDay(new Date()));
+                setTimeout(scrollToCurrentTime, 150);
+              }}
+              className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation flex-shrink-0 border border-slate-600/30 hover:border-slate-500/50"
+              type="button"
+              title="Jump to today and current time"
+            >
+              Now
+            </button>
           </div>
         </div>
       </div>
@@ -314,7 +312,7 @@ function PlannerContent({
       {/* Scrollable Timeline Section */}
       <div 
         ref={timelineRef}
-        className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce p-6 pt-4" 
+        className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2" 
         data-scrollable="true"
       >
         <PlannerTimeline

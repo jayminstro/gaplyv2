@@ -266,134 +266,85 @@ export function ActivitiesContent({
   };
 
   return (
-    <PageWrapper className="pb-4">
-      <div className={LAYOUT_CONSTANTS.SECTION_MARGIN_BOTTOM}>
-        <h1 className={layoutClasses(LAYOUT_CONSTANTS.TITLE_LARGE, LAYOUT_CONSTANTS.TITLE_MARGIN_BOTTOM)}>
-          Activities
-        </h1>
-        <p className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_BASE)}>
-          Discover and manage your activities
-        </p>
+    <div className="flex-1 flex flex-col h-full">
+      {/* Fixed Header Section */}
+      <div className="flex-shrink-0 px-6 pt-2 pb-4">
+        {/* Header */}
+        <div className="mb-4">
+          <h1 className="text-3xl font-semibold mb-2 text-white">
+            Activities
+          </h1>
+          <p className="text-slate-400 text-base">
+            Discover and manage your activities
+          </p>
+        </div>
       </div>
 
-      <Tabs defaultValue="discover" className="w-full flex flex-col" onValueChange={onTabChange}>
-        <TabsList className={layoutClasses(
-          'w-full grid grid-cols-2 h-12',
-          LAYOUT_CONSTANTS.CARD_BACKGROUND,
-          LAYOUT_CONSTANTS.ROUNDED_LARGE
-        )}>
-          <TabsTrigger 
-            value="discover" 
-            className={layoutClasses(
-              'text-slate-400',
-              'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
-              LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
-              'transition-all duration-200',
-              'h-full'
-            )}
-          >
-            Discover
-          </TabsTrigger>
-          <TabsTrigger 
-            value="my-activities"
-            className={layoutClasses(
-              'text-slate-400',
-              'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
-              LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
-              'transition-all duration-200',
-              'h-full'
-            )}
-          >
-            My Activities
-          </TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="discover" className="mt-4 flex-1 outline-none">
-          <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
-            {selectedCategory ? (
-              // Category filtered view
-              <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
-                {/* Back button and category header */}
-                <div className={layoutClasses(COMPONENT_PATTERNS.FLEX_START, LAYOUT_CONSTANTS.SECTION_MARGIN_BOTTOM_SMALL)}>
-                  <button
-                    onClick={handleBackToDiscover}
-                    className={layoutClasses(
-                      'p-2',
-                      LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
-                      LAYOUT_CONSTANTS.CARD_BACKGROUND,
-                      LAYOUT_CONSTANTS.HOVER_BACKGROUND
-                    )}
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-                  <div>
-                    <h3 className={layoutClasses(LAYOUT_CONSTANTS.TITLE_MEDIUM, 'font-medium')}>
-                      {selectedCategory}
-                    </h3>
-                    <p className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
-                      {filteredActivities.length} activities
-                    </p>
-                  </div>
-                </div>
+      {/* Scrollable Content Section */}
+      <div className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2">
+        <Tabs defaultValue="discover" className="w-full flex flex-col" onValueChange={onTabChange}>
+          <TabsList className={layoutClasses(
+            'w-full grid grid-cols-2 h-12',
+            LAYOUT_CONSTANTS.CARD_BACKGROUND,
+            LAYOUT_CONSTANTS.ROUNDED_LARGE
+          )}>
+            <TabsTrigger 
+              value="discover" 
+              className={layoutClasses(
+                'text-slate-400',
+                'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
+                LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
+                'transition-all duration-200',
+                'h-full'
+              )}
+            >
+              Discover
+            </TabsTrigger>
+            <TabsTrigger 
+              value="my-activities"
+              className={layoutClasses(
+                'text-slate-400',
+                'data-[state=active]:text-white data-[state=active]:bg-slate-700/50',
+                LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
+                'transition-all duration-200',
+                'h-full'
+              )}
+            >
+              My Activities
+            </TabsTrigger>
+          </TabsList>
 
-                {/* Filtered activities */}
-                <div className={layoutClasses(LAYOUT_CONSTANTS.CARD_SPACING_SMALL, 'scroll-smooth ios-scroll android-scroll')} data-scrollable="true">
-                  {(filteredActivities || []).map((activity: any) => (
-                    <CardWrapper key={activity.id}>
-                      <div className={COMPONENT_PATTERNS.FLEX_BETWEEN}>
-                        <div className={layoutClasses(COMPONENT_PATTERNS.FLEX_START, 'flex-1')}>
-                          <div className={layoutClasses(
-                            'w-10 h-10 rounded-full flex items-center justify-center',
-                            activity.color
-                          )}>
-                            {renderSafeIcon(activity.icon)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-medium">{activity.title}</div>
-                            <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
-                              {activity.category} • {activity.duration} min
-                            </div>
-                          </div>
-                        </div>
-                        <div className={COMPONENT_PATTERNS.FLEX_START}>
-                          <div className="flex items-center gap-2">
-                            <div className={layoutClasses('text-yellow-400 ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
-                              {activity.rating}
-                            </div>
-                            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                          </div>
-                          <button
-                            onClick={() => handleAddActivity(activity)}
-                            className={layoutClasses(
-                              'px-3 py-1.5',
-                              LAYOUT_CONSTANTS.PRIMARY_BUTTON,
-                              LAYOUT_CONSTANTS.ROUNDED_SMALL,
-                              LAYOUT_CONSTANTS.TEXT_SMALL,
-                              'transition-colors'
-                            )}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </div>
-                    </CardWrapper>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              // Main discover view
-              <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
-                {/* Popular Activities */}
-                <div>
-                  <h3 className={layoutClasses(
-                    LAYOUT_CONSTANTS.TITLE_SMALL,
-                    'mb-3 flex items-center gap-2'
-                  )}>
-                    <Star className="w-5 h-5 text-yellow-400" />
-                    Popular
-                  </h3>
-                  <div className={LAYOUT_CONSTANTS.CARD_SPACING_SMALL}>
-                    {(discoverData.popular || []).map((activity: any) => (
+          <TabsContent value="discover" className="mt-4 flex-1 outline-none">
+            <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
+              {selectedCategory ? (
+                // Category filtered view
+                <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
+                  {/* Back button and category header */}
+                  <div className={layoutClasses(COMPONENT_PATTERNS.FLEX_START, LAYOUT_CONSTANTS.SECTION_MARGIN_BOTTOM_SMALL)}>
+                    <button
+                      onClick={handleBackToDiscover}
+                      className={layoutClasses(
+                        'p-2',
+                        LAYOUT_CONSTANTS.ROUNDED_MEDIUM,
+                        LAYOUT_CONSTANTS.CARD_BACKGROUND,
+                        LAYOUT_CONSTANTS.HOVER_BACKGROUND
+                      )}
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div>
+                      <h3 className={layoutClasses(LAYOUT_CONSTANTS.TITLE_MEDIUM, 'font-medium')}>
+                        {selectedCategory}
+                      </h3>
+                      <p className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                        {filteredActivities.length} activities
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Filtered activities */}
+                  <div className={layoutClasses(LAYOUT_CONSTANTS.CARD_SPACING_SMALL, 'scroll-smooth ios-scroll android-scroll')} data-scrollable="true">
+                    {(filteredActivities || []).map((activity: any) => (
                       <CardWrapper key={activity.id}>
                         <div className={COMPONENT_PATTERNS.FLEX_BETWEEN}>
                           <div className={layoutClasses(COMPONENT_PATTERNS.FLEX_START, 'flex-1')}>
@@ -405,14 +356,14 @@ export function ActivitiesContent({
                             </div>
                             <div className="flex-1">
                               <div className="font-medium">{activity.title}</div>
-                              <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                              <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT, LAYOUT_CONSTANTS.TEXT_SMALL)}>
                                 {activity.category} • {activity.duration} min
                               </div>
                             </div>
                           </div>
                           <div className={COMPONENT_PATTERNS.FLEX_START}>
                             <div className="flex items-center gap-2">
-                              <div className={layoutClasses('text-yellow-400', LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                              <div className={layoutClasses('text-yellow-400 ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
                                 {activity.rating}
                               </div>
                               <Star className="w-4 h-4 text-yellow-400 fill-current" />
@@ -435,117 +386,173 @@ export function ActivitiesContent({
                     ))}
                   </div>
                 </div>
+              ) : (
+                // Main discover view
+                <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
+                  {/* Popular Activities */}
+                  <div>
+                    <h3 className={layoutClasses(
+                      LAYOUT_CONSTANTS.TITLE_SMALL,
+                      'mb-3 flex items-center gap-2'
+                    )}>
+                      <Star className="w-5 h-5 text-yellow-400" />
+                      Popular
+                    </h3>
+                    <div className={LAYOUT_CONSTANTS.CARD_SPACING_SMALL}>
+                      {(discoverData.popular || []).map((activity: any) => (
+                        <CardWrapper key={activity.id}>
+                          <div className={COMPONENT_PATTERNS.FLEX_BETWEEN}>
+                            <div className={layoutClasses(COMPONENT_PATTERNS.FLEX_START, 'flex-1')}>
+                              <div className={layoutClasses(
+                                'w-10 h-10 rounded-full flex items-center justify-center',
+                                activity.color
+                              )}>
+                                {renderSafeIcon(activity.icon)}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium">{activity.title}</div>
+                                <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                                  {activity.category} • {activity.duration} min
+                                </div>
+                              </div>
+                            </div>
+                            <div className={COMPONENT_PATTERNS.FLEX_START}>
+                              <div className="flex items-center gap-2">
+                                <div className={layoutClasses('text-yellow-400', LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                                  {activity.rating}
+                                </div>
+                                <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                              </div>
+                              <button
+                                onClick={() => handleAddActivity(activity)}
+                                className={layoutClasses(
+                                  'px-3 py-1.5',
+                                  LAYOUT_CONSTANTS.PRIMARY_BUTTON,
+                                  LAYOUT_CONSTANTS.ROUNDED_SMALL,
+                                  LAYOUT_CONSTANTS.TEXT_SMALL,
+                                  'transition-colors'
+                                )}
+                              >
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        </CardWrapper>
+                      ))}
+                    </div>
+                  </div>
 
-                {/* Categories */}
-                <div>
-                  <h3 className={layoutClasses(LAYOUT_CONSTANTS.TITLE_SMALL, 'mb-3')}>Categories</h3>
-                  <div className={COMPONENT_PATTERNS.GRID_2_COLS}>
-                    {(discoverData.categories || []).map((category: any) => (
-                      <button
-                        key={category.id}
-                        onClick={() => handleCategoryClick(category.title)}
-                        className={layoutClasses(
-                          LAYOUT_CONSTANTS.CARD_BACKGROUND,
-                          LAYOUT_CONSTANTS.ROUNDED_LARGE,
-                          'p-4 text-center cursor-pointer',
-                          LAYOUT_CONSTANTS.HOVER_BACKGROUND,
-                          'transition-colors'
-                        )}
-                      >
-                        {renderSafeIcon(category.icon)}
-                        <div className="font-medium">{category.title}</div>
-                        <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
-                          {category.count} activities
-                        </div>
-                      </button>
-                    ))}
+                  {/* Categories */}
+                  <div>
+                    <h3 className={layoutClasses(LAYOUT_CONSTANTS.TITLE_SMALL, 'mb-3')}>Categories</h3>
+                    <div className={COMPONENT_PATTERNS.GRID_2_COLS}>
+                      {(discoverData.categories || []).map((category: any) => (
+                        <button
+                          key={category.id}
+                          onClick={() => handleCategoryClick(category.title)}
+                          className={layoutClasses(
+                            LAYOUT_CONSTANTS.CARD_BACKGROUND,
+                            LAYOUT_CONSTANTS.ROUNDED_LARGE,
+                            'p-4 text-center cursor-pointer',
+                            LAYOUT_CONSTANTS.HOVER_BACKGROUND,
+                            'transition-colors'
+                          )}
+                        >
+                          {renderSafeIcon(category.icon)}
+                          <div className="font-medium">{category.title}</div>
+                          <div className={layoutClasses(LAYOUT_CONSTANTS.SECONDARY_TEXT + ' ' + LAYOUT_CONSTANTS.TEXT_SMALL)}>
+                            {category.count} activities
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-        
-        <TabsContent value="my-activities" className="mt-4 flex-1 outline-none">
-          <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
-            <div className={COMPONENT_PATTERNS.FLEX_BETWEEN}>
-              <h3 className={LAYOUT_CONSTANTS.TITLE_SMALL}>Your tasks</h3>
-              <Button 
-                onClick={() => setIsNewTaskModalOpen(true)}
-                className={layoutClasses(
-                  LAYOUT_CONSTANTS.PRIMARY_BUTTON,
-                  LAYOUT_CONSTANTS.ROUNDED_MEDIUM
-                )}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add task
-              </Button>
+              )}
             </div>
-            
-            <CategorizedTasks
-              tasks={globalTasks || []}
-              onEdit={(task) => setEditingTask(task)}
-              onTimer={(task) => onTimerOpen(task)}
-              onComplete={(task) => {
-                const updatedTasks = globalTasks.filter(t => t.id !== task.id);
-                setGlobalTasks(updatedTasks);
-                updateTasksInDatabase(updatedTasks);
-              }}
-              onDelete={(taskId) => {
-                const updatedTasks = globalTasks.filter(t => t.id !== taskId);
-                setGlobalTasks(updatedTasks);
-                updateTasksInDatabase(updatedTasks);
-              }}
-            />
-          </div>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+          
+          <TabsContent value="my-activities" className="mt-4 flex-1 outline-none">
+            <div className={LAYOUT_CONSTANTS.CARD_SPACING}>
+              <div className={COMPONENT_PATTERNS.FLEX_BETWEEN}>
+                <h3 className={LAYOUT_CONSTANTS.TITLE_SMALL}>Your tasks</h3>
+                <Button 
+                  onClick={() => setIsNewTaskModalOpen(true)}
+                  className={layoutClasses(
+                    LAYOUT_CONSTANTS.PRIMARY_BUTTON,
+                    LAYOUT_CONSTANTS.ROUNDED_MEDIUM
+                  )}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add task
+                </Button>
+              </div>
+              
+              <CategorizedTasks
+                tasks={globalTasks || []}
+                onEdit={(task) => setEditingTask(task)}
+                onTimer={(task) => onTimerOpen(task)}
+                onComplete={(task) => {
+                  const updatedTasks = globalTasks.filter(t => t.id !== task.id);
+                  setGlobalTasks(updatedTasks);
+                  updateTasksInDatabase(updatedTasks);
+                }}
+                onDelete={(taskId) => {
+                  const updatedTasks = globalTasks.filter(t => t.id !== taskId);
+                  setGlobalTasks(updatedTasks);
+                  updateTasksInDatabase(updatedTasks);
+                }}
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
 
-      {/* Edit Task Modal */}
-      <EditTaskModal
-        task={editingTask}
-        isOpen={!!editingTask}
-        onClose={() => setEditingTask(null)}
-        onSave={(updatedTask) => {
-          // Add updated_at timestamp when task is modified
-          const taskWithTimestamp = {
-            ...updatedTask,
-            updated_at: new Date().toISOString()
-          };
-          const updatedTasks = globalTasks.map(t => 
-            t.id === taskWithTimestamp.id ? taskWithTimestamp : t
-          );
-          setGlobalTasks(updatedTasks);
-          updateTasksInDatabase(updatedTasks);
-          setEditingTask(null);
-        }}
-      />
+        {/* Edit Task Modal */}
+        <EditTaskModal
+          task={editingTask}
+          isOpen={!!editingTask}
+          onClose={() => setEditingTask(null)}
+          onSave={(updatedTask) => {
+            // Add updated_at timestamp when task is modified
+            const taskWithTimestamp = {
+              ...updatedTask,
+              updated_at: new Date().toISOString()
+            };
+            const updatedTasks = globalTasks.map(t => 
+              t.id === taskWithTimestamp.id ? taskWithTimestamp : t
+            );
+            setGlobalTasks(updatedTasks);
+            updateTasksInDatabase(updatedTasks);
+            setEditingTask(null);
+          }}
+        />
 
-      {/* New Task Modal */}
-      <NewTaskModal
-        isOpen={isNewTaskModalOpen}
-        onClose={() => setIsNewTaskModalOpen(false)}
-        onCreate={(newTask) => {
-          // Add timestamps for new tasks
-          const taskWithTimestamps = {
-            ...newTask,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          } as Task;
-          const updatedTasks = [...globalTasks, taskWithTimestamps];
-          setGlobalTasks(updatedTasks);
-          updateTasksInDatabase(updatedTasks);
-          setIsNewTaskModalOpen(false);
-        }}
-      />
+        {/* New Task Modal */}
+        <NewTaskModal
+          isOpen={isNewTaskModalOpen}
+          onClose={() => setIsNewTaskModalOpen(false)}
+          onCreate={(newTask) => {
+            // Add timestamps for new tasks
+            const taskWithTimestamps = {
+              ...newTask,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            } as Task;
+            const updatedTasks = [...globalTasks, taskWithTimestamps];
+            setGlobalTasks(updatedTasks);
+            updateTasksInDatabase(updatedTasks);
+            setIsNewTaskModalOpen(false);
+          }}
+        />
 
-      {/* Activity Scheduling Modal */}
-      <ActivitySchedulingModal
-        isOpen={!!schedulingActivity}
-        onClose={() => setSchedulingActivity(null)}
-        activity={schedulingActivity}
-        onTaskCreated={handleTaskCreated}
-      />
-    </PageWrapper>
+        {/* Activity Scheduling Modal */}
+        <ActivitySchedulingModal
+          isOpen={!!schedulingActivity}
+          onClose={() => setSchedulingActivity(null)}
+          activity={schedulingActivity}
+          onTaskCreated={handleTaskCreated}
+        />
+      </div>
+    </div>
   );
 }

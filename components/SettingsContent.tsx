@@ -772,93 +772,104 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
 
   if (activeSection) {
     return (
-      <div className="p-6 space-y-6">
-        {/* Header with back button */}
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActiveSection(null)}
-            className="p-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-medium text-white">Settings</h2>
+      <div className="flex-1 flex flex-col h-full">
+        {/* Fixed Header Section */}
+        <div className="flex-shrink-0 px-6 pt-2 pb-4">
+          {/* Header with back button */}
+          <div className="flex items-center gap-3 mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveSection(null)}
+              className="p-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div>
+              <h1 className="text-3xl font-semibold mb-2 text-white">Settings</h1>
+            </div>
           </div>
         </div>
 
-        {/* Section content */}
-        <div className="max-w-md mx-auto">
-          {renderSectionContent()}
+        {/* Scrollable Content Section */}
+        <div className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2">
+          <div className="max-w-md mx-auto">
+            {renderSectionContent()}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-medium text-white">Settings</h2>
-        <p className="text-slate-400 text-sm">Manage your preferences</p>
+    <div className="flex-1 flex flex-col h-full">
+      {/* Fixed Header Section */}
+      <div className="flex-shrink-0 px-6 pt-2 pb-4">
+        {/* Header */}
+        <div className="mb-4">
+          <h1 className="text-3xl font-semibold mb-2 text-white">Settings</h1>
+          <p className="text-slate-400 text-base">Manage your preferences</p>
+        </div>
       </div>
 
-      {/* Settings grid */}
-      <div className="space-y-3 max-w-md mx-auto">
-        {settingsItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveSection(item.id)}
-              className="w-full flex items-center gap-4 p-4 bg-slate-800/30 rounded-2xl border border-slate-700/50 hover:bg-slate-700/30 transition-colors"
-            >
-              <div className="w-10 h-10 rounded-full bg-slate-700/50 flex items-center justify-center">
-                <Icon className="w-4 h-4 text-slate-300" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-white font-medium">{item.title}</div>
-                <div className="text-slate-400 text-sm">{item.description}</div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            </button>
-          );
-        })}
-
-        {/* Sign out button */}
-        <AlertDialog open={isSignOutDialogOpen} onOpenChange={setIsSignOutDialogOpen}>
-          <AlertDialogTrigger asChild>
-            <button className="w-full flex items-center gap-4 p-4 bg-red-900/20 rounded-2xl border border-red-700/30 hover:bg-red-900/30 transition-colors mt-6">
-              <div className="w-10 h-10 rounded-full bg-red-700/30 flex items-center justify-center">
-                <LogOut className="w-4 h-4 text-red-400" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-red-400 font-medium">Sign Out</div>
-                <div className="text-red-400/70 text-sm">Log out of your account</div>
-              </div>
-            </button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="bg-slate-900 border-slate-700">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-white">Sign Out</AlertDialogTitle>
-              <AlertDialogDescription className="text-slate-400">
-                Are you sure you want to sign out? You'll need to sign in again to access your data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel className="bg-slate-700 border-slate-600 text-white hover:bg-slate-600">
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={onSignOut}
-                className="bg-red-600 hover:bg-red-700 text-white"
+      {/* Scrollable Content Section */}
+      <div className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2">
+        {/* Settings grid */}
+        <div className="space-y-3 max-w-md mx-auto">
+          {settingsItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className="w-full flex items-center gap-4 p-4 bg-slate-800/30 rounded-2xl border border-slate-700/50 hover:bg-slate-700/30 transition-colors"
               >
-                Sign Out
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <div className="w-10 h-10 rounded-full bg-slate-700/50 flex items-center justify-center">
+                  <Icon className="w-4 h-4 text-slate-300" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-white font-medium">{item.title}</div>
+                  <div className="text-slate-400 text-sm">{item.description}</div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+            );
+          })}
+
+          {/* Sign out button */}
+          <AlertDialog open={isSignOutDialogOpen} onOpenChange={setIsSignOutDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <button className="w-full flex items-center gap-4 p-4 bg-red-900/20 rounded-2xl border border-red-700/30 hover:bg-red-900/30 transition-colors mt-6">
+                <div className="w-10 h-10 rounded-full bg-red-700/30 flex items-center justify-center">
+                  <LogOut className="w-4 h-4 text-red-400" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-red-400 font-medium">Sign Out</div>
+                  <div className="text-red-400/70 text-sm">Log out of your account</div>
+                </div>
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-slate-900 border-slate-700">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-white">Sign Out</AlertDialogTitle>
+                <AlertDialogDescription className="text-slate-400">
+                  Are you sure you want to sign out? You'll need to sign in again to access your data.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-slate-700 border-slate-600 text-white hover:bg-slate-600">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={onSignOut}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Sign Out
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
     </div>
   );
