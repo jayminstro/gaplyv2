@@ -26,6 +26,7 @@ import {
 } from './ui/alert-dialog';
 import { UserPreferences } from '../types/index';
 import { preferencesAPI, profileAPI } from '../utils/api';
+import { GapsAPI } from '../utils/gapsAPI';
 import { EnhancedStorageManager } from '../utils/storage/EnhancedStorageManager';
 import { CalendarSync } from './CalendarSync';
 import { DebugPanel } from './DebugPanel';
@@ -36,13 +37,14 @@ import { toast } from 'sonner';
 
 interface SettingsContentProps {
   user: any;
+  session: any;
   preferences: UserPreferences;
   onSignOut: () => void;
   onPreferencesUpdate?: (preferences: UserPreferences) => void;
   localFirstService?: EnhancedStorageManager | null;
 }
 
-export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpdate, localFirstService }: SettingsContentProps) {
+export function SettingsContent({ user, session, preferences, onSignOut, onPreferencesUpdate, localFirstService }: SettingsContentProps) {
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState<UserPreferences>(preferences);
@@ -193,6 +195,13 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
   const savePreferences = async () => {
     setIsSaving(true);
     try {
+      // Check if working time preferences changed
+      const workingTimeChanged = 
+        preferences.calendar_work_start !== localPreferences.calendar_work_start ||
+        preferences.calendar_work_end !== localPreferences.calendar_work_end ||
+        JSON.stringify(preferences.calendar_working_days) !== JSON.stringify(localPreferences.calendar_working_days) ||
+        preferences.calendar_include_weekends !== localPreferences.calendar_include_weekends;
+
       // Save to local storage first
       if (localFirstService) {
         console.log('💾 Saving preferences to local storage...');
@@ -205,13 +214,43 @@ export function SettingsContent({ user, preferences, onSignOut, onPreferencesUpd
         console.log('🌐 Syncing preferences to remote API...');
         await preferencesAPI.save(localPreferences);
         console.log('✅ Preferences synced to remote API');
+
+        // Update gaps if working time changed
+        if (workingTimeChanged && session?.access_token) {
+          try {
+            console.log('🔄 Working time changed, updating gaps...');
+            const result = await GapsAPI.updateGapsForWorkingTimeChange(
+              preferences,
+              localPreferences,
+              session.access_token
+            );
+            console.log('✅ Gaps updated for working time change:', result);
+            
+            if (result.success) {
+              toast.success('Settings saved', {
+                description: `Gaps adjusted: ${result.created} created, ${result.deleted} removed, ${result.updated} updated.`
+              });
+            } else {
+              toast.success('Settings saved', {
+                description: 'Gaps will be updated on next sync.'
+              });
+            }
+          } catch (gapError) {
+            console.error('⚠️ Failed to update gaps, but preferences saved:', gapError);
+            toast.success('Settings saved', {
+              description: 'Gaps will be updated on next sync.'
+            });
+          }
+        } else {
+          toast.success('Settings saved');
+        }
       } catch (apiError) {
         console.error('⚠️ Failed to sync to remote API, but local save succeeded:', apiError);
         // Don't show error to user since local save worked
+        toast.success('Settings saved locally');
       }
 
       onPreferencesUpdate?.(localPreferences);
-      toast.success('Settings saved');
     } catch (error) {
       console.error('Error saving preferences:', error);
       toast.error('Failed to save settings');

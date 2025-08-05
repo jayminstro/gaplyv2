@@ -75,7 +75,7 @@ export function GapUtilizationModal({
     try {
       setIsLoadingActivities(true);
       
-      const gapDurationMinutes = gap.duration_minutes || gap.duration || calculateGapDuration(gap.start_time, gap.end_time);
+      const gapDurationMinutes = gap.duration_minutes;
       console.log('🔍 [GapUtilizationModal] Loading activities for gap:', {
         gapId: gap.id,
         gapDuration: gapDurationMinutes,
@@ -189,6 +189,8 @@ export function GapUtilizationModal({
       }
 
       let taskToSchedule: Task;
+      let taskStartTime = gap.start_time;
+      let taskEndTime: string;
 
       if (activity.type === 'task' && activity.originalTask) {
         // Schedule existing task
@@ -199,6 +201,7 @@ export function GapUtilizationModal({
           dueTime: gap.start_time,
           scheduledGapId: gap.id
         };
+        taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + activity.duration);
       } else {
         // Create new task from suggestion
         taskToSchedule = {
@@ -218,12 +221,8 @@ export function GapUtilizationModal({
           is_completed: false,
           scheduledGapId: gap.id
         };
+        taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + activity.duration);
       }
-
-      // Calculate task end time using safe time conversion
-      const startMinutes = safeTimeToMinutes(gap.start_time);
-      const endMinutes = startMinutes + activity.duration;
-      const taskEndTime = minutesToTime(endMinutes);
 
       // Create calendar event if requested and calendar is connected
       let googleCalendarEventId = null;
@@ -247,46 +246,28 @@ export function GapUtilizationModal({
         taskToSchedule.googleCalendarEventId = googleCalendarEventId;
       }
 
-      // Only try to split the gap if it's a real gap (has a valid UUID, not synthetic)
-      const isRealGap = gap.id && 
-                       gap.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) &&
-                       !gap.id.startsWith('synthetic-') &&
-                       !gap.id.startsWith('timeline-gap-');
-      
-      if (isRealGap) {
-        try {
-          console.log('🔄 Splitting real gap for activity scheduling:', gap.id);
-          // Split the gap using the gap logic API
-          await GapsAPI.scheduleTaskInGap(
-            gap.id,
-            gap.start_time,
-            taskEndTime,
-            'user',
-            session.access_token
-          );
-          console.log('✅ Gap splitting successful for activity');
-        } catch (gapError) {
-          console.warn('⚠️ Gap splitting failed, but continuing with task creation:', gapError);
-          // Continue with task creation even if gap splitting fails
-        }
-      } else {
-        console.log('📋 Synthetic/timeline gap detected for activity, skipping gap splitting', {
-          gapId: gap.id,
-          isSynthetic: gap.id.includes('synthetic') || gap.id.includes('timeline-gap')
-        });
-      }
+      // Schedule task in gap using new API
+      const result = await GapsAPI.scheduleTaskInGap(
+        gap.id,
+        taskStartTime,
+        taskEndTime,
+        taskToSchedule,
+        session.access_token
+      );
 
-      onTaskCreated(taskToSchedule);
-      
-      const successDescription = googleCalendarEventId 
-        ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
-        : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+      if (result.success) {
+        onTaskCreated(result.task);
         
-      toast.success(`Scheduled "${activity.title}"`, {
-        description: successDescription,
-      });
-      
-      onClose();
+        const successDescription = googleCalendarEventId 
+          ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
+          : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+          
+        toast.success(`Scheduled "${activity.title}"`, {
+          description: successDescription,
+        });
+        
+        onClose();
+      }
     } catch (error) {
       console.error('Error scheduling activity:', error);
       toast.error('Failed to schedule activity', {
@@ -310,7 +291,7 @@ export function GapUtilizationModal({
       // Parse duration and validate it fits in gap
       const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
       const taskDurationMinutes = (hours * 60) + minutes;
-      const gapDurationMinutes = gap.duration_minutes || gap.duration || calculateGapDuration(gap.start_time, gap.end_time);
+      const gapDurationMinutes = gap.duration_minutes;
 
       if (taskDurationMinutes > gapDurationMinutes) {
         toast.error('Task too long', {
@@ -345,10 +326,9 @@ export function GapUtilizationModal({
         scheduledGapId: gap.id
       };
 
-      // Calculate task end time using safe time conversion
-      const startMinutes = safeTimeToMinutes(gap.start_time);
-      const endMinutes = startMinutes + taskDurationMinutes;
-      const taskEndTime = minutesToTime(endMinutes);
+      // Calculate task end time
+      const taskStartTime = gap.start_time;
+      const taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + taskDurationMinutes);
 
       // Create calendar event if requested and calendar is connected
       let googleCalendarEventId = null;
@@ -372,46 +352,28 @@ export function GapUtilizationModal({
         newTask.googleCalendarEventId = googleCalendarEventId;
       }
 
-      // Only try to split the gap if it's a real gap (has a valid UUID, not synthetic)
-      const isRealGap = gap.id && 
-                       gap.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) &&
-                       !gap.id.startsWith('synthetic-') &&
-                       !gap.id.startsWith('timeline-gap-');
-      
-      if (isRealGap) {
-        try {
-          console.log('🔄 Splitting real gap for new task:', gap.id);
-          // Split the gap using the gap logic API
-          await GapsAPI.scheduleTaskInGap(
-            gap.id,
-            gap.start_time,
-            taskEndTime,
-            'user',
-            session.access_token
-          );
-          console.log('✅ Gap splitting successful for new task');
-        } catch (gapError) {
-          console.warn('⚠️ Gap splitting failed, but continuing with task creation:', gapError);
-          // Continue with task creation even if gap splitting fails
-        }
-      } else {
-        console.log('📋 Synthetic/timeline gap detected for new task, skipping gap splitting', {
-          gapId: gap.id,
-          isSynthetic: gap.id.includes('synthetic') || gap.id.includes('timeline-gap')
-        });
-      }
+      // Schedule task in gap using new API
+      const result = await GapsAPI.scheduleTaskInGap(
+        gap.id,
+        taskStartTime,
+        taskEndTime,
+        newTask,
+        session.access_token
+      );
 
-      onTaskCreated(newTask);
-      
-      const successDescription = googleCalendarEventId 
-        ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
-        : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+      if (result.success) {
+        onTaskCreated(result.task);
         
-      toast.success(`Created and scheduled "${newTask.title}"`, {
-        description: successDescription,
-      });
-      
-      onClose();
+        const successDescription = googleCalendarEventId 
+          ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
+          : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+          
+        toast.success(`Created and scheduled "${newTask.title}"`, {
+          description: successDescription,
+        });
+        
+        onClose();
+      }
     } catch (error) {
       console.error('Error creating new task:', error);
       toast.error('Failed to create task', {
@@ -469,7 +431,7 @@ export function GapUtilizationModal({
 
   if (!isOpen || !gap) return null;
 
-  const gapDurationMinutes = gap.duration_minutes || gap.duration || calculateGapDuration(gap.start_time, gap.end_time);
+  const gapDurationMinutes = gap.duration_minutes;
   const suggestedActivities = suitableActivities.filter(a => a.type === 'suggestion');
   const suitableTasks = suitableActivities.filter(a => a.type === 'task');
 

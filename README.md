@@ -97,8 +97,7 @@ A comprehensive mobile-first task management and time-blocking application with 
    The application uses a proper relational database structure with the following Supabase tables:
    - `user_preferences` - User settings, work hours, and calendar preferences
    - `tasks` - Task management with timestamptz due dates and scheduling
-   - `calendar_gaps` - Time gap detection and management from calendar data
-   - `scheduled_gaps` - Manually created and scheduled time blocks
+   - `gaps` - Simplified time gap management (available time slots only)
    - `explore` - Activity suggestions and discovery (Note: API endpoint is `/explore`, not `/discover`)
    - `activity_completions` - Completion tracking and analytics
    
@@ -166,7 +165,7 @@ A comprehensive mobile-first task management and time-blocking application with 
 
 1. **Authentication**: Supabase Auth with session management and user metadata
 2. **Task Management**: Full CRUD operations with proper timestamptz date handling
-3. **Gap Logic**: Three-tier gap creation system (manual > calendar > default) with comprehensive documentation
+3. **Gap Logic**: Simplified gap creation system with automatic gap splitting when tasks are scheduled
 4. **Real-time Updates**: Debounced saves and live synchronization across all components
 5. **Timeline Rendering**: Smart time conversion helpers for consistent HH:MM format handling
 6. **Mobile Optimizations**: Touch scroll handling, iOS-compatible notifications, and PWA support

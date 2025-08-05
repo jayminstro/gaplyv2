@@ -42,6 +42,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showSignUp, setShowSignUp] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [session, setSession] = useState<any>(null);
   
   // Data loading state
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -257,6 +258,7 @@ export default function App() {
         if (session?.user) {
           setIsAuthenticated(true);
           setUser(session.user);
+          setSession(session);
           setIsDataLoading(true); // Start data loading for existing session
           setIsAppInitialized(true); // Mark app as initialized
         }
@@ -274,12 +276,14 @@ export default function App() {
       if (session?.user) {
         setIsAuthenticated(true);
         setUser(session.user);
+        setSession(session);
         setIsLoading(false);
         setIsDataLoading(true); // Start data loading when user is authenticated
         setIsAppInitialized(true); // Mark app as initialized
       } else {
         setIsAuthenticated(false);
         setUser(null);
+        setSession(null);
         setIsLoading(false);
         setIsDataLoading(false);
         setIsAppInitialized(false); // Reset app initialization
@@ -659,6 +663,7 @@ export default function App() {
         console.log('Session confirmed, setting authenticated state');
         setIsAuthenticated(true);
         setUser(session.user);
+        setSession(session);
         setIsDataLoading(true); // Start data loading
       } else {
         console.error('No session found after auth success');
@@ -669,6 +674,7 @@ export default function App() {
           console.log('Session confirmed on retry');
           setIsAuthenticated(true);
           setUser(retrySession.user);
+          setSession(retrySession);
           setIsDataLoading(true); // Start data loading
         } else {
           console.error('Still no session after retry');
@@ -692,6 +698,7 @@ export default function App() {
       await supabase.auth.signOut();
       setIsAuthenticated(false);
       setUser(null);
+      setSession(null);
       setLocalFirstService(null);
       
       // Reset all state
@@ -958,6 +965,7 @@ export default function App() {
           <div className="space-y-6">
             <SettingsContent 
               user={user}
+              session={session}
               preferences={preferences}
               onSignOut={handleSignOut}
               onPreferencesUpdate={updatePreferencesFromSettings}

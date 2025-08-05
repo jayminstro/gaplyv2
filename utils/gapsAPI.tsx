@@ -1,15 +1,16 @@
 import { TimeGap, UserPreferences } from '../types/index';
 import { GapLogic, GapManager } from './gapLogic';
 import { supabaseConfig } from './supabase/config';
-import { safeTimeToMinutes } from './helpers';
+import { timeToMinutes, minutesToTime } from './helpers';
+import { generateUUID } from './uuid';
 
 /**
- * Gaps API with gap logic implementation
- * Handles all gap-related operations following the priority system
+ * Gaps API with simplified gap logic implementation
+ * Handles all gap-related operations with the new single-table architecture
  */
 export class GapsAPI {
   private static readonly BASE_URL = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846`;
-  private static readonly TIMEOUT_MS = 5000; // Reduced timeout for faster fallback
+  private static readonly TIMEOUT_MS = 5000;
   private static readonly LOCAL_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
   /**
@@ -39,12 +40,10 @@ export class GapsAPI {
    * Check if we should use local fallback mode
    */
   private static shouldUseFallback(error: unknown): boolean {
-    // Use fallback for common development scenarios
     if (this.LOCAL_DEVELOPMENT) {
       return true;
     }
     
-    // Use fallback for network errors, 404s, timeouts
     const errorMessage = error instanceof Error ? error.message.toLowerCase() : '';
     const isNetworkError = errorMessage.includes('fetch') || 
                           errorMessage.includes('network') ||
@@ -64,8 +63,7 @@ export class GapsAPI {
     userId: string = 'local-user'
   ): Promise<TimeGap[]> {
     try {
-      const { GapLogic } = await import('./gapLogic');
-      const gaps = GapLogic.createDefaultGaps(date, preferences, userId);
+      const gaps = GapLogic.createFreeHourGaps(date, preferences, userId);
       console.log(`✅ Created ${gaps.length} local fallback gaps for ${date}`);
       return gaps;
     } catch (error: unknown) {
@@ -75,7 +73,7 @@ export class GapsAPI {
   }
 
   /**
-   * Get gaps for a specific date with priority filtering
+   * Get gaps for a specific date
    */
   static async getGapsForDate(date: string, accessToken: string): Promise<TimeGap[]> {
     try {
@@ -107,11 +105,8 @@ export class GapsAPI {
         return [];
       }
       
-      // Apply gap logic priority filtering
-      const filteredGaps = GapLogic.filterGapsByPriority(gaps, date);
-      
-      console.log(`✅ Retrieved ${filteredGaps.length} gaps for ${date}`);
-      return filteredGaps;
+      console.log(`✅ Retrieved ${gaps.length} gaps for ${date}`);
+      return gaps;
     } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 API unavailable, using local fallback gaps');
@@ -172,122 +167,76 @@ export class GapsAPI {
   }
 
   /**
-   * Process calendar sync for a date
-   */
-  static async processCalendarSync(
-    date: string,
-    calendarEvents: Array<{start: string, end: string, title: string}>,
-    accessToken: string
-  ): Promise<{gaps: TimeGap[], replaced: boolean}> {
-    try {
-      console.log(`📅 Processing calendar sync for ${date} with ${calendarEvents.length} events`);
-      
-      if (this.LOCAL_DEVELOPMENT) {
-        console.log(`🔧 Development mode - calendar sync not available locally`);
-        const { DEFAULT_PREFERENCES } = await import('./constants');
-        const gaps = await this.createLocalFallbackGaps(date, DEFAULT_PREFERENCES);
-        return { gaps, replaced: false };
-      }
-      
-      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/calendar-sync`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ date, calendarEvents })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to process calendar sync: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.preserved) {
-        console.log(`⚠️ Calendar sync skipped for ${date} - manual gaps exist`);
-        const gaps = await this.getGapsForDate(date, accessToken);
-        return { gaps, replaced: false };
-      }
-
-      console.log(`✅ Calendar sync completed for ${date}, created ${result.gaps.length} gaps`);
-      return { gaps: result.gaps, replaced: true };
-    } catch (error: unknown) {
-      if (this.shouldUseFallback(error)) {
-        console.log('🔄 Calendar sync API unavailable, using local gaps');
-        const { DEFAULT_PREFERENCES } = await import('./constants');
-        const gaps = await this.createLocalFallbackGaps(date, DEFAULT_PREFERENCES);
-        return { gaps, replaced: false };
-      }
-      
-      console.error('❌ Error processing calendar sync:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Schedule a task in a gap (splits the gap) - Local version
+   * Schedule a task in a gap (splits the gap)
    */
   static async scheduleTaskInGap(
     gapId: string,
     taskStartTime: string,
     taskEndTime: string,
-    modifiedBy: 'user' | 'ai_assistant' = 'user',
+    taskData: any,
     accessToken: string
-  ): Promise<TimeGap[]> {
+  ): Promise<{ success: boolean; newGaps: TimeGap[]; task: any }> {
     try {
       console.log(`📌 Scheduling task in gap ${gapId} from ${taskStartTime} to ${taskEndTime}`);
       
       if (this.LOCAL_DEVELOPMENT) {
         console.log(`🔧 Development mode - gap splitting not fully available locally`);
-        // For now, return empty array - in a full implementation, this would handle local gap splitting
-        return [];
+        // For development, simulate the operation
+        return {
+          success: true,
+          newGaps: [],
+          task: { ...taskData, id: generateUUID() }
+        };
       }
       
-      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/${gapId}/split`, {
+      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/schedule`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ taskStartTime, taskEndTime, modifiedBy })
+        body: JSON.stringify({ gapId, taskStartTime, taskEndTime, taskData })
       });
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Server responded with error:', response.status, errorText);
-        throw new Error(`Failed to split gap: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to schedule task: ${response.statusText} - ${errorText}`);
       }
 
       const result = await response.json();
       
       if (!result.success) {
-        console.error('❌ Gap splitting failed on server:', result);
+        console.error('❌ Task scheduling failed on server:', result);
         throw new Error(result.error || 'Unknown server error');
       }
       
-      console.log(`✅ Gap split successfully, created ${result.newGaps?.length || 0} new gaps`);
+      console.log(`✅ Task scheduled successfully, created ${result.newGaps?.length || 0} new gaps`);
       
-      return result.newGaps || [];
+      return result;
     } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
-        console.log('🔄 Gap splitting API unavailable - using local fallback');
-        return [];
+        console.log('🔄 Task scheduling API unavailable - using local fallback');
+        return {
+          success: true,
+          newGaps: [],
+          task: { ...taskData, id: generateUUID() }
+        };
       }
       
-      console.error('❌ Error splitting gap:', {
+      console.error('❌ Error scheduling task:', {
         error,
         gapId,
         taskStartTime,
         taskEndTime,
-        modifiedBy
+        taskData
       });
       throw error;
     }
   }
 
   /**
-   * Save gaps (bulk operation) - Local storage fallback
+   * Save gaps (bulk operation)
    */
   static async saveGaps(gaps: TimeGap[], accessToken: string): Promise<void> {
     try {
@@ -295,13 +244,11 @@ export class GapsAPI {
       
       if (this.LOCAL_DEVELOPMENT) {
         console.log(`🔧 Development mode - gaps saved to local storage as fallback`);
-        // Store in localStorage as fallback for development
         const today = new Date().toISOString().split('T')[0];
         try {
           localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
         } catch (error: unknown) {
           console.error('Failed to save gaps to localStorage in development mode:', error);
-          // In development mode, we can't do much if localStorage fails
         }
         return;
       }
@@ -332,7 +279,6 @@ export class GapsAPI {
           localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
         } catch (storageError: unknown) {
           console.error('Failed to save gaps to localStorage fallback:', storageError);
-          // If localStorage also fails, we can't save the data
           throw new Error('Both API and localStorage failed to save gaps');
         }
         return;
@@ -344,7 +290,7 @@ export class GapsAPI {
   }
 
   /**
-   * Get all gaps (no date filter) - Local storage fallback
+   * Get all gaps (no date filter)
    */
   static async getAllGaps(accessToken: string): Promise<TimeGap[]> {
     try {
@@ -404,7 +350,6 @@ export class GapsAPI {
 
   /**
    * High-level function: Ensure gaps exist for today
-   * Handles the entire gap initialization flow with better error handling
    */
   static async ensureTodayGaps(
     preferences: UserPreferences, 
@@ -423,46 +368,32 @@ export class GapsAPI {
         console.log(`✅ Retrieved ${gaps.length} existing gaps for today`);
       } catch (fetchError: unknown) {
         console.log('🔄 Failed to fetch existing gaps, will try to initialize');
-        gaps = []; // Continue with initialization
+        gaps = [];
       }
       
       if (gaps.length === 0) {
         console.log('📝 No gaps found, initializing default gaps...');
         
         try {
-          // Try to initialize gaps via API
           gaps = await this.initializeGapsForDate(today, preferences, accessToken);
           console.log(`✅ Initialized ${gaps.length} gaps`);
         } catch (initError: unknown) {
           console.log('🔄 API initialization failed, creating local default gaps');
-          
-          // Fallback to local gap creation using gap logic
           gaps = await this.createLocalFallbackGaps(today, preferences);
           console.log(`✅ Created ${gaps.length} local default gaps as fallback`);
         }
-      }
-      
-      // If calendar is connected and no manual gaps exist, we might want to trigger sync
-      const hasManualGaps = gaps.some(gap => gap.gap_source_id === 'manual');
-      
-      if (preferences.google_calendar_connected && !hasManualGaps) {
-        console.log('🔄 Calendar connected and no manual gaps - sync might be needed');
-        // Note: Calendar sync would be triggered by a separate process
       }
       
       return gaps;
     } catch (error: unknown) {
       console.log('🔄 Critical error in ensureTodayGaps, using emergency fallback');
       
-      // Last resort fallback: create basic default gaps locally
       try {
         const fallbackGaps = await this.createLocalFallbackGaps(today, preferences);
         console.log(`🚨 Using emergency fallback gaps (${fallbackGaps.length} gaps)`);
         return fallbackGaps;
       } catch (fallbackError: unknown) {
         console.error('❌ Even fallback gap creation failed:', fallbackError);
-        
-        // Ultimate fallback: return empty array
         return [];
       }
     }
@@ -480,10 +411,10 @@ export class GapsAPI {
         const gap2 = gaps[j];
         
         if (gap1.date === gap2.date) {
-          const gap1Start = safeTimeToMinutes(gap1.start_time);
-          const gap1End = safeTimeToMinutes(gap1.end_time);
-          const gap2Start = safeTimeToMinutes(gap2.start_time);
-          const gap2End = safeTimeToMinutes(gap2.end_time);
+          const gap1Start = timeToMinutes(gap1.start_time);
+          const gap1End = timeToMinutes(gap1.end_time);
+          const gap2Start = timeToMinutes(gap2.start_time);
+          const gap2End = timeToMinutes(gap2.end_time);
           
           if (gap1Start < gap2End && gap2Start < gap1End) {
             errors.push(`Gap overlap detected between ${gap1.id} and ${gap2.id} on ${gap1.date}`);
@@ -497,16 +428,51 @@ export class GapsAPI {
       errors
     };
   }
+
+  /**
+   * Update gaps when working time preferences change
+   */
+  static async updateGapsForWorkingTimeChange(
+    oldPreferences: UserPreferences,
+    newPreferences: UserPreferences,
+    accessToken: string
+  ): Promise<{ success: boolean; created: number; deleted: number; updated: number }> {
+    try {
+      console.log('🔄 Updating gaps for working time change');
+      
+      if (this.LOCAL_DEVELOPMENT) {
+        console.log('🔧 Development mode - working time change not fully available locally');
+        return { success: true, created: 0, deleted: 0, updated: 0 };
+      }
+      
+      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/update-working-time`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ oldPreferences, newPreferences })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update gaps: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Working time change processed:', result);
+      
+      return result;
+    } catch (error: unknown) {
+      console.error('❌ Error updating gaps for working time change:', error);
+      throw error;
+    }
+  }
 }
 
 /**
  * Legacy API compatibility layer
- * Maintains compatibility with existing code while adding gap logic
  */
 export const gapsAPI = {
-  /**
-   * Get gaps (with gap logic filtering)
-   */
   async get(accessToken?: string): Promise<TimeGap[]> {
     if (!accessToken) {
       console.warn('No access token provided for gaps API, using local fallback');
@@ -521,9 +487,6 @@ export const gapsAPI = {
     return await GapsAPI.getAllGaps(accessToken);
   },
 
-  /**
-   * Save gaps (with gap logic validation)
-   */
   async save(gaps: TimeGap[], accessToken?: string): Promise<void> {
     if (!accessToken) {
       console.warn('No access token provided for gaps API, saving locally');
@@ -532,7 +495,6 @@ export const gapsAPI = {
       return;
     }
     
-    // Validate gaps before saving
     const validation = GapsAPI.validateGaps(gaps);
     if (!validation.valid) {
       console.warn('Gap validation warnings:', validation.errors);
@@ -541,9 +503,6 @@ export const gapsAPI = {
     await GapsAPI.saveGaps(gaps, accessToken);
   },
 
-  /**
-   * Get gaps for a specific date
-   */
   async getForDate(date: string, accessToken?: string): Promise<TimeGap[]> {
     if (!accessToken) {
       console.warn('No access token provided for gaps API, using local fallback');

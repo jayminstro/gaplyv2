@@ -1,4 +1,4 @@
-import { LocalTimeGap } from './database/schema';
+import { TimeGap } from '../types/index';
 
 export interface GapCacheConfig {
   maxSize: number;
@@ -7,7 +7,7 @@ export interface GapCacheConfig {
 }
 
 export interface CachedGapData {
-  gaps: LocalTimeGap[];
+  gaps: TimeGap[];
   metadata: {
     created: string;
     lastAccessed: string;
@@ -29,7 +29,7 @@ export class GapCache {
   }
 
   // Set gap data in cache
-  set(key: string, gaps: LocalTimeGap[]): void {
+  set(key: string, gaps: TimeGap[]): void {
     // Check if we need to evict items
     if (this.cache.size >= this.config.maxSize) {
       this.evictLeastUsed();
@@ -49,7 +49,7 @@ export class GapCache {
   }
 
   // Get gap data from cache
-  get(key: string): LocalTimeGap[] | null {
+  get(key: string): TimeGap[] | null {
     const data = this.cache.get(key);
     
     if (!data) return null;
@@ -139,39 +139,31 @@ export class GapCache {
   }
 
   // Calculate size of gap data
-  private calculateSize(gaps: LocalTimeGap[]): number {
+  private calculateSize(gaps: TimeGap[]): number {
     return JSON.stringify(gaps).length;
   }
 
   // Simple compression (remove unnecessary fields for cache)
-  private compressGaps(gaps: LocalTimeGap[]): any[] {
+  private compressGaps(gaps: TimeGap[]): any[] {
     return gaps.map(gap => ({
       id: gap.id,
+      user_id: gap.user_id,
       date: gap.date,
       start_time: gap.start_time,
       end_time: gap.end_time,
-      duration: gap.duration,
-      is_available: gap.is_available,
-      gap_source_id: gap.gap_source_id,
+      duration_minutes: gap.duration_minutes,
+      parent_gap_id: gap.parent_gap_id,
+      original_gap_id: gap.original_gap_id,
+      created_at: gap.created_at,
+      updated_at: gap.updated_at,
       modified_by: gap.modified_by
     }));
   }
 
   // Decompress gaps (restore full structure)
-  private decompressGaps(compressed: any[]): LocalTimeGap[] {
+  private decompressGaps(compressed: any[]): TimeGap[] {
     return compressed.map(gap => ({
       ...gap,
-      user_id: gap.user_id,
-      duration_minutes: gap.duration,
-      next_event_title: gap.next_event_title,
-      source: gap.source,
-      quality_score: gap.quality_score,
-      created_at: gap.created_at,
-      synced_at: gap.synced_at,
-      last_validated_at: gap.last_validated_at,
-      created_by_user_id: gap.created_by_user_id,
-      last_modified_at: gap.last_modified_at,
-      origin_gap_id: gap.origin_gap_id,
       is_synced: false,
       sync_version: 1,
       local_updated_at: new Date().toISOString()
@@ -183,7 +175,7 @@ export class GapCache {
     userId: string,
     startDate: string,
     endDate: string,
-    loader: (date: string) => Promise<LocalTimeGap[]>
+    loader: (date: string) => Promise<TimeGap[]>
   ): Promise<void> {
     const dates = this.generateDateRange(startDate, endDate);
     

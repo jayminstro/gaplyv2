@@ -29,26 +29,16 @@ export interface Task {
 
 export interface TimeGap {
   id: string;
-  user_id?: string;
-  date?: string;
+  user_id: string;
+  date: string;
   start_time: string;
   end_time: string;
-  duration: number;
-  duration_minutes?: number; // Server also sends this for consistency
-  is_available?: boolean;
-  next_event_title?: string;
-  source?: string;
-  quality_score?: number;
-  created_at?: string;
-  synced_at?: string;
-  last_validated_at?: string;
-  created_by_user_id?: string;
-  
-  // Gap Logic Metadata (as per specification)
-  gap_source_id: 'default' | 'calendar' | 'manual';
-  modified_by: 'system' | 'calendar_sync' | 'user' | 'ai_assistant';
+  duration_minutes: number;
+  parent_gap_id?: string;
+  original_gap_id?: string;
+  created_at: string;
   updated_at: string;
-  origin_gap_id?: string; // Reference to original gap before splitting
+  modified_by: 'system' | 'user' | 'calendar_sync';
 }
 
 export interface UserPreferences {
