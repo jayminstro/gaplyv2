@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, addDays, startOfDay, isSameDay, isAfter, isBefore } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
@@ -31,15 +31,16 @@ function PlannerContent({
     return () => clearInterval(interval);
   }, []);
 
-  // Generate date tabs (today + next 4 days)
-  const dateTabs = Array.from({ length: 5 }, (_, index) => {
-    const date = addDays(new Date(), index);
+  // Generate date tabs (7 days in past + today + 7 days forward = 15 total)
+  const dateTabs = Array.from({ length: 15 }, (_, index) => {
+    // Calculate date: -7 to +7 (index 7 is today)
+    const date = addDays(new Date(), index - 7);
+    const isToday = index === 7;
+    
     return {
       date: startOfDay(date),
-      label: index === 0 ? 'Today' : 
-             index === 1 ? 'Tomorrow' : 
-             format(date, 'MMM d'),
-      isToday: index === 0
+      label: format(date, 'EEE'), // Day of week (Mon, Tue, Wed, etc.)
+      isToday: isToday
     };
   });
 
@@ -181,53 +182,141 @@ function PlannerContent({
   const balanceStatus = getBalanceStatus();
   const remainingGaps = Math.max(0, totalGaps - (totalTasks - completedTasks));
   const gapTimeText = formatGapTime();
+  
+  // Ref for timeline container to auto-scroll to current time
+  const timelineRef = useRef<HTMLDivElement>(null);
+
+  // Function to scroll to current time
+  const scrollToCurrentTime = () => {
+    if (timelineRef.current && isSameDay(selectedDate, new Date())) {
+      const currentHour = new Date().getHours();
+      const currentMinute = new Date().getMinutes();
+      
+      // Get working hours for more accurate calculation
+      const workStartHour = userPreferences?.calendar_work_start 
+        ? parseInt(userPreferences.calendar_work_start.split(':')[0]) 
+        : 9;
+      
+      // Calculate scroll position to show current time at the top
+      const timeSlotHeight = 140; // Approximate height of each time slot with items
+      const currentTimeOffset = (currentHour - workStartHour) * timeSlotHeight + (currentMinute / 60) * timeSlotHeight;
+      
+      // Position current time at the top with some padding
+      const scrollTop = Math.max(0, currentTimeOffset - 80); // 80px padding from top
+      
+      // Smooth scroll to current time
+      timelineRef.current.scrollTo({
+        top: scrollTop,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  // Auto-scroll to current time when component mounts or date changes to today
+  useEffect(() => {
+    // Small delay to ensure timeline is rendered
+    const timer = setTimeout(() => {
+      scrollToCurrentTime();
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [selectedDate, userPreferences?.calendar_work_start]);
 
   return (
-    <div className="flex-1 p-6 pb-0">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold mb-2 text-white">
-          Planner
-        </h1>
-        <p className="text-slate-400 text-base">
-          {balanceStatus}
-          {gapTimeText && (
-            <span> • {gapTimeText} left</span>
-          )}
-        </p>
-      </div>
+    <div className="flex-1 flex flex-col h-full">
+      {/* Fixed Header Section */}
+      <div className="flex-shrink-0 p-6 pb-4 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800/50">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold mb-2 text-white">
+            Planner
+          </h1>
+          <p className="text-slate-400 text-base">
+            {balanceStatus}
+            {gapTimeText && (
+              <span> • {gapTimeText} left</span>
+            )}
+          </p>
+        </div>
 
-      {/* Date Navigation */}
-      <div className="mb-8">
-        <div 
-          className="flex items-center gap-4 overflow-x-auto ios-scroll android-scroll pb-2" 
-          style={{ 
-            scrollbarWidth: 'none', 
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch'
-          }}
-        >
-          {dateTabs.map((tab) => (
-            <button
-              key={tab.date.toISOString()}
-              onClick={() => setSelectedDate(tab.date)}
-              className={`
-                px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation
-                ${isSameDay(selectedDate, tab.date)
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 active:bg-slate-600/50'
+        {/* Now button - positioned above Date Navigation */}
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => {
+              setSelectedDate(startOfDay(new Date()));
+              setTimeout(scrollToCurrentTime, 150);
+            }}
+            className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium border border-blue-500/30 hover:border-blue-500/50 shadow-lg"
+            type="button"
+            title="Jump to today and current time"
+          >
+            Now
+          </button>
+        </div>
+
+        {/* Date Navigation */}
+        <div className="relative mb-2">
+          {/* Left scroll indicator */}
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none flex items-center justify-center">
+            <ChevronLeft className="w-4 h-4 text-slate-400 opacity-60" />
+          </div>
+          
+          {/* Right scroll indicator */}
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-900 to-transparent z-10 pointer-events-none flex items-center justify-center">
+            <ChevronRight className="w-4 h-4 text-slate-400 opacity-60" />
+          </div>
+          
+          <div 
+            className="flex items-center gap-3 overflow-x-auto ios-scroll android-scroll pb-4 px-8" 
+            style={{ 
+              scrollbarWidth: 'none', 
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+              scrollSnapType: 'x mandatory'
+            }}
+            ref={(el) => {
+              // Auto-scroll to today on mount
+              if (el && !el.dataset.scrolled) {
+                const todayIndex = 7; // Today is at index 7
+                const todayButton = el.children[todayIndex] as HTMLElement;
+                if (todayButton) {
+                  const containerWidth = el.offsetWidth;
+                  const buttonWidth = todayButton.offsetWidth;
+                  const scrollLeft = todayButton.offsetLeft - (containerWidth / 2) + (buttonWidth / 2);
+                  el.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                  el.dataset.scrolled = 'true';
                 }
-              `}
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
+              }
+            }}
+          >
+            {dateTabs.map((tab, index) => (
+              <button
+                key={tab.date.toISOString()}
+                onClick={() => setSelectedDate(tab.date)}
+                className={`
+                  px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation flex-shrink-0
+                  ${isSameDay(selectedDate, tab.date)
+                    ? 'bg-blue-600 text-white shadow-lg scale-105'
+                    : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 active:bg-slate-600/50'
+                  }
+                  ${tab.isToday ? 'ring-2 ring-blue-400/30' : ''}
+                `}
+                style={{ scrollSnapAlign: 'center' }}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Timeline */}
-      <div className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce" data-scrollable="true">
+      {/* Scrollable Timeline Section */}
+      <div 
+        ref={timelineRef}
+        className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce p-6 pt-4" 
+        data-scrollable="true"
+      >
         <PlannerTimeline
           tasks={selectedDateTasks}
           gaps={selectedDateGaps}
