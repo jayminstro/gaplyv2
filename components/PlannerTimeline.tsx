@@ -243,7 +243,7 @@ function PlannerTimeline({
     }
     
     const startHour = parseInt(userPreferences.calendar_work_start.split(':')[0]);
-    const endHour = parseInt(userPreferences.calendar_work_end.split(':')[0]);
+    let endHour = parseInt(userPreferences.calendar_work_end.split(':')[0]);
     
     // Ensure end hour is after start hour (handle overnight shifts)
     if (endHour <= startHour) {

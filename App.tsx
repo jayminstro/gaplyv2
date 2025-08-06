@@ -588,7 +588,19 @@ export default function App() {
           // Load preferences first as they're more important
           const prefsData = await loadWithRetry(() => preferencesAPI.get(), 'preferences');
           if (prefsData) {
-            setPreferences(prefsData);
+            // Normalize preferences to ensure proper data types
+            const normalizedPrefs = {
+              ...prefsData,
+              calendar_working_days: Array.isArray(prefsData.calendar_working_days) 
+                ? prefsData.calendar_working_days 
+                : (prefsData.calendar_working_days && typeof prefsData.calendar_working_days === 'object' 
+                    ? Object.keys(prefsData.calendar_working_days).filter(key => prefsData.calendar_working_days[key])
+                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']),
+              preferred_categories: Array.isArray(prefsData.preferred_categories) 
+                ? prefsData.preferred_categories 
+                : []
+            };
+            setPreferences(normalizedPrefs);
           }
 
           // Load profile data after preferences
