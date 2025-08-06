@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
+import { GapLogic } from './utils/gapLogic';
 import { supabase } from './utils/supabase/client';
 import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -668,6 +669,7 @@ export default function App() {
 
         // If no gaps were loaded, create default gaps for today
         let finalGapsData = gapsData;
+        let finalTasks: Task[] = [];
         if (!gapsData || gapsData.length === 0) {
           console.log('📝 No gaps found in rolling window, checking if we need to create default gaps for today...');
           try {
@@ -751,7 +753,7 @@ export default function App() {
           });
           
           // Convert map back to array and update state
-          const finalTasks = Array.from(mergedTasks.values());
+          finalTasks = Array.from(mergedTasks.values());
           setGlobalTasks(finalTasks);
           
           // Save merged tasks back to local storage
@@ -760,6 +762,11 @@ export default function App() {
           console.log('✅ Tasks merged and updated');
         } else {
           console.log('📱 Keeping existing local tasks');
+          // Load local tasks for gap recalculation
+          if (localFirstService) {
+            finalTasks = await localFirstService.getTasks();
+            setGlobalTasks(finalTasks);
+          }
         }
 
         // Handle gaps with rolling window and cleanup
@@ -772,16 +779,64 @@ export default function App() {
             console.warn('⚠️ Gap cleanup failed:', error);
           }
           
-          // Save gaps to local storage
-          console.log('💾 Saving gaps to local storage...');
-          for (const gap of finalGapsData) {
+          // Recalculate gaps to account for existing tasks
+          let recalculatedGaps = finalGapsData;
+          if (finalTasks && finalTasks.length > 0 && preferences) {
+            try {
+              console.log('🔄 Recalculating gaps to account for existing tasks...');
+              
+              // Group tasks by date
+              const tasksByDate = new Map<string, Task[]>();
+              for (const task of finalTasks) {
+                if (task.dueDate) {
+                  if (!tasksByDate.has(task.dueDate)) {
+                    tasksByDate.set(task.dueDate, []);
+                  }
+                  tasksByDate.get(task.dueDate)!.push(task);
+                }
+              }
+              
+              // Recalculate gaps for each date that has tasks
+              const newGaps: TimeGap[] = [];
+              for (const [date, dateTasks] of tasksByDate) {
+                if (dateTasks.length > 0) {
+                  console.log(`🔄 Recalculating gaps for ${date} with ${dateTasks.length} tasks`);
+                  const recalculatedDateGaps = GapLogic.recalculateGapsForDate(
+                    date,
+                    dateTasks,
+                    preferences!, // We know preferences is defined here due to the if check above
+                    session?.user?.id || 'local-user'
+                  );
+                  newGaps.push(...recalculatedDateGaps);
+                }
+              }
+              
+              // Add gaps for dates that don't have tasks (keep original gaps)
+              const datesWithTasks = new Set(tasksByDate.keys());
+              for (const gap of finalGapsData) {
+                if (!datesWithTasks.has(gap.date)) {
+                  newGaps.push(gap);
+                }
+              }
+              
+              recalculatedGaps = newGaps;
+              console.log(`✅ Recalculated gaps: ${recalculatedGaps.length} total gaps`);
+            } catch (gapError) {
+              console.warn('⚠️ Failed to recalculate gaps for existing tasks:', gapError);
+              // Keep original gaps if recalculation fails
+            }
+          }
+          
+          // Save recalculated gaps to local storage
+          console.log('💾 Saving recalculated gaps to local storage...');
+          for (const gap of recalculatedGaps) {
             await localFirstService.saveGaps([gap], gap.date || new Date().toISOString().split('T')[0]);
           }
-          console.log('✅ Gaps saved to local storage');
+          console.log('✅ Recalculated gaps saved to local storage');
           
-          // Set gaps in state
-          setGaps(finalGapsData);
-          console.log(`✅ Loaded ${finalGapsData.length} gaps for rolling window`);
+          // Set recalculated gaps in state
+          setGaps(recalculatedGaps);
+          console.log(`✅ Loaded ${recalculatedGaps.length} recalculated gaps for rolling window`);
           
           // Preload gaps for smooth scrolling (background task)
           setTimeout(async () => {
@@ -797,8 +852,57 @@ export default function App() {
             try {
               // Load all gaps from local storage to get the full rolling window
               const allLocalGaps = await localFirstService.getAllGaps();
-              setGaps(allLocalGaps);
-              console.log(`📱 Using ${allLocalGaps.length} gaps from local storage`);
+              
+              // Recalculate gaps to account for existing tasks even when loading from local storage
+              let recalculatedLocalGaps = allLocalGaps;
+              if (finalTasks && finalTasks.length > 0 && preferences) {
+                try {
+                  console.log('🔄 Recalculating local gaps to account for existing tasks...');
+                  
+                  // Group tasks by date
+                  const tasksByDate = new Map<string, Task[]>();
+                  for (const task of finalTasks) {
+                    if (task.dueDate) {
+                      if (!tasksByDate.has(task.dueDate)) {
+                        tasksByDate.set(task.dueDate, []);
+                      }
+                      tasksByDate.get(task.dueDate)!.push(task);
+                    }
+                  }
+                  
+                  // Recalculate gaps for each date that has tasks
+                  const newGaps: TimeGap[] = [];
+                  for (const [date, dateTasks] of tasksByDate) {
+                    if (dateTasks.length > 0) {
+                      console.log(`🔄 Recalculating local gaps for ${date} with ${dateTasks.length} tasks`);
+                      const recalculatedDateGaps = GapLogic.recalculateGapsForDate(
+                        date,
+                        dateTasks,
+                        preferences!, // We know preferences is defined here due to the if check above
+                        session?.user?.id || 'local-user'
+                      );
+                      newGaps.push(...recalculatedDateGaps);
+                    }
+                  }
+                  
+                  // Add gaps for dates that don't have tasks (keep original gaps)
+                  const datesWithTasks = new Set(tasksByDate.keys());
+                  for (const gap of allLocalGaps) {
+                    if (!datesWithTasks.has(gap.date)) {
+                      newGaps.push(gap);
+                    }
+                  }
+                  
+                  recalculatedLocalGaps = newGaps;
+                  console.log(`✅ Recalculated local gaps: ${recalculatedLocalGaps.length} total gaps`);
+                } catch (gapError) {
+                  console.warn('⚠️ Failed to recalculate local gaps for existing tasks:', gapError);
+                  // Keep original gaps if recalculation fails
+                }
+              }
+              
+              setGaps(recalculatedLocalGaps);
+              console.log(`📱 Using ${recalculatedLocalGaps.length} recalculated gaps from local storage`);
             } catch (error) {
               console.log('📱 No local gaps available');
               setGaps([]);
@@ -1001,6 +1105,34 @@ export default function App() {
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
 
+        // Recalculate gaps for the task's date to split around the new task
+        if (task.dueDate && preferences) {
+          try {
+            console.log(`🔄 Recalculating gaps after task creation for ${task.dueDate}`);
+            const recalculatedGaps = GapLogic.recalculateGapsForDate(
+              task.dueDate,
+              tasks,
+              preferences,
+              session?.user?.id || 'local-user'
+            );
+            
+            if (recalculatedGaps.length > 0) {
+              // Save the recalculated gaps
+              await localFirstService.saveGaps(recalculatedGaps, task.dueDate);
+              
+              // Update gaps state
+              const currentGaps = gaps.filter(gap => gap.date !== task.dueDate);
+              const updatedGaps = [...currentGaps, ...recalculatedGaps];
+              setGaps(updatedGaps);
+              
+              console.log(`✅ Recalculated and saved ${recalculatedGaps.length} gaps for ${task.dueDate}`);
+            }
+          } catch (gapError) {
+            console.warn('⚠️ Failed to recalculate gaps after task creation:', gapError);
+            // Don't fail the task creation if gap recalculation fails
+          }
+        }
+
         console.log(`✅ Task created: ${task.title}`);
         
         // Show offline indicator if offline
@@ -1032,6 +1164,35 @@ export default function App() {
         // Get all tasks and update local state
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
+
+        // Recalculate gaps for the task's date to split around the updated task
+        if (task.dueDate && preferences) {
+          try {
+            console.log(`🔄 Recalculating gaps after task update for ${task.dueDate}`);
+            const recalculatedGaps = GapLogic.recalculateGapsForDate(
+              task.dueDate,
+              tasks,
+              preferences,
+              session?.user?.id || 'local-user'
+            );
+            
+            if (recalculatedGaps.length > 0) {
+              // Save the recalculated gaps
+              await localFirstService.saveGaps(recalculatedGaps, task.dueDate);
+              
+              // Update gaps state
+              const currentGaps = gaps.filter(gap => gap.date !== task.dueDate);
+              const updatedGaps = [...currentGaps, ...recalculatedGaps];
+              setGaps(updatedGaps);
+              
+              console.log(`✅ Recalculated and saved ${recalculatedGaps.length} gaps for ${task.dueDate}`);
+            }
+          } catch (gapError) {
+            console.warn('⚠️ Failed to recalculate gaps after task update:', gapError);
+            // Don't fail the task update if gap recalculation fails
+          }
+        }
+
         console.log(`✅ Task updated: ${updatedTask.title}`);
 
         // If online, try to sync with server
