@@ -178,12 +178,45 @@ function PlannerContent({
     };
   });
 
-  // Filter tasks for selected date
+  // Filter tasks for selected date - Temporarily show all tasks for debugging
   const selectedDateTasks = globalTasks.filter(task => {
-    if (!task.dueDate) return false;
+    // Temporarily show all tasks for debugging
+    if (!task.dueDate) {
+      console.log(`🔍 Task ${task.title} has no dueDate, showing anyway for debugging`);
+      return true;
+    }
     const taskDate = startOfDay(new Date(task.dueDate));
-    return isSameDay(taskDate, selectedDate);
+    const matches = isSameDay(taskDate, selectedDate);
+    if (!matches) {
+      console.log(`🔍 Task ${task.title} dueDate ${task.dueDate} doesn't match selected date ${selectedDate.toLocaleDateString('en-CA')}`);
+    }
+    return matches;
   });
+
+  // Debug: Log task information
+  console.log(`🔍 Task Debug - Total tasks: ${globalTasks.length}, Selected date: ${selectedDate.toLocaleDateString('en-CA')}, Tasks for selected date: ${selectedDateTasks.length}`);
+  if (globalTasks.length > 0) {
+    console.log(`🔍 Task Debug - Available task dates:`, globalTasks.map(t => ({ 
+      id: t.id, 
+      dueDate: t.dueDate, 
+      title: t.title,
+      status: t.status 
+    })).slice(0, 3));
+    
+    // Check if any tasks have dueDate
+    const tasksWithDueDate = globalTasks.filter(t => t.dueDate);
+    console.log(`🔍 Task Debug - Tasks with dueDate: ${tasksWithDueDate.length}/${globalTasks.length}`);
+    
+    // Check if any tasks match today's date
+    const today = new Date().toLocaleDateString('en-CA');
+    const tasksForToday = globalTasks.filter(task => {
+      if (!task.dueDate) return false;
+      const taskDate = startOfDay(new Date(task.dueDate));
+      const todayDate = startOfDay(new Date());
+      return isSameDay(taskDate, todayDate);
+    });
+    console.log(`🔍 Task Debug - Tasks for today (${today}): ${tasksForToday.length}`);
+  }
 
   // Filter gaps for selected date (assuming gaps have a date field)
   const selectedDateGaps = gaps.filter(gap => {

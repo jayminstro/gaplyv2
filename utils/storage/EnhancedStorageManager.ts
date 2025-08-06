@@ -621,13 +621,22 @@ export class EnhancedStorageManager {
     const startTime = performance.now();
     
     try {
-      await this.getActiveStorage().savePreferences(preferences);
-      
-      // Invalidate memory cache for preferences
-      if (this.memoryCache) {
-        this.memoryCache.delete(`preferences_${this.userId}`);
-        console.log('🗑️ Invalidated preferences cache');
-      }
+      // Use PreferenceManager for optimized saving
+      const { PreferenceManager } = await import('./PreferenceManager');
+      const preferenceManager = PreferenceManager.getInstance(this.getActiveStorage(), {
+        memoryTTL: 24 * 60 * 60 * 1000, // 24 hours for preferences
+        validationEnabled: true,
+        criticalFields: [
+          'calendar_work_start',
+          'calendar_work_end',
+          'calendar_working_days',
+          'calendar_include_weekends',
+          'calendar_min_gap'
+        ],
+        defaultFallback: true
+      });
+
+      await preferenceManager.savePreferences(preferences);
       
       await this.trackOperation('savePreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
     } catch (error) {
@@ -639,41 +648,27 @@ export class EnhancedStorageManager {
   async getPreferences(): Promise<UserPreferences | null> {
     await this.ensureInitialized();
     const startTime = performance.now();
-    const cacheKey = `preferences_${this.userId}`;
     
     try {
-      // Check memory cache first
-      if (this.memoryCache) {
-        const cachedPreferences = this.memoryCache.get<UserPreferences>(cacheKey);
-        if (cachedPreferences) {
-          console.log('⚡ Preferences retrieved from memory cache');
-          await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
-          
-          // Record access pattern for predictive cache
-          if (this.predictiveCache) {
-            this.predictiveCache.recordAccess({
-              type: 'preference_access',
-              userId: this.userId,
-              context: this.getTimeContext()
-            });
-          }
-          
-          return cachedPreferences;
-        }
-      }
+      // Use PreferenceManager for optimized loading
+      const { PreferenceManager } = await import('./PreferenceManager');
+      const preferenceManager = PreferenceManager.getInstance(this.getActiveStorage(), {
+        memoryTTL: 24 * 60 * 60 * 1000, // 24 hours for preferences
+        validationEnabled: true,
+        criticalFields: [
+          'calendar_work_start',
+          'calendar_work_end',
+          'calendar_working_days',
+          'calendar_include_weekends',
+          'calendar_min_gap'
+        ],
+        defaultFallback: true
+      });
 
-      // Get from storage
-      const prefs = await this.getActiveStorage().getPreferences();
+      const prefs = await preferenceManager.getPreferences();
       
-      // Store in memory cache
-      if (this.memoryCache && prefs) {
-        this.memoryCache.set(cacheKey, prefs, 60 * 60 * 1000); // 1 hour TTL
-      }
-      
-      // Update cache limits
-      if (this.cacheLimitManager && prefs) {
-        this.cacheLimitManager.updateUsage('preferences', 1, JSON.stringify(prefs).length);
-      }
+      // Track operation for analytics
+      await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
       
       // Record access pattern for predictive cache
       if (this.predictiveCache) {
@@ -684,7 +679,6 @@ export class EnhancedStorageManager {
         });
       }
       
-      await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
       return prefs;
     } catch (error) {
       await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime, false);
