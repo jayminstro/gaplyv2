@@ -399,17 +399,46 @@ export class IndexedDBStorage {
     const store = transaction.objectStore('gaps');
 
     return new Promise((resolve, reject) => {
-      // First, clear ALL existing gaps (since we're replacing everything)
-      const clearRequest = store.clear();
+      // First, clear existing gaps for this specific date and user only
+      const userIdIndex = store.index('userId');
+      const userGapsRequest = userIdIndex.getAll(this.userId);
       
-      clearRequest.onsuccess = () => {
-        console.log(`🗑️ Cleared all existing gaps, adding ${gaps.length} new gaps for date ${date}...`);
-        this.addNewGaps(store, gaps, date, resolve, reject);
+      userGapsRequest.onsuccess = () => {
+        const existingGaps = userGapsRequest.result;
+        const gapsToDelete = existingGaps.filter(item => {
+          const gap = item.data as TimeGap;
+          return gap.date === date;
+        });
+        
+        if (gapsToDelete.length === 0) {
+          // No existing gaps to delete, just add new ones
+          console.log(`📝 No existing gaps found for date ${date}, adding ${gaps.length} new gaps...`);
+          this.addNewGaps(store, gaps, date, resolve, reject);
+          return;
+        }
+        
+        console.log(`🗑️ Found ${gapsToDelete.length} existing gaps for date ${date}, deleting them...`);
+        
+        let deletedCount = 0;
+        for (const gapItem of gapsToDelete) {
+          const deleteRequest = store.delete(gapItem.id);
+          deleteRequest.onsuccess = () => {
+            deletedCount++;
+            if (deletedCount === gapsToDelete.length) {
+              console.log(`🗑️ Deleted ${deletedCount} existing gaps for date ${date}, adding ${gaps.length} new gaps...`);
+              this.addNewGaps(store, gaps, date, resolve, reject);
+            }
+          };
+          deleteRequest.onerror = () => {
+            console.error('❌ Failed to delete existing gap:', deleteRequest.error);
+            reject(deleteRequest.error);
+          };
+        }
       };
       
-      clearRequest.onerror = () => {
-        console.error('❌ Failed to clear existing gaps:', clearRequest.error);
-        reject(clearRequest.error);
+      userGapsRequest.onerror = () => {
+        console.error('❌ Failed to get existing gaps:', userGapsRequest.error);
+        reject(userGapsRequest.error);
       };
       
       transaction.onerror = () => reject(transaction.error);
@@ -435,7 +464,7 @@ export class IndexedDBStorage {
         id: gap.id,
         data: { ...gap, userId: this.userId }, // Include userId in the data
         createdAt: gap.created_at || new Date().toISOString(),
-        updatedAt: gap.last_modified_at || gap.created_at || new Date().toISOString(),
+        updatedAt: gap.updated_at || gap.created_at || new Date().toISOString(),
         version: 1
       };
       
@@ -448,8 +477,19 @@ export class IndexedDBStorage {
         }
       };
       addRequest.onerror = () => {
-        console.error(`❌ Failed to add gap ${gap.id}:`, addRequest.error);
-        reject(addRequest.error);
+        const error = addRequest.error;
+        if (error && error.name === 'ConstraintError') {
+          // Gap already exists, this is likely a race condition
+          console.warn(`⚠️ Gap ${gap.id} already exists (race condition), skipping...`);
+          addedCount++;
+          if (addedCount === gaps.length) {
+            console.log(`✅ Successfully processed ${addedCount} gaps for date ${date} to IndexedDB (with duplicates skipped)`);
+            resolve();
+          }
+        } else {
+          console.error(`❌ Failed to add gap ${gap.id}:`, error);
+          reject(error);
+        }
       };
     }
   }

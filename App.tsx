@@ -74,6 +74,9 @@ export default function App() {
   // App lifecycle state
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [isAppVisible, setIsAppVisible] = useState(true);
+  
+  // Daily cleanup state
+  const [lastCleanupDate, setLastCleanupDate] = useState<string>('');
 
   // Sync local tasks with server
   const syncLocalTasks = async () => {
@@ -192,6 +195,36 @@ export default function App() {
       window.removeEventListener('blur', handleBlur);
     };
   }, [isAppInitialized, isAuthenticated, isDataLoading]);
+
+  // Daily cleanup job
+  useEffect(() => {
+    const runDailyCleanup = async () => {
+      const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      
+      // Only run cleanup once per day
+      if (lastCleanupDate === today) {
+        return;
+      }
+      
+      if (isAuthenticated && session?.access_token && gaps.length > 0) {
+        try {
+          console.log('🧹 Running daily gap cleanup...');
+          const cleanupResult = await GapsAPI.cleanupOldGaps(gaps, session.access_token);
+          console.log(`✅ Daily cleanup completed: ${cleanupResult.deleted} old gaps removed`);
+          setLastCleanupDate(today);
+        } catch (error) {
+          console.warn('⚠️ Daily cleanup failed:', error);
+        }
+      }
+    };
+    
+    // Run cleanup on app start and every 24 hours
+    runDailyCleanup();
+    
+    const cleanupInterval = setInterval(runDailyCleanup, 24 * 60 * 60 * 1000); // 24 hours
+    
+    return () => clearInterval(cleanupInterval);
+  }, [isAuthenticated, session?.access_token, gaps, lastCleanupDate]);
 
   // Persist app state to sessionStorage to survive background/foreground transitions
   useEffect(() => {
@@ -338,6 +371,66 @@ export default function App() {
         await enhancedStorage.initialize();
         setLocalFirstService(enhancedStorage);
         
+        // Create default gaps for today before running login sync
+        console.log('📝 Creating default gaps for today before login sync...');
+        
+        // First, load the user's actual preferences (not defaults)
+        console.log('🔍 Loading user preferences before gap creation...');
+        let userPrefs = preferences; // Start with current state (defaults)
+        try {
+          const loadedPrefs = await enhancedStorage.getPreferences();
+          if (loadedPrefs) {
+            console.log('✅ Found user preferences:', {
+              work_start: loadedPrefs.calendar_work_start,
+              work_end: loadedPrefs.calendar_work_end,
+              working_days: loadedPrefs.calendar_working_days
+            });
+            userPrefs = loadedPrefs;
+            setPreferences(loadedPrefs); // Update state immediately
+          } else {
+            console.warn('⚠️ No user preferences found, using defaults for gap creation');
+          }
+        } catch (prefsError) {
+          console.warn('⚠️ Error loading preferences for gap creation:', prefsError);
+        }
+        
+        try {
+          const today = new Date().toLocaleDateString('en-CA');
+          const todayGaps = await GapsAPI.ensureTodayGaps(userPrefs, session?.access_token || '', user.id, enhancedStorage);
+          console.log(`✅ Created ${todayGaps.length} default gaps for today before login sync`);
+          
+          // Verify gaps were saved with retry logic
+          let verificationRetries = 0;
+          const maxVerificationRetries = 5;
+          while (verificationRetries < maxVerificationRetries) {
+            try {
+              const savedGaps = await enhancedStorage.getAllGaps();
+              console.log(`🔍 Pre-login sync verification: Found ${savedGaps.length} gaps in storage`);
+              if (savedGaps.length > 0) {
+                break; // Success, exit retry loop
+              }
+              verificationRetries++;
+              if (verificationRetries < maxVerificationRetries) {
+                console.log(`⏳ Pre-login sync verification attempt ${verificationRetries} found 0 gaps, retrying...`);
+                await new Promise(resolve => setTimeout(resolve, 300 * verificationRetries));
+              }
+            } catch (verifyError) {
+              console.warn('⚠️ Pre-login sync verification failed:', verifyError);
+              verificationRetries++;
+              if (verificationRetries < maxVerificationRetries) {
+                await new Promise(resolve => setTimeout(resolve, 300 * verificationRetries));
+              }
+            }
+          }
+          
+          // Add a delay to ensure gaps are fully committed before login sync
+          console.log('⏳ Waiting for gaps to be fully committed before login sync...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+        } catch (gapError) {
+          console.warn('⚠️ Failed to create default gaps before login sync:', gapError);
+        }
+        
         // Create login sync service with the same storage instance
         const loginService = new EnhancedLoginSyncService(user.id, enhancedStorage);
         const syncResult = await loginService.initializeAndSync();
@@ -412,28 +505,25 @@ export default function App() {
       try {
         console.log('📱 Loading critical data...');
         
-        // Load only today's tasks and gaps
-        const today = new Date().toISOString().split('T')[0];
-        const [allTasks, todayGaps] = await Promise.all([
-          localFirstService.getTasks(),
-          localFirstService.getGaps(today)
-        ]);
+        // Load preferences first to ensure they're available for gap creation
+        const preferences = await localFirstService.getPreferences();
+        if (preferences) {
+          setPreferences(preferences);
+          console.log('✅ Preferences loaded for critical data');
+        }
         
-        // Filter tasks for today
-        const todayTasks = allTasks.filter(task => {
-          const taskDate = task.dueDate?.split('T')[0];
-          return taskDate === today;
-        });
+        // Load only tasks for critical data - gaps will be handled by loadAppData
+        const allTasks = await localFirstService.getTasks();
+        const today = new Date().toLocaleDateString('en-CA');
         
-        console.log('📋 Today\'s tasks loaded:', todayTasks);
-        console.log('📅 Today\'s gaps loaded:', todayGaps);
+        console.log(`📋 Today's tasks loaded:`, allTasks.filter(task => task.dueDate === today));
         
-        setGlobalTasks(todayTasks);
-        setGaps(todayGaps);
-        setIsDataLoading(false);
+        // Set critical data in state
+        setGlobalTasks(allTasks);
+        
+        console.log('✅ Critical data loaded successfully');
       } catch (error) {
         console.error('❌ Error loading critical data:', error);
-        setIsDataLoading(false);
       }
     };
 
@@ -453,12 +543,7 @@ export default function App() {
             return Array.from(uniqueTasks);
           });
 
-          // Load preferences
-          const prefs = await localFirstService.getPreferences();
-          if (prefs) {
-            console.log('⚙️ Preferences loaded from storage:', prefs);
-            setPreferences(prefs);
-          }
+          // Preferences already loaded in critical data phase
         });
       } catch (error) {
         console.error('⚠️ Error loading non-critical data:', error);
@@ -467,8 +552,10 @@ export default function App() {
 
     // Execute critical loading immediately
     loadCriticalData();
-    // Start background loading after critical data is loaded
-    loadNonCriticalData();
+    // Start background loading after critical data is loaded with a small delay
+    setTimeout(() => {
+      loadNonCriticalData();
+    }, 100);
   }, [loginSyncService, localFirstService]);
 
   // Load user preferences and profile data in the background when authenticated
@@ -541,6 +628,21 @@ export default function App() {
           return;
         }
         
+        // Wait for localFirstService to be initialized
+        if (!localFirstService) {
+          console.log('⏳ Waiting for storage manager to be initialized...');
+          return; // Exit early, will be called again when localFirstService is available
+        }
+        
+        console.log('🔍 Storage manager is ready, proceeding with data loading...');
+        
+        // Wait for login sync to complete if it's still running
+        if (loginSyncService) {
+          console.log('⏳ Waiting for login sync to complete...');
+          // Give login sync a moment to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
         const loadWithRetry = async (apiCall: () => Promise<any>, name: string, defaultValue: any) => {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
@@ -558,11 +660,62 @@ export default function App() {
           }
         };
 
-        // Load tasks and gaps with retry logic
+        // Load tasks and gaps with retry logic (using rolling window)
         const [tasksData, gapsData] = await Promise.all([
           loadWithRetry(() => tasksAPI.get(), 'tasks', null),
-          loadWithRetry(() => GapsAPI.getGapsForDate(new Date().toISOString().split('T')[0], ''), 'gaps', null)
+          loadWithRetry(() => GapsAPI.getGapsInRollingWindow(session?.access_token || '', localFirstService), 'gaps', null)
         ]);
+
+        // If no gaps were loaded, create default gaps for today
+        let finalGapsData = gapsData;
+        if (!gapsData || gapsData.length === 0) {
+          console.log('📝 No gaps found in rolling window, checking if we need to create default gaps for today...');
+          try {
+            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+            console.log(`🎯 Checking gaps for today: ${today}`);
+            
+            // Check if gaps already exist in local storage
+            const existingLocalGaps = await localFirstService.getAllGaps();
+            const todayGaps = existingLocalGaps.filter(gap => gap.date === today);
+            
+            if (todayGaps.length > 0) {
+              console.log(`✅ Found ${todayGaps.length} existing gaps for today in local storage`);
+              finalGapsData = todayGaps;
+            } else {
+              console.log('📝 No existing gaps found, creating default gaps for today...');
+              const newTodayGaps = await GapsAPI.ensureTodayGaps(preferences, session?.access_token || '', session?.user?.id, localFirstService);
+              finalGapsData = newTodayGaps;
+              console.log(`✅ Created ${newTodayGaps.length} default gaps for today`);
+            }
+            
+            // Verify gaps were saved to storage with retry logic
+            let verificationRetries = 0;
+            const maxVerificationRetries = 3;
+            while (verificationRetries < maxVerificationRetries) {
+              try {
+                const savedGaps = await localFirstService.getAllGaps();
+                console.log(`🔍 Verification: Found ${savedGaps.length} gaps in storage after creation`);
+                if (savedGaps.length > 0) {
+                  break; // Success, exit retry loop
+                }
+                verificationRetries++;
+                if (verificationRetries < maxVerificationRetries) {
+                  console.log(`⏳ Verification attempt ${verificationRetries} found 0 gaps, retrying...`);
+                  await new Promise(resolve => setTimeout(resolve, 200 * verificationRetries));
+                }
+              } catch (verifyError) {
+                console.warn('⚠️ Could not verify saved gaps:', verifyError);
+                verificationRetries++;
+                if (verificationRetries < maxVerificationRetries) {
+                  await new Promise(resolve => setTimeout(resolve, 200 * verificationRetries));
+                }
+              }
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to create default gaps for today:', error);
+            finalGapsData = [];
+          }
+        }
 
         // Compare server data with local data
         if (tasksData && Array.isArray(tasksData) && localFirstService) {
@@ -609,28 +762,43 @@ export default function App() {
           console.log('📱 Keeping existing local tasks');
         }
 
-        // Handle gaps with local-first pattern
-        if (gapsData && Array.isArray(gapsData) && localFirstService) {
-          // Save gaps to local storage first
+        // Handle gaps with rolling window and cleanup
+        if (finalGapsData && Array.isArray(finalGapsData) && localFirstService) {
+          // Clean up old gaps first
+          try {
+            const cleanupResult = await GapsAPI.cleanupOldGaps(finalGapsData, session?.access_token || '');
+            console.log(`🧹 Cleanup completed: ${cleanupResult.deleted} old gaps removed`);
+          } catch (error) {
+            console.warn('⚠️ Gap cleanup failed:', error);
+          }
+          
+          // Save gaps to local storage
           console.log('💾 Saving gaps to local storage...');
-          for (const gap of gapsData) {
+          for (const gap of finalGapsData) {
             await localFirstService.saveGaps([gap], gap.date || new Date().toISOString().split('T')[0]);
           }
           console.log('✅ Gaps saved to local storage');
           
-          // Load gaps from local storage to ensure consistency
-          const today = new Date().toISOString().split('T')[0];
-          const localGaps = await localFirstService.getGaps(today);
-          setGaps(localGaps);
-          console.log('✅ Gaps loaded from local storage');
+          // Set gaps in state
+          setGaps(finalGapsData);
+          console.log(`✅ Loaded ${finalGapsData.length} gaps for rolling window`);
+          
+          // Preload gaps for smooth scrolling (background task)
+          setTimeout(async () => {
+            try {
+              await GapsAPI.preloadGaps(preferences, session?.access_token || '');
+            } catch (error) {
+              console.warn('⚠️ Gap preloading failed:', error);
+            }
+          }, 1000);
         } else {
           // Try to load from local storage if server data is not available
           if (localFirstService) {
             try {
-              const today = new Date().toISOString().split('T')[0];
-              const localGaps = await localFirstService.getGaps(today);
-              setGaps(localGaps);
-              console.log('📱 Using gaps from local storage');
+              // Load all gaps from local storage to get the full rolling window
+              const allLocalGaps = await localFirstService.getAllGaps();
+              setGaps(allLocalGaps);
+              console.log(`📱 Using ${allLocalGaps.length} gaps from local storage`);
             } catch (error) {
               console.log('📱 No local gaps available');
               setGaps([]);
@@ -648,8 +816,11 @@ export default function App() {
       }
     };
 
-    loadAppData();
-  }, [isAuthenticated, user?.id]);
+    // Add a small delay to ensure critical data loads first
+    setTimeout(() => {
+      loadAppData();
+    }, 200);
+  }, [isAuthenticated, user?.id, session?.access_token, localFirstService]);
 
   const handleAuthSuccess = async () => {
     console.log('Auth success called, waiting for session...');
@@ -883,11 +1054,15 @@ export default function App() {
     }
   };
 
-  // Enhanced task deletion handler
+  // Enhanced task deletion handler with gap restoration
   const handleTaskDeleted = async (taskId: string) => {
     try {
       if (localFirstService) {
         console.log(`🗑️ Deleting task: ${taskId}`);
+        
+        // Find the task before deleting to get its date
+        const taskToDelete = globalTasks.find(task => task.id === taskId);
+        const taskDate = taskToDelete?.dueDate;
         
         // Delete the task
         const deleted = await localFirstService.deleteTask(taskId);
@@ -897,6 +1072,30 @@ export default function App() {
           const tasks = await localFirstService.getTasks();
           setGlobalTasks(tasks);
           console.log(`✅ Task deleted: ${taskId}`);
+          
+          // Restore gaps for the task's date if it was within the rolling window
+          if (taskDate && session?.access_token) {
+            try {
+              console.log(`🔄 Restoring gaps after task deletion for ${taskDate}`);
+              const restoredGaps = await GapsAPI.restoreGapsAfterTaskDeletion(
+                taskDate,
+                tasks,
+                preferences,
+                session.access_token
+              );
+              
+              if (restoredGaps.length > 0) {
+                // Update gaps state with restored gaps
+                const currentGaps = gaps.filter(gap => gap.date !== taskDate);
+                const updatedGaps = [...currentGaps, ...restoredGaps];
+                setGaps(updatedGaps);
+                console.log(`✅ Restored ${restoredGaps.length} gaps for ${taskDate}`);
+              }
+            } catch (error) {
+              console.warn('⚠️ Failed to restore gaps after task deletion:', error);
+              // Don't show error to user since task deletion succeeded
+            }
+          }
         }
       }
     } catch (error) {
@@ -958,6 +1157,8 @@ export default function App() {
               setIsGapModalOpen(true);
             }}
             userPreferences={preferences}
+            session={session}
+            storageManager={localFirstService}
           />
         );
       case 'settings':

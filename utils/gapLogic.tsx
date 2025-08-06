@@ -7,9 +7,117 @@ export type GapModifier = 'system' | 'user' | 'calendar_sync';
 /**
  * Core Gap Logic Implementation
  * Simplified architecture: gaps represent available time only
+ * Implements 14-day rolling window: 7 days past, 7 days future
  */
+/**
+ * Normalize working days to array format
+ * Handles both array and object formats, with fallbacks
+ */
+export function normalizeWorkingDays(workingDays: any): string[] {
+  // If it's already an array, return it
+  if (Array.isArray(workingDays)) {
+    return workingDays;
+  }
+  
+  // If it's an object, convert to array
+  if (workingDays && typeof workingDays === 'object') {
+    console.log(`🔍 Normalizing working days object:`, workingDays);
+    
+    // First try: get keys where value is true
+    let result = Object.keys(workingDays).filter(day => workingDays[day] === true);
+    
+    // If empty, try truthy values
+    if (result.length === 0) {
+      result = Object.keys(workingDays).filter(day => workingDays[day]);
+    }
+    
+    // If still empty, try day name mapping
+    if (result.length === 0) {
+      const dayMapping: { [key: string]: string } = {
+        'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday',
+        'monday': 'Monday', 'tuesday': 'Tuesday', 'wednesday': 'Wednesday', 'thursday': 'Thursday', 'friday': 'Friday', 'saturday': 'Saturday', 'sunday': 'Sunday'
+      };
+      
+      result = Object.keys(workingDays).map(key => dayMapping[key.toLowerCase()]).filter(Boolean);
+    }
+    
+    // Final fallback: default working days
+    if (result.length === 0) {
+      console.log(`❌ Could not normalize working days, using defaults`);
+      result = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    }
+    
+    console.log(`✅ Normalized working days:`, result);
+    return result;
+  }
+  
+  // If it's null/undefined/other, return defaults
+  console.log(`❌ Invalid working days format, using defaults`);
+  return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+}
+
 export class GapLogic {
   
+  /**
+   * Calculate the 14-day rolling window dates
+   * @returns {window_start, window_end} in YYYY-MM-DD format
+   */
+  static calculateRollingWindow(): { window_start: string; window_end: string } {
+    const today = new Date();
+    const window_start = new Date(today);
+    window_start.setDate(today.getDate() - 7);
+    const window_end = new Date(today);
+    window_end.setDate(today.getDate() + 7);
+    
+    return {
+      window_start: window_start.toLocaleDateString('en-CA'),
+      window_end: window_end.toLocaleDateString('en-CA')
+    };
+  }
+
+  /**
+   * Check if a date is within the 14-day rolling window
+   */
+  static isDateInRollingWindow(date: string): boolean {
+    const { window_start, window_end } = this.calculateRollingWindow();
+    return date >= window_start && date <= window_end;
+  }
+
+  /**
+   * Get dates that should be preloaded for smooth scrolling (+3 days)
+   */
+  static getPreloadDates(): string[] {
+    const { window_end } = this.calculateRollingWindow();
+    const preloadDates: string[] = [];
+    
+    for (let i = 1; i <= 3; i++) {
+      const preloadDate = new Date(window_end);
+      preloadDate.setDate(preloadDate.getDate() + i);
+      preloadDates.push(preloadDate.toLocaleDateString('en-CA'));
+    }
+    
+    return preloadDates;
+  }
+
+  /**
+   * Clean up old gaps outside the rolling window
+   * Should be called daily or on app launch
+   */
+  static getGapsToCleanup(existingGaps: TimeGap[]): string[] {
+    const { window_start } = this.calculateRollingWindow();
+    const today = new Date().toLocaleDateString('en-CA');
+    
+    return existingGaps
+      .filter(gap => {
+        // Delete system gaps older than 7 days
+        const isOldSystemGap = gap.date < window_start && gap.modified_by === 'system';
+        // Delete any gaps older than 7 days (except user-modified ones)
+        const isOldGap = gap.date < window_start;
+        return isOldSystemGap || isOldGap;
+      })
+      .map(gap => gap.id);
+  }
+
   /**
    * Create default free hour gaps for a given date
    * Called on app launch or when no gaps exist
@@ -19,43 +127,200 @@ export class GapLogic {
     preferences: UserPreferences, 
     userId: string
   ): TimeGap[] {
-    const dayOfWeek = new Date(date).getDay();
+    // Validate preferences are provided
+    if (!preferences) {
+      console.error('❌ No preferences provided to createFreeHourGaps');
+      return [];
+    }
+    
+    // Validate required work time preferences
+    if (!preferences.calendar_work_start || !preferences.calendar_work_end) {
+      console.error('❌ Missing work start/end time in preferences:', {
+        start: preferences.calendar_work_start,
+        end: preferences.calendar_work_end
+      });
+      return [];
+    }
+    // Ensure date is in YYYY-MM-DD format
+    const formattedDate = new Date(date).toLocaleDateString('en-CA');
+    
+    // Only create gaps within the rolling window
+    if (!this.isDateInRollingWindow(formattedDate)) {
+      console.log(`⏭️ Skipping gap creation for date outside rolling window: ${formattedDate}`);
+      return [];
+    }
+
+    const dayOfWeek = new Date(formattedDate).getDay();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const currentDay = dayNames[dayOfWeek];
     
     // Check if this day is in working days
-    if (!preferences.calendar_working_days.includes(currentDay)) {
+    const workingDaysArray = normalizeWorkingDays(preferences.calendar_working_days);
+    
+    console.log(`🔍 Working days check for ${currentDay}:`, {
+      original: preferences.calendar_working_days,
+      normalized: workingDaysArray,
+      includes: workingDaysArray.includes(currentDay)
+    });
+    
+    if (!workingDaysArray.includes(currentDay)) {
+      console.log(`⏭️ Skipping gap creation for non-working day: ${currentDay}`);
       return [];
     }
     
     // Skip weekends if not included
     if (!preferences.calendar_include_weekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
+      console.log(`⏭️ Skipping gap creation for weekend day: ${currentDay}`);
       return [];
     }
     
     const gaps: TimeGap[] = [];
-    const workStart = timeToMinutes(preferences.calendar_work_start);
-    const workEnd = timeToMinutes(preferences.calendar_work_end);
+    
+    // Handle time format - convert HH:MM:SS to HH:MM if needed
+    let workStartTime = preferences.calendar_work_start;
+    let workEndTime = preferences.calendar_work_end;
+    
+    if (workStartTime && workStartTime.includes(':') && workStartTime.split(':').length === 3) {
+      workStartTime = workStartTime.substring(0, 5); // Convert "06:00:00" to "06:00"
+    }
+    if (workEndTime && workEndTime.includes(':') && workEndTime.split(':').length === 3) {
+      workEndTime = workEndTime.substring(0, 5); // Convert "21:00:00" to "21:00"
+    }
+    
+    console.log(`📅 Creating gaps for ${formattedDate} from ${workStartTime} to ${workEndTime} (${timeToMinutes(workStartTime)}-${timeToMinutes(workEndTime)} minutes)`);
+    
+    const workStart = timeToMinutes(workStartTime);
+    const workEnd = timeToMinutes(workEndTime);
+    console.log(`🔍 DEBUG - Full preferences object:`, JSON.stringify({
+      calendar_work_start: preferences.calendar_work_start,
+      calendar_work_end: preferences.calendar_work_end,
+      calendar_working_days: preferences.calendar_working_days,
+      calendar_include_weekends: preferences.calendar_include_weekends
+    }, null, 2));
     
     // Create one gap per hour
     for (let hour = workStart; hour < workEnd; hour += 60) {
       const startTime = minutesToTime(hour);
       const endTime = minutesToTime(Math.min(hour + 60, workEnd));
+      const durationMinutes = Math.min(60, workEnd - hour);
       
-      gaps.push({
+      const gap: TimeGap = {
         id: generateUUID(),
         user_id: userId,
-        date,
+        date: formattedDate,
         start_time: startTime,
         end_time: endTime,
-        duration_minutes: Math.min(60, workEnd - hour),
+        duration_minutes: durationMinutes,
+        parent_gap_id: undefined,
+        original_gap_id: undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         modified_by: 'system'
-      });
+      };
+      
+      gaps.push(gap);
+      console.log(`✅ Created gap: ${startTime}-${endTime} (${durationMinutes} min)`);
     }
     
+    console.log(`🎯 Created ${gaps.length} gaps for ${formattedDate}`);
     return gaps;
+  }
+
+  /**
+   * Recalculate gaps for a specific date after task changes
+   * Used when tasks are added, updated, or deleted
+   */
+  static recalculateGapsForDate(
+    date: string,
+    tasks: Task[],
+    preferences: UserPreferences,
+    userId: string
+  ): TimeGap[] {
+    // Only recalculate within rolling window
+    if (!this.isDateInRollingWindow(date)) {
+      return [];
+    }
+
+    console.log(`🔄 Recalculating gaps for ${date} with ${tasks.length} tasks`);
+    
+    // Get tasks for this date
+    const dateTasks = tasks.filter(task => task.dueDate === date);
+    
+    // Create base gaps for the date
+    const baseGaps = this.createFreeHourGaps(date, preferences, userId);
+    
+    if (baseGaps.length === 0) {
+      return [];
+    }
+    
+    // Process each task to split/remove gaps
+    let currentGaps = [...baseGaps];
+    
+    for (const task of dateTasks) {
+      if (!task.dueTime || !task.duration) continue;
+      
+      const taskStart = task.dueTime;
+      const taskDuration = this.parseTaskDuration(task.duration);
+      const taskEnd = minutesToTime(timeToMinutes(taskStart) + taskDuration);
+      
+      // Find and process overlapping gaps
+      const newGaps: TimeGap[] = [];
+      
+      for (const gap of currentGaps) {
+        try {
+          // Check if task overlaps with this gap
+          const gapStart = timeToMinutes(gap.start_time);
+          const gapEnd = timeToMinutes(gap.end_time);
+          const taskStartMinutes = timeToMinutes(taskStart);
+          const taskEndMinutes = timeToMinutes(taskEnd);
+          
+          // Check for overlap: task starts before gap ends AND task ends after gap starts
+          if (taskStartMinutes < gapEnd && taskEndMinutes > gapStart) {
+            console.log(`📍 Task ${taskStart}-${taskEnd} overlaps with gap ${gap.start_time}-${gap.end_time}`);
+            const result = this.scheduleTaskInGap(gap, taskStart, taskEnd, 'system');
+            
+            if (!result.deletedGap) {
+              // Gap wasn't fully consumed, add remaining parts
+              newGaps.push(...result.newGaps);
+            }
+            // If gap was deleted, don't add it back
+          } else {
+            // No overlap, keep the original gap
+            newGaps.push(gap);
+          }
+        } catch (error) {
+          // If there's an error (e.g., task doesn't fit in gap), keep the original gap
+          console.warn(`⚠️ Could not schedule task in gap ${gap.start_time}-${gap.end_time}:`, error);
+          newGaps.push(gap);
+        }
+      }
+      
+      currentGaps = newGaps;
+    }
+    
+    console.log(`✅ Recalculated ${currentGaps.length} gaps for ${date}`);
+    return currentGaps;
+  }
+
+  /**
+   * Parse task duration from various formats (HH:MM:SS, MM:SS, "30 min", etc.)
+   */
+  private static parseTaskDuration(duration: string): number {
+    if (duration.includes(':')) {
+      const parts = duration.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        return (hours * 60) + minutes;
+      }
+    } else {
+      // Handle "30 min" format
+      const match = duration.match(/(\d+)/);
+      if (match) {
+        return parseInt(match[1]);
+      }
+    }
+    return 30; // Default 30 minutes
   }
 
   /**
@@ -122,7 +387,7 @@ export class GapLogic {
       });
     }
     
-    return { deletedGap: true, newGaps };
+    return { deletedGap: false, newGaps };
   }
 
   /**
@@ -221,8 +486,11 @@ export class GapLogic {
       const currentDay = dayNames[dayOfWeek];
 
       // Check if this day is still a working day
-      const wasWorkingDay = oldPreferences.calendar_working_days.includes(currentDay);
-      const isWorkingDay = newPreferences.calendar_working_days.includes(currentDay);
+      const oldWorkingDays = normalizeWorkingDays(oldPreferences.calendar_working_days);
+      const newWorkingDays = normalizeWorkingDays(newPreferences.calendar_working_days);
+      
+      const wasWorkingDay = oldWorkingDays.includes(currentDay);
+      const isWorkingDay = newWorkingDays.includes(currentDay);
 
       if (!isWorkingDay && wasWorkingDay) {
         // Day is no longer a working day - delete all gaps

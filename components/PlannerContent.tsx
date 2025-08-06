@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, addDays, startOfDay, isSameDay, isAfter, isBefore } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
+import { GapsAPI } from '../utils/gapsAPI';
 
 interface PlannerContentProps {
   globalTasks: Task[];
@@ -10,6 +11,8 @@ interface PlannerContentProps {
   onTaskOpen: (task: Task) => void;
   onGapUtilize: (gap: TimeGap) => void;
   userPreferences?: UserPreferences;
+  session?: any;
+  storageManager?: any; // Add storage manager prop
 }
 
 function PlannerContent({ 
@@ -17,7 +20,9 @@ function PlannerContent({
   gaps, 
   onTaskOpen, 
   onGapUtilize,
-  userPreferences 
+  userPreferences,
+  session,
+  storageManager
 }: PlannerContentProps) {
   const [selectedDate, setSelectedDate] = useState(startOfDay(new Date()));
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -30,6 +35,135 @@ function PlannerContent({
     
     return () => clearInterval(interval);
   }, []);
+
+  // Track which dates we've already attempted to create gaps for
+  const [processedDates, setProcessedDates] = useState<Set<string>>(new Set());
+
+  // Ensure gaps exist for the selected date
+  useEffect(() => {
+    const ensureGapsForSelectedDate = async () => {
+      if (!session?.access_token || !userPreferences) {
+        console.log('⏭️ Missing required dependencies for gap creation');
+        return;
+      }
+      
+      // Ensure userPreferences has required fields
+      if (!userPreferences.calendar_work_start || !userPreferences.calendar_work_end || !userPreferences.calendar_working_days) {
+        console.log('⏭️ Missing required preference fields for gap creation');
+        return;
+      }
+      
+      // Use local date strings to avoid timezone issues
+      const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      
+      // Debug: Log the dates being processed
+      console.log(`🔍 Processing date: ${selectedDateStr}, Today: ${today}`);
+      
+      // Prevent infinite loops by tracking processed dates
+      if (processedDates.has(selectedDateStr)) {
+        console.log(`⏭️ Date ${selectedDateStr} already processed, skipping`);
+        return;
+      }
+      
+      // Don't create gaps for past dates (except today)
+      if (selectedDateStr < today) {
+        console.log(`⏭️ Skipping past date: ${selectedDateStr}`);
+        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
+        return;
+      }
+      
+      // Always create gaps for today if they don't exist
+      const isToday = selectedDateStr === today;
+      if (isToday) {
+        console.log(`📅 Processing today's date: ${selectedDateStr}`);
+      }
+      
+      // Check if date is within the 14-day rolling window
+      const { GapLogic } = await import('../utils/gapLogic');
+      if (!GapLogic.isDateInRollingWindow(selectedDateStr)) {
+        console.log(`⏭️ Skipping date outside rolling window: ${selectedDateStr}`);
+        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
+        return;
+      }
+      
+      // Check if this is a weekend and user doesn't want weekends
+      const dayOfWeek = selectedDate.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+      if (isWeekend && !userPreferences.calendar_include_weekends) {
+        console.log(`⏭️ Skipping weekend date: ${selectedDateStr}`);
+        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
+        return;
+      }
+      
+      // Check if we have gaps for the selected date
+      const gapsForSelectedDate = gaps.filter(gap => {
+        if (!gap.date) return false;
+        const gapDate = startOfDay(new Date(gap.date));
+        return isSameDay(gapDate, selectedDate);
+      });
+      
+      // If no gaps exist for this date, create them
+      if (gapsForSelectedDate.length === 0) {
+        try {
+          console.log(`🔄 No gaps found for ${selectedDateStr}, creating default gaps...`);
+          
+          // Mark this date as processed to prevent infinite loops
+          setProcessedDates(prev => new Set([...prev, selectedDateStr]));
+          
+          // Try to get existing gaps for the date first
+          let gapsForDate: TimeGap[] = [];
+          
+          try {
+            gapsForDate = await GapsAPI.getGapsForDate(selectedDateStr, session.access_token);
+            console.log(`✅ Retrieved ${gapsForDate.length} existing gaps for ${selectedDateStr}`);
+          } catch (fetchError) {
+            console.log('🔄 Failed to fetch existing gaps, will try to initialize');
+            gapsForDate = [];
+          }
+          
+          if (gapsForDate.length === 0) {
+            console.log('📝 No gaps found, initializing default gaps...');
+            
+            // Debug user preferences before gap creation
+            console.log(`🔍 DEBUG - PlannerContent userPreferences:`, JSON.stringify({
+              calendar_work_start: userPreferences?.calendar_work_start,
+              calendar_work_end: userPreferences?.calendar_work_end,
+              calendar_working_days: userPreferences?.calendar_working_days,
+              calendar_include_weekends: userPreferences?.calendar_include_weekends
+            }, null, 2));
+            
+            try {
+              gapsForDate = await GapsAPI.initializeGapsForDate(selectedDateStr, userPreferences, session.access_token, session?.user?.id, storageManager);
+              console.log(`✅ Initialized ${gapsForDate.length} gaps for ${selectedDateStr}`);
+            } catch (initError) {
+              console.log('🔄 API initialization failed, creating local default gaps');
+              gapsForDate = await GapsAPI.createLocalFallbackGaps(selectedDateStr, userPreferences, session?.user?.id || 'local-user', storageManager);
+              console.log(`✅ Created ${gapsForDate.length} local default gaps as fallback`);
+            }
+          }
+          
+          if (gapsForDate.length > 0) {
+            console.log(`✅ Created ${gapsForDate.length} gaps for ${selectedDateStr}`);
+            // Don't update gaps state here - let the main app handle it
+            // The gaps will be saved to storage and loaded by the main app flow
+          }
+        } catch (error) {
+          console.error('❌ Error creating gaps for selected date:', error);
+        }
+      } else {
+        // If gaps exist, mark the date as processed
+        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
+      }
+    };
+    
+    ensureGapsForSelectedDate();
+  }, [selectedDate, session?.access_token, userPreferences, processedDates]);
+
+  // Reset processed dates when user changes
+  useEffect(() => {
+    setProcessedDates(new Set());
+  }, [session?.access_token]);
 
   // Generate date tabs (7 days in past + today + 7 days forward = 15 total)
   const dateTabs = Array.from({ length: 15 }, (_, index) => {
@@ -57,6 +191,20 @@ function PlannerContent({
     const gapDate = startOfDay(new Date(gap.date));
     return isSameDay(gapDate, selectedDate);
   });
+  
+  // Debug: Log gap information
+  console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${selectedDate.toLocaleDateString('en-CA')}, Gaps for selected date: ${selectedDateGaps.length}`);
+  if (gaps.length > 0) {
+    console.log(`🔍 Gap Debug - Available gap dates:`, gaps.map(g => g.date).slice(0, 5));
+  }
+  
+  // Debug: Log when gaps prop changes
+  useEffect(() => {
+    console.log(`📊 PlannerContent received ${gaps.length} gaps`);
+    if (gaps.length > 0) {
+      console.log(`📊 Gap dates:`, gaps.map(g => g.date).slice(0, 3));
+    }
+  }, [gaps]);
 
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (gap: TimeGap) => {

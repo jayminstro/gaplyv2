@@ -59,6 +59,9 @@ export class EnhancedStorageManager {
   private config: EnhancedStorageConfig;
   private userId: string;
   private isInitialized = false;
+  
+  // Add lock for preventing concurrent gap saves
+  private gapSaveLock: Promise<void> = Promise.resolve();
 
   constructor(userId: string, config: Partial<EnhancedStorageConfig> = {}) {
     this.userId = userId;
@@ -423,23 +426,48 @@ export class EnhancedStorageManager {
     await this.ensureInitialized();
     const startTime = performance.now();
     
-    try {
-      console.log(`🔄 EnhancedStorageManager: Saving ${gaps.length} gaps for date ${date}...`);
-      await this.getActiveStorage().saveGaps(gaps, date);
-      
-      // Invalidate memory cache for gaps
+    // Use lock to prevent concurrent gap saves
+    const currentLock = this.gapSaveLock;
+    this.gapSaveLock = currentLock.then(async () => {
+      try {
+        console.log(`🔄 EnhancedStorageManager: Saving ${gaps.length} gaps for date ${date}...`);
+        await this.getActiveStorage().saveGaps(gaps, date);
+        
+              // Update memory cache with new gaps instead of just invalidating
       if (this.memoryCache) {
         this.memoryCache.delete(`gaps_${this.userId}_${date}`);
-        console.log(`🗑️ Invalidated gaps cache for ${date}`);
+        this.memoryCache.delete(`all_gaps_${this.userId}`); // Also invalidate all gaps cache
+        
+        // Immediately populate the cache with the new gaps
+        this.memoryCache.set(`gaps_${this.userId}_${date}`, gaps, 30 * 60 * 1000); // 30 minutes TTL
+        
+        // Also update the all gaps cache
+        const allGapsCacheKey = `all_gaps_${this.userId}`;
+        const existingAllGaps = this.memoryCache.get<TimeGap[]>(allGapsCacheKey);
+        if (existingAllGaps) {
+          // Update the all gaps cache with these gaps
+          const updatedAllGaps = existingAllGaps.filter(gap => gap.date !== date).concat(gaps);
+          this.memoryCache.set(allGapsCacheKey, updatedAllGaps, 30 * 60 * 1000);
+          console.log(`💾 Updated all gaps cache with ${gaps.length} gaps for ${date}`);
+        } else {
+          // Initialize all gaps cache with current gaps
+          this.memoryCache.set(allGapsCacheKey, gaps, 30 * 60 * 1000);
+          console.log(`💾 Initialized all gaps cache with ${gaps.length} gaps for ${date}`);
+        }
+        
+        console.log(`💾 Updated gaps cache for ${date} with ${gaps.length} gaps`);
       }
-      
-      await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime);
-      console.log(`✅ EnhancedStorageManager: Successfully saved ${gaps.length} gaps for date ${date}`);
-    } catch (error) {
-      console.error(`❌ EnhancedStorageManager: Error saving gaps for date ${date}:`, error);
-      await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime, false);
-      throw error;
-    }
+        
+        await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime);
+        console.log(`✅ EnhancedStorageManager: Successfully saved ${gaps.length} gaps for date ${date}`);
+      } catch (error) {
+        console.error(`❌ EnhancedStorageManager: Error saving gaps for date ${date}:`, error);
+        await this.trackOperation('saveGaps', date, 'gaps', gaps.length, performance.now() - startTime, false);
+        throw error;
+      }
+    });
+    
+    return this.gapSaveLock;
   }
 
   async getGaps(date: string): Promise<TimeGap[]> {
@@ -475,6 +503,16 @@ export class EnhancedStorageManager {
       // Store in memory cache
       if (this.memoryCache) {
         this.memoryCache.set(cacheKey, gaps, 30 * 60 * 1000); // 30 minutes TTL
+        
+        // Also update the all gaps cache if it exists
+        const allGapsCacheKey = `all_gaps_${this.userId}`;
+        const existingAllGaps = this.memoryCache.get<TimeGap[]>(allGapsCacheKey);
+        if (existingAllGaps) {
+          // Update the all gaps cache with these gaps
+          const updatedAllGaps = existingAllGaps.filter(gap => gap.date !== date).concat(gaps);
+          this.memoryCache.set(allGapsCacheKey, updatedAllGaps, 30 * 60 * 1000);
+          console.log(`💾 Updated all gaps cache with ${gaps.length} gaps for ${date}`);
+        }
       }
       
       // Update cache limits
@@ -503,12 +541,76 @@ export class EnhancedStorageManager {
   async getAllGaps(): Promise<TimeGap[]> {
     await this.ensureInitialized();
     const startTime = performance.now();
+    const cacheKey = `all_gaps_${this.userId}`;
     
     try {
-      const gaps = await this.getActiveStorage().getAllGaps();
+      // Check memory cache first
+      if (this.memoryCache) {
+        const cachedGaps = this.memoryCache.get<TimeGap[]>(cacheKey);
+        if (cachedGaps) {
+          console.log(`⚡ All gaps retrieved from memory cache (${cachedGaps.length} gaps)`);
+          await this.trackOperation('getAllGaps', 'all', 'gaps', cachedGaps.length, performance.now() - startTime);
+          
+          // Record access pattern for predictive cache
+          if (this.predictiveCache) {
+            this.predictiveCache.recordAccess({
+              type: 'gap_access',
+              userId: this.userId,
+              context: this.getTimeContext()
+            });
+          }
+          
+          return cachedGaps;
+        }
+      }
+
+      // Get from storage with retry logic for race conditions
+      let gaps: TimeGap[] = [];
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          gaps = await this.getActiveStorage().getAllGaps();
+          break; // Success, exit retry loop
+        } catch (error) {
+          retryCount++;
+          console.warn(`⚠️ getAllGaps attempt ${retryCount} failed:`, error);
+          
+          if (retryCount >= maxRetries) {
+            throw error; // Give up after max retries
+          }
+          
+          // Wait a bit before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 50 * retryCount));
+        }
+      }
+      
+      // Store in memory cache
+      if (this.memoryCache) {
+        this.memoryCache.set(cacheKey, gaps, 30 * 60 * 1000); // 30 minutes TTL
+        console.log(`💾 Cached ${gaps.length} all gaps in memory`);
+      }
+      
+      // Update cache limits
+      if (this.cacheLimitManager) {
+        this.cacheLimitManager.updateUsage('gaps', gaps.length, JSON.stringify(gaps).length);
+      }
+      
+      // Record access pattern for predictive cache
+      if (this.predictiveCache) {
+        this.predictiveCache.recordAccess({
+          type: 'gap_access',
+          userId: this.userId,
+          context: this.getTimeContext()
+        });
+      }
+      
       await this.trackOperation('getAllGaps', 'all', 'gaps', gaps.length, performance.now() - startTime);
+      console.log(`✅ Retrieved ${gaps.length} gaps from storage`);
       return gaps;
     } catch (error) {
+      console.error(`❌ Error getting all gaps:`, error);
       await this.trackOperation('getAllGaps', 'all', 'gaps', 0, performance.now() - startTime, false);
       throw error;
     }
