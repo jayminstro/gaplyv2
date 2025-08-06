@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { format, parseISO, addMinutes, isBefore, isAfter, isSameDay } from 'date-fns';
 import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Zap, Calendar, Settings, Sparkles } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
@@ -37,6 +37,9 @@ function PlannerTimeline({
   onGapUtilize,
   userPreferences 
 }: PlannerTimelineProps) {
+  
+  // Ref for the timeline container to enable auto-scrolling
+  const timelineRef = useRef<HTMLDivElement>(null);
   
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
@@ -89,6 +92,12 @@ function PlannerTimeline({
   const timelineItems = useMemo(() => {
     const items: TimelineItem[] = [];
     
+    // Debug: Log gaps being processed
+    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${selectedDate.toLocaleDateString('en-CA')}`);
+    if (gaps.length > 0) {
+      console.log(`🔍 PlannerTimeline Debug - Gap dates:`, gaps.map(g => g.date).slice(0, 5));
+    }
+    
     // Get working hours for filtering
     const workStartHour = userPreferences?.calendar_work_start 
       ? parseInt(userPreferences.calendar_work_start.split(':')[0]) 
@@ -96,6 +105,47 @@ function PlannerTimeline({
     const workEndHour = userPreferences?.calendar_work_end 
       ? parseInt(userPreferences.calendar_work_end.split(':')[0]) 
       : 17;
+    
+    // Filter gaps for the selected date
+    const selectedDateGaps = gaps.filter(gap => {
+      if (!gap.date) return false;
+      const gapDate = new Date(gap.date);
+      return isSameDay(gapDate, selectedDate);
+    });
+    
+    console.log(`🔍 PlannerTimeline Debug - Found ${selectedDateGaps.length} gaps for selected date`);
+    
+    // Add gaps to timeline items
+    selectedDateGaps.forEach(gap => {
+      try {
+        const startTime = parseISO(`${gap.date}T${gap.start_time}`);
+        const endTime = parseISO(`${gap.date}T${gap.end_time}`);
+        
+        // Only add gaps within working hours
+        if (isGapWithinWorkingHours(startTime, endTime)) {
+          const gapSourceInfo = getGapSourceInfo(gap);
+          
+          items.push({
+            id: gap.id,
+            type: 'gap',
+            startTime,
+            endTime,
+            title: `Gap`,
+            duration: `${gap.duration_minutes} min`,
+            icon: gapSourceInfo.icon,
+            iconColor: gapSourceInfo.color,
+            data: gap,
+            gapSource: gap.modified_by as 'default' | 'calendar' | 'manual'
+          });
+          
+          console.log(`✅ Added gap to timeline: ${gap.start_time}-${gap.end_time} (${gap.duration_minutes} min)`);
+        } else {
+          console.log(`⏭️ Skipped gap outside working hours: ${gap.start_time}-${gap.end_time}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error processing gap ${gap.id}:`, error);
+      }
+    });
     
     // Add tasks
     tasks.forEach(task => {
@@ -171,151 +221,14 @@ function PlannerTimeline({
       });
     });
     
-    // Add gaps - split long gaps into hourly segments
-    gaps.forEach(gap => {
-      if (!gap.start_time) return;
-      if (!gap.end_time) return;
-      
-      // Handle different gap time formats
-      const gapStart = gap.start_time;
-      const gapEnd = gap.end_time;
-      
-      // Parse gap times - handle both full datetime and time-only formats
-      let startTime: Date;
-      let endTime: Date;
-      
-      try {
-        if (gapStart && gapStart.includes('T')) {
-          startTime = parseISO(gapStart);
-        } else if (gapStart) {
-          // Time only format - combine with selected date
-          const selectedDateStr = selectedDate.toISOString().split('T')[0];
-          startTime = parseISO(`${selectedDateStr}T${gapStart}`);
-        } else {
-          return; // Skip if no valid start time
-        }
-        
-        if (gapEnd && gapEnd.includes('T')) {
-          endTime = parseISO(gapEnd);
-        } else if (gapEnd) {
-          // Time only format - combine with selected date
-          const selectedDateStr = selectedDate.toISOString().split('T')[0];
-          endTime = parseISO(`${selectedDateStr}T${gapEnd}`);
-        } else {
-          return; // Skip if no valid end time
-        }
-      } catch (error) {
-        console.warn('Failed to parse gap times:', { gapStart, gapEnd, error });
-        return;
-      }
-      
-      // Check if gap overlaps with working hours - filter out gaps completely outside working hours
-      if (!isGapWithinWorkingHours(startTime, endTime)) {
-        return; // Skip gaps that don't overlap with working hours
-      }
-      
-      // Calculate duration in a readable format
-      const totalDurationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
-      
-      // Validate duration makes sense (should be positive and reasonable)
-      if (totalDurationMinutes <= 0 || totalDurationMinutes > 24 * 60) {
-        return; // Skip gaps with invalid durations
-      }
-      
-      // Get gap source info for visual distinction
-      const gapSourceInfo = getGapSourceInfo(gap);
-      
-      // Always use 'Gap' as the label for consistency across the app
-      const gapLabel = 'Gap';
-      
-      // Split gap into hourly segments
-      const startHour = startTime.getHours();
-      const endHour = endTime.getHours();
-      
-      // If gap is within a single hour, create one segment
-      if (startHour === endHour) {
-        const segmentDurationMinutes = totalDurationMinutes;
-        let segmentDurationText = '';
-        
-        if (segmentDurationMinutes >= 60) {
-          const hours = Math.floor(segmentDurationMinutes / 60);
-          const minutes = segmentDurationMinutes % 60;
-          segmentDurationText = `${hours}h`;
-          if (minutes > 0) segmentDurationText += ` ${minutes}m`;
-        } else {
-          segmentDurationText = `${segmentDurationMinutes}m`;
-        }
-        
-        items.push({
-          id: `${gap.id}-segment-${startHour}`,
-          type: 'gap',
-          startTime,
-          endTime,
-          title: gapLabel,
-          duration: segmentDurationText,
-          icon: gapSourceInfo.icon,
-          iconColor: gapSourceInfo.color,
-          gapSource: gap.modified_by,
-          data: gap
-        });
-      } else {
-        // Split into multiple hourly segments
-        for (let hour = startHour; hour <= endHour; hour++) {
-          let segmentStart: Date;
-          let segmentEnd: Date;
-          
-          if (hour === startHour) {
-            // First segment: from original start time to end of hour
-            segmentStart = startTime;
-            segmentEnd = new Date(startTime);
-            segmentEnd.setHours(hour + 1, 0, 0, 0);
-          } else if (hour === endHour) {
-            // Last segment: from start of hour to original end time
-            segmentStart = new Date(endTime);
-            segmentStart.setHours(hour, 0, 0, 0);
-            segmentEnd = endTime;
-          } else {
-            // Middle segments: full hour
-            segmentStart = new Date(startTime);
-            segmentStart.setHours(hour, 0, 0, 0);
-            segmentEnd = new Date(startTime);
-            segmentEnd.setHours(hour + 1, 0, 0, 0);
-          }
-          
-          // Calculate segment duration
-          const segmentDurationMinutes = Math.round((segmentEnd.getTime() - segmentStart.getTime()) / (1000 * 60));
-          
-          // Skip segments with no duration
-          if (segmentDurationMinutes <= 0) continue;
-          
-          let segmentDurationText = '';
-          if (segmentDurationMinutes >= 60) {
-            const hours = Math.floor(segmentDurationMinutes / 60);
-            const minutes = segmentDurationMinutes % 60;
-            segmentDurationText = `${hours}h`;
-            if (minutes > 0) segmentDurationText += ` ${minutes}m`;
-          } else {
-            segmentDurationText = `${segmentDurationMinutes}m`;
-          }
-          
-          items.push({
-            id: `${gap.id}-segment-${hour}`,
-            type: 'gap',
-            startTime: segmentStart,
-            endTime: segmentEnd,
-            title: gapLabel,
-            duration: segmentDurationText,
-            icon: gapSourceInfo.icon,
-            iconColor: gapSourceInfo.color,
-            gapSource: gap.modified_by,
-            data: gap
-          });
-        }
-      }
-    });
-    
     // Sort by start time
-    return items.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    const sortedItems = items.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    
+    // Debug: Log final timeline items
+    const gapItems = sortedItems.filter(item => item.type === 'gap');
+    console.log(`🔍 PlannerTimeline Debug - Final timeline items: ${sortedItems.length} total, ${gapItems.length} gaps`);
+    
+    return sortedItems;
   }, [tasks, gaps, selectedDate, userPreferences]);
   
   // Generate time slots for the day based on user's working hours
@@ -371,6 +284,34 @@ function PlannerTimeline({
   
   const timeSlots = generateTimeSlots();
   
+  // Check if current time should be shown (only for today)
+  const shouldShowCurrentTime = isSameDay(selectedDate, currentTime);
+  const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
+  
+  // Auto-scroll to current time when viewing today
+  useEffect(() => {
+    if (!timelineRef.current || !shouldShowCurrentTime) return;
+    
+    // Find the current hour element
+    const currentHourIndex = timeSlots.findIndex(slot => slot.hour24 === currentHour);
+    if (currentHourIndex === -1) return;
+    
+    // Calculate target scroll position to center the current time
+    const timelineElement = timelineRef.current;
+    const timelineHeight = timelineElement.clientHeight;
+    const totalSlotsHeight = timeSlots.length * 100; // Approximate height per slot
+    const targetScrollTop = (currentHourIndex * 100) - (timelineHeight / 2);
+    
+    // Smooth scroll to the current time
+    timelineElement.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      behavior: 'smooth'
+    });
+    
+    console.log(`📍 Auto-scrolled timeline to current hour: ${currentHour}:00`);
+  }, [selectedDate, currentHour, shouldShowCurrentTime, timeSlots]);
+  
   // Simple function to get items for each time slot
   const getItemsForHour = (hour: number) => {
     return timelineItems.filter(item => {
@@ -395,13 +336,8 @@ function PlannerTimeline({
     }
   };
 
-  // Check if current time should be shown (only for today)
-  const shouldShowCurrentTime = isSameDay(selectedDate, currentTime);
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
-
   return (
-    <div className="space-y-4 pb-8 relative">
+    <div ref={timelineRef} className="space-y-4 pb-8 relative">
       {timeSlots.map((slot) => {
         const itemsAtHour = getItemsForHour(slot.hour24);
         
@@ -426,7 +362,7 @@ function PlannerTimeline({
                   
                   return (
                     <button
-                      key={item.id}
+                      key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
                       onClick={() => handleItemClick(item)}
                       className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation ${
                         isGap
@@ -492,14 +428,14 @@ function PlannerTimeline({
                       if (gap.start_time.includes('T')) {
                         gapStart = parseISO(gap.start_time);
                       } else {
-                        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
                         gapStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
                       }
                       
                       if (gap.end_time.includes('T')) {
                         gapEnd = parseISO(gap.end_time);
                       } else {
-                        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
                         gapEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
                       }
                       
@@ -528,14 +464,14 @@ function PlannerTimeline({
                         if (gap.start_time.includes('T')) {
                           displayStart = parseISO(gap.start_time);
                         } else {
-                          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                          const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
                           displayStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
                         }
                         
                         if (gap.end_time.includes('T')) {
                           displayEnd = parseISO(gap.end_time);
                         } else {
-                          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+                          const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
                           displayEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
                         }
                         
@@ -603,7 +539,7 @@ function PlannerTimeline({
                     return (
                       <div className="w-full rounded-2xl p-4 border border-slate-700/20 bg-slate-800/10">
                         <div className="text-center">
-                          <span className="text-slate-500 text-sm">Available time</span>
+                          <span className="text-slate-500 text-sm">Gap</span>
                         </div>
                       </div>
                     );

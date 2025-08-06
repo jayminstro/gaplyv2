@@ -1311,6 +1311,187 @@ app.post("/make-server-966d4846/gaps/initialize", async (c) => {
   }
 });
 
+// Get gaps within rolling window (14-day window)
+app.get("/make-server-966d4846/gaps/rolling-window", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    
+    // Calculate 14-day rolling window
+    const today = new Date();
+    const window_start = new Date(today);
+    window_start.setDate(today.getDate() - 7);
+    const window_end = new Date(today);
+    window_end.setDate(today.getDate() + 7);
+    
+    const startDate = window_start.toISOString().split('T')[0];
+    const endDate = window_end.toISOString().split('T')[0];
+
+    console.log(`📅 [Rolling Window] Fetching gaps for ${startDate} to ${endDate}`);
+
+    const { data: gaps, error: gapsError } = await supabase
+      .from('gaps')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true });
+
+    if (gapsError) {
+      console.log("❌ [Rolling Window] Error fetching gaps:", gapsError);
+      return c.json({ error: "Failed to fetch rolling window gaps" }, 500);
+    }
+
+    console.log(`✅ [Rolling Window] Retrieved ${gaps?.length || 0} gaps`);
+    return c.json(gaps || []);
+  } catch (error) {
+    console.log("❌ [Rolling Window] Unexpected error:", error);
+    return c.json({ error: "Failed to fetch rolling window gaps" }, 500);
+  }
+});
+
+// Clean up old gaps outside rolling window
+app.post("/make-server-966d4846/gaps/cleanup", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    const body = await c.req.json();
+    
+    const { gapIds } = body;
+    
+    if (!gapIds || !Array.isArray(gapIds)) {
+      return c.json({ error: "Missing or invalid gapIds array" }, 400);
+    }
+
+    console.log(`🧹 [Cleanup] Deleting ${gapIds.length} old gaps for user ${user.id}`);
+
+    // Delete the specified gaps
+    const { error: deleteError } = await supabase
+      .from('gaps')
+      .delete()
+      .eq('user_id', user.id)
+      .in('id', gapIds);
+
+    if (deleteError) {
+      console.log("❌ [Cleanup] Error deleting gaps:", deleteError);
+      return c.json({ error: "Failed to cleanup old gaps" }, 500);
+    }
+
+    console.log(`✅ [Cleanup] Successfully deleted ${gapIds.length} old gaps`);
+    return c.json({ 
+      success: true, 
+      deleted: gapIds.length,
+      message: `Cleaned up ${gapIds.length} old gaps`
+    });
+
+  } catch (error) {
+    console.log("❌ [Cleanup] Unexpected error:", error);
+    return c.json({ error: "Failed to cleanup old gaps" }, 500);
+  }
+});
+
+// Preload gaps for smooth scrolling (+3 days beyond rolling window)
+app.post("/make-server-966d4846/gaps/preload", async (c) => {
+  try {
+    const user = c.get('user');
+    const supabase = createSupabaseClient();
+    const body = await c.req.json();
+    
+    const { preferences } = body;
+    
+    if (!preferences) {
+      return c.json({ error: "Missing preferences" }, 400);
+    }
+
+    // Calculate preload dates (+3 days beyond rolling window)
+    const today = new Date();
+    const window_end = new Date(today);
+    window_end.setDate(today.getDate() + 7);
+    
+    const preloadDates = [];
+    for (let i = 1; i <= 3; i++) {
+      const preloadDate = new Date(window_end);
+      preloadDate.setDate(preloadDate.getDate() + i);
+      preloadDates.push(preloadDate.toISOString().split('T')[0]);
+    }
+
+    console.log(`🔄 [Preload] Creating gaps for ${preloadDates.length} dates:`, preloadDates);
+
+    const allGaps = [];
+    
+    for (const date of preloadDates) {
+      // Check if gaps already exist for this date
+      const { data: existingGaps } = await supabase
+        .from('gaps')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('date', date);
+
+      if (existingGaps && existingGaps.length > 0) {
+        console.log(`⏭️ [Preload] Gaps already exist for ${date}`);
+        continue;
+      }
+
+      // Create gaps for this date
+      const workStart = timeToMinutes(preferences.calendar_work_start);
+      const workEnd = timeToMinutes(preferences.calendar_work_end);
+      const gaps = [];
+
+      // Create one gap per hour
+      for (let hour = workStart; hour < workEnd; hour += 60) {
+        const startTime = minutesToTime(hour);
+        const endTime = minutesToTime(Math.min(hour + 60, workEnd));
+        
+        gaps.push({
+          id: generateUUID(),
+          user_id: user.id,
+          date,
+          start_time: startTime,
+          end_time: endTime,
+          duration_minutes: Math.min(60, workEnd - hour),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          modified_by: 'system'
+        });
+      }
+
+      allGaps.push(...gaps);
+    }
+
+    if (allGaps.length > 0) {
+      // Insert all preloaded gaps
+      const { data: insertedGaps, error: insertError } = await supabase
+        .from('gaps')
+        .insert(allGaps)
+        .select();
+
+      if (insertError) {
+        console.log("❌ [Preload] Error inserting preloaded gaps:", insertError);
+        return c.json({ error: "Failed to preload gaps" }, 500);
+      }
+
+      console.log(`✅ [Preload] Successfully created ${insertedGaps.length} preloaded gaps`);
+      return c.json({ 
+        success: true, 
+        preloaded: insertedGaps.length,
+        message: `Preloaded ${insertedGaps.length} gaps`
+      });
+    } else {
+      console.log(`✅ [Preload] No gaps needed to preload`);
+      return c.json({ 
+        success: true, 
+        preloaded: 0,
+        message: "No gaps needed to preload"
+      });
+    }
+
+  } catch (error) {
+    console.log("❌ [Preload] Unexpected error:", error);
+    return c.json({ error: "Failed to preload gaps" }, 500);
+  }
+});
+
 // Helper functions
 const timeToMinutes = (time) => {
   const [hours, minutes] = time.split(':').map(Number);
@@ -1853,8 +2034,11 @@ function handleWorkingTimeChange(
     const currentDay = dayNames[dayOfWeek];
 
     // Check if this day is still a working day
-    const wasWorkingDay = oldPreferences.calendar_working_days.includes(currentDay);
-    const isWorkingDay = newPreferences.calendar_working_days.includes(currentDay);
+    const oldWorkingDays = normalizeWorkingDays(oldPreferences.calendar_working_days);
+    const newWorkingDays = normalizeWorkingDays(newPreferences.calendar_working_days);
+    
+    const wasWorkingDay = oldWorkingDays.includes(currentDay);
+    const isWorkingDay = newWorkingDays.includes(currentDay);
 
     if (!isWorkingDay && wasWorkingDay) {
       // Day is no longer a working day - delete all gaps
@@ -1993,6 +2177,45 @@ function createGapsForTimeRange(
   return gaps;
 }
 
+// Helper function to normalize working days
+function normalizeWorkingDays(workingDays: any): string[] {
+  // If it's already an array, return it
+  if (Array.isArray(workingDays)) {
+    return workingDays;
+  }
+  
+  // If it's an object, convert to array
+  if (workingDays && typeof workingDays === 'object') {
+    // First try: get keys where value is true
+    let result = Object.keys(workingDays).filter(day => workingDays[day] === true);
+    
+    // If empty, try truthy values
+    if (result.length === 0) {
+      result = Object.keys(workingDays).filter(day => workingDays[day]);
+    }
+    
+    // If still empty, try day name mapping
+    if (result.length === 0) {
+      const dayMapping = {
+        'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday',
+        'monday': 'Monday', 'tuesday': 'Tuesday', 'wednesday': 'Wednesday', 'thursday': 'Thursday', 'friday': 'Friday', 'saturday': 'Saturday', 'sunday': 'Sunday'
+      };
+      
+      result = Object.keys(workingDays).map(key => dayMapping[key.toLowerCase()]).filter(Boolean);
+    }
+    
+    // Final fallback: default working days
+    if (result.length === 0) {
+      result = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    }
+    
+    return result;
+  }
+  
+  // If it's null/undefined/other, return defaults
+  return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+}
+
 // Helper function to create free hour gaps
 function createFreeHourGaps(date: string, preferences: any, userId: string): any[] {
   const dayOfWeek = new Date(date).getDay();
@@ -2000,7 +2223,8 @@ function createFreeHourGaps(date: string, preferences: any, userId: string): any
   const currentDay = dayNames[dayOfWeek];
   
   // Check if this day is in working days
-  if (!preferences.calendar_working_days.includes(currentDay)) {
+  const workingDaysArray = normalizeWorkingDays(preferences.calendar_working_days);
+  if (!workingDaysArray.includes(currentDay)) {
     return [];
   }
   

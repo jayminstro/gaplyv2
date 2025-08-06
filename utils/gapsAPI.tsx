@@ -7,6 +7,7 @@ import { generateUUID } from './uuid';
 /**
  * Gaps API with simplified gap logic implementation
  * Handles all gap-related operations with the new single-table architecture
+ * Implements 14-day rolling window and automatic cleanup
  */
 export class GapsAPI {
   private static readonly BASE_URL = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846`;
@@ -55,16 +56,285 @@ export class GapsAPI {
   }
 
   /**
+   * Get gaps within the 14-day rolling window
+   */
+  static async getGapsInRollingWindow(accessToken: string, storageManager?: any): Promise<TimeGap[]> {
+    const { window_start, window_end } = GapLogic.calculateRollingWindow();
+    
+    try {
+      console.log(`📅 Fetching gaps for rolling window: ${window_start} to ${window_end}`);
+      
+      if (this.LOCAL_DEVELOPMENT) {
+        console.log(`🔧 Development mode - using local fallback for rolling window gaps`);
+        throw new Error('Development mode - using local fallback');
+      }
+      
+      const response = await this.fetchWithTimeout(
+        `${this.BASE_URL}/gaps?start_date=${window_start}&end_date=${window_end}`, 
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Server error response: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch rolling window gaps: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const gaps = await response.json();
+      console.log(`✅ Retrieved ${gaps.length} gaps for rolling window`);
+      return gaps;
+    } catch (error: unknown) {
+      if (this.shouldUseFallback(error)) {
+        console.log('🔄 Rolling window API unavailable, creating local fallback gaps for rolling window');
+        
+        // Create local gaps for the rolling window
+        const localGaps: TimeGap[] = [];
+        const startDate = new Date(window_start);
+        const endDate = new Date(window_end);
+        
+                // Get user preferences - try storage manager first, then localStorage
+        let preferences = null;
+        
+        if (storageManager) {
+          try {
+            console.log('🔍 Loading preferences from storage manager for rolling window...');
+            preferences = await storageManager.getPreferences();
+            if (preferences) {
+              console.log(`✅ Found preferences from storage manager:`, {
+                work_start: preferences.calendar_work_start,
+                work_end: preferences.calendar_work_end,
+                working_days: preferences.calendar_working_days
+              });
+            }
+          } catch (storageError) {
+            console.warn('⚠️ Could not load preferences from storage manager:', storageError);
+          }
+        }
+        
+        // Fallback to localStorage if storage manager failed or not provided
+        if (!preferences) {
+          try {
+            // First try to get user ID from current session storage
+            let userId = 'local-user';
+            try {
+              const sessionData = sessionStorage.getItem('gaply_session');
+              if (sessionData) {
+                const session = JSON.parse(sessionData);
+                userId = session.user?.id || 'local-user';
+              }
+            } catch (sessionError) {
+              console.warn('⚠️ Could not load session for userId:', sessionError);
+            }
+
+            // Try user-specific preference keys first, then generic ones
+            const possibleKeys = [
+              `gaply_preferences_${userId}`,
+              'gaply_preferences',
+              'user_preferences',
+              'preferences'
+            ];
+
+            for (const key of possibleKeys) {
+              const prefsData = localStorage.getItem(key);
+              if (prefsData) {
+                preferences = JSON.parse(prefsData);
+                console.log(`📋 Found preferences in localStorage key: ${key}`);
+                console.log(`🔍 Loaded preferences:`, {
+                  work_start: preferences.calendar_work_start,
+                  work_end: preferences.calendar_work_end,
+                  working_days: preferences.calendar_working_days
+                });
+                break;
+              }
+            }
+            
+            if (!preferences) {
+              console.warn('⚠️ No preferences found in any localStorage keys');
+            }
+          } catch (prefsError) {
+            console.warn('⚠️ Could not load preferences for rolling window gaps:', prefsError);
+            preferences = null;
+          }
+        }
+        
+        if (!preferences) {
+          console.log('⚠️ No preferences available, skipping rolling window gap creation');
+          return [];
+        }
+        
+        // Create gaps for each day in the rolling window
+        for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+          const dateStr = date.toLocaleDateString('en-CA');
+          const dayGaps = GapLogic.createFreeHourGaps(dateStr, preferences, 'local-user');
+          localGaps.push(...dayGaps);
+        }
+        
+        console.log(`✅ Created ${localGaps.length} local fallback gaps for rolling window`);
+        return localGaps;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up old gaps outside the rolling window
+   */
+  static async cleanupOldGaps(existingGaps: TimeGap[], accessToken: string): Promise<{ deleted: number }> {
+    const gapsToDelete = GapLogic.getGapsToCleanup(existingGaps);
+    
+    if (gapsToDelete.length === 0) {
+      console.log('🧹 No old gaps to clean up');
+      return { deleted: 0 };
+    }
+    
+    console.log(`🧹 Cleaning up ${gapsToDelete.length} old gaps`);
+    
+    try {
+      if (this.LOCAL_DEVELOPMENT) {
+        console.log('🔧 Development mode - cleanup simulated locally');
+        return { deleted: gapsToDelete.length };
+      }
+      
+      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/cleanup`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ gapIds: gapsToDelete })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Cleanup failed:', response.status, errorText);
+        throw new Error(`Cleanup failed: ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ Cleaned up ${result.deleted} old gaps`);
+      return result;
+    } catch (error: unknown) {
+      if (this.shouldUseFallback(error)) {
+        console.log('🔄 Cleanup API unavailable - will cleanup locally');
+        return { deleted: gapsToDelete.length };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Preload gaps for smooth scrolling (+3 days beyond rolling window)
+   */
+  static async preloadGaps(preferences: UserPreferences, accessToken: string): Promise<TimeGap[]> {
+    const preloadDates = GapLogic.getPreloadDates();
+    const preloadedGaps: TimeGap[] = [];
+    
+    console.log(`🔄 Preloading gaps for ${preloadDates.length} dates:`, preloadDates);
+    
+    for (const date of preloadDates) {
+      try {
+        const gaps = await this.initializeGapsForDate(date, preferences, accessToken);
+        preloadedGaps.push(...gaps);
+      } catch (error) {
+        console.warn(`⚠️ Failed to preload gaps for ${date}:`, error);
+      }
+    }
+    
+    console.log(`✅ Preloaded ${preloadedGaps.length} gaps`);
+    return preloadedGaps;
+  }
+
+  /**
+   * Restore gaps when a task is deleted
+   */
+  static async restoreGapsAfterTaskDeletion(
+    taskDate: string,
+    allTasks: any[],
+    preferences: UserPreferences,
+    accessToken: string
+  ): Promise<TimeGap[]> {
+    console.log(`🔄 Restoring gaps after task deletion for ${taskDate}`);
+    
+    // Recalculate gaps for the date
+    const restoredGaps = GapLogic.recalculateGapsForDate(
+      taskDate,
+      allTasks,
+      preferences,
+      'local-user' // Will be replaced with actual user ID
+    );
+    
+    if (restoredGaps.length > 0) {
+      try {
+        await this.saveGaps(restoredGaps, accessToken);
+        console.log(`✅ Restored ${restoredGaps.length} gaps for ${taskDate}`);
+      } catch (error) {
+        console.warn(`⚠️ Failed to save restored gaps:`, error);
+      }
+    }
+    
+    return restoredGaps;
+  }
+
+  /**
    * Create local fallback gaps when API is unavailable
    */
-  private static async createLocalFallbackGaps(
+  static async createLocalFallbackGaps(
     date: string, 
     preferences: UserPreferences, 
-    userId: string = 'local-user'
+    userId: string,
+    storageManager?: any // Accept optional storage manager instance
   ): Promise<TimeGap[]> {
     try {
-      const gaps = GapLogic.createFreeHourGaps(date, preferences, userId);
-      console.log(`✅ Created ${gaps.length} local fallback gaps for ${date}`);
+      // Create basic hourly gaps
+      let gaps = GapLogic.createFreeHourGaps(date, preferences, userId);
+      console.log(`✅ Created ${gaps.length} basic gaps for ${date}`);
+      
+      // Get existing tasks for this date and recalculate gaps to split around them
+      try {
+        if (storageManager) {
+          const allTasks = await storageManager.getTasks();
+          const dateTasks = allTasks.filter((task: any) => task.dueDate === date);
+          
+          if (dateTasks.length > 0) {
+            console.log(`🔄 Recalculating gaps for ${dateTasks.length} existing tasks on ${date}`);
+            gaps = GapLogic.recalculateGapsForDate(date, dateTasks, preferences, userId);
+            console.log(`✅ Recalculated to ${gaps.length} gaps after considering existing tasks`);
+          }
+        }
+      } catch (taskError) {
+        console.warn('⚠️ Could not load tasks for gap recalculation:', taskError);
+        // Continue with basic gaps if task loading fails
+      }
+      
+      // Save gaps to Enhanced Storage Manager if available
+      try {
+        if (storageManager) {
+          // Use the provided storage manager instance
+          await storageManager.saveGaps(gaps, date);
+          console.log(`💾 Saved ${gaps.length} gaps to provided Enhanced Storage Manager for ${date}`);
+        } else {
+          // If no storage manager provided, save to localStorage as fallback
+          console.warn('⚠️ No storage manager provided, saving to localStorage only');
+          localStorage.setItem(`gaply_gaps_${date}`, JSON.stringify(gaps));
+          console.log(`💾 Saved ${gaps.length} gaps to localStorage for ${date}`);
+        }
+      } catch (storageError) {
+        console.warn('⚠️ Failed to save gaps to Enhanced Storage Manager:', storageError);
+        // Fallback to localStorage
+        try {
+          localStorage.setItem(`gaply_gaps_${date}`, JSON.stringify(gaps));
+          console.log(`💾 Saved ${gaps.length} gaps to localStorage for ${date}`);
+        } catch (localStorageError) {
+          console.error('❌ Failed to save gaps to localStorage:', localStorageError);
+        }
+      }
+      
       return gaps;
     } catch (error: unknown) {
       console.error('❌ Error creating local fallback gaps:', error);
@@ -99,22 +369,13 @@ export class GapsAPI {
       }
 
       const gaps = await response.json();
-      
-      if (!Array.isArray(gaps)) {
-        console.warn('⚠️ Server returned non-array gaps response:', gaps);
-        return [];
-      }
-      
       console.log(`✅ Retrieved ${gaps.length} gaps for ${date}`);
       return gaps;
     } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 API unavailable, using local fallback gaps');
-        const { DEFAULT_PREFERENCES } = await import('./constants');
-        return await this.createLocalFallbackGaps(date, DEFAULT_PREFERENCES);
+        return [];
       }
-      
-      console.error('❌ Error fetching gaps:', error);
       throw error;
     }
   }
@@ -125,14 +386,16 @@ export class GapsAPI {
   static async initializeGapsForDate(
     date: string, 
     preferences: UserPreferences, 
-    accessToken: string
+    accessToken: string,
+    userId?: string,
+    storageManager?: any // Accept optional storage manager instance
   ): Promise<TimeGap[]> {
     try {
       console.log(`🚀 Initializing gaps for date: ${date}`);
       
       if (this.LOCAL_DEVELOPMENT) {
         console.log(`🔧 Development mode - creating local gaps directly`);
-        return await this.createLocalFallbackGaps(date, preferences);
+        return await this.createLocalFallbackGaps(date, preferences, userId || 'local-user', storageManager);
       }
       
       const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/initialize`, {
@@ -158,7 +421,7 @@ export class GapsAPI {
     } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
         console.log('🔄 API unavailable, creating local gaps directly');
-        return await this.createLocalFallbackGaps(date, preferences);
+        return await this.createLocalFallbackGaps(date, preferences, userId || 'local-user');
       }
       
       console.error('❌ Error initializing gaps:', error);
@@ -353,9 +616,11 @@ export class GapsAPI {
    */
   static async ensureTodayGaps(
     preferences: UserPreferences, 
-    accessToken: string
+    accessToken: string,
+    userId?: string,
+    storageManager?: any // Accept optional storage manager instance
   ): Promise<TimeGap[]> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA'); // Use consistent date format
     
     try {
       console.log('🔄 Ensuring gaps for today:', today);
@@ -375,11 +640,11 @@ export class GapsAPI {
         console.log('📝 No gaps found, initializing default gaps...');
         
         try {
-          gaps = await this.initializeGapsForDate(today, preferences, accessToken);
+          gaps = await this.initializeGapsForDate(today, preferences, accessToken, userId, storageManager);
           console.log(`✅ Initialized ${gaps.length} gaps`);
         } catch (initError: unknown) {
           console.log('🔄 API initialization failed, creating local default gaps');
-          gaps = await this.createLocalFallbackGaps(today, preferences);
+          gaps = await this.createLocalFallbackGaps(today, preferences, userId || 'local-user', storageManager);
           console.log(`✅ Created ${gaps.length} local default gaps as fallback`);
         }
       }
@@ -389,7 +654,7 @@ export class GapsAPI {
       console.log('🔄 Critical error in ensureTodayGaps, using emergency fallback');
       
       try {
-        const fallbackGaps = await this.createLocalFallbackGaps(today, preferences);
+        const fallbackGaps = await this.createLocalFallbackGaps(today, preferences, userId || 'local-user', storageManager);
         console.log(`🚨 Using emergency fallback gaps (${fallbackGaps.length} gaps)`);
         return fallbackGaps;
       } catch (fallbackError: unknown) {

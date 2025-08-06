@@ -111,11 +111,17 @@ export class EnhancedLoginSyncService {
       console.log('🔄 Performing enhanced login sync...');
 
       // 1. Load local data first
+      console.log('📱 Loading local data from storage...');
       const localTasks = await this.storage.getTasks();
       const localGaps = await this.storage.getAllGaps();
       const localPreferences = await this.storage.getPreferences();
 
       console.log(`📱 Local data loaded: ${localTasks.length} tasks, ${localGaps.length} gaps`);
+      
+      // Debug: Log gap details if any exist
+      if (localGaps.length > 0) {
+        console.log('📱 Local gaps found:', localGaps.map(g => ({ id: g.id, date: g.date, start: g.start_time, end: g.end_time })).slice(0, 3));
+      }
 
       // 2. Fetch remote data
       const remoteData = await this.fetchRemoteData(session.access_token);
@@ -273,23 +279,41 @@ export class EnhancedLoginSyncService {
       }
 
       // Merge gaps by date
-      console.log('📅 Processing gaps...');
+      console.log(`📅 Processing gaps... Local: ${localGaps.length}, Remote: ${remoteData.gaps.length}`);
       const gapsByDate = new Map<string, TimeGap[]>();
       
       // Add local gaps
       localGaps.forEach(gap => {
-        const date = gap.date || new Date().toISOString().split('T')[0];
+        const date = gap.date || new Date().toLocaleDateString('en-CA');
         if (!gapsByDate.has(date)) {
           gapsByDate.set(date, []);
         }
         gapsByDate.get(date)!.push(gap);
       });
 
-      // Add remote gaps (overwrite local for same date)
-      remoteData.gaps.forEach(gap => {
-        const date = gap.date || new Date().toISOString().split('T')[0];
-        gapsByDate.set(date, [gap]);
-      });
+      // Add remote gaps (only overwrite local if remote has data for that date)
+      if (remoteData.gaps.length > 0) {
+        console.log('☁️ Remote gaps found, merging with local gaps...');
+        remoteData.gaps.forEach(gap => {
+          const date = gap.date || new Date().toLocaleDateString('en-CA');
+          // Only overwrite if local doesn't have gaps for this date
+          if (!gapsByDate.has(date) || gapsByDate.get(date)!.length === 0) {
+            gapsByDate.set(date, [gap]);
+          } else {
+            console.log(`🔄 Preserving local gaps for date ${date}, skipping remote gap`);
+          }
+        });
+      } else {
+        // If remote has no gaps, preserve all local gaps
+        console.log(`🔄 Remote gaps empty, preserving all ${localGaps.length} local gaps.`);
+        localGaps.forEach(gap => {
+          const date = gap.date || new Date().toLocaleDateString('en-CA'); // Use consistent date format
+          if (!gapsByDate.has(date)) {
+            gapsByDate.set(date, []);
+          }
+          gapsByDate.get(date)!.push(gap);
+        });
+      }
 
       console.log(`📅 Saving gaps for ${gapsByDate.size} dates...`);
       // Save gaps by date
@@ -298,6 +322,8 @@ export class EnhancedLoginSyncService {
         await this.storage.saveGaps(gaps, date);
         result.gapsSynced += gaps.length;
       }
+      
+      console.log(`📊 Final gap summary: ${result.gapsSynced} gaps synced across ${gapsByDate.size} dates`);
 
       console.log(`✅ Synced ${result.gapsSynced} gaps across ${gapsByDate.size} dates`);
 
