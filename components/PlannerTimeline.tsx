@@ -236,22 +236,19 @@ function PlannerTimeline({
     const slots = [];
     const is24Hour = userPreferences?.time_format === '24h';
 
-    // Always use full working hours range
-    let startHour, endHour;
+    // Always use user's working hours - no fallback to defaults
+    if (!userPreferences?.calendar_work_start || !userPreferences?.calendar_work_end) {
+      console.warn('⚠️ No working hours set in preferences, cannot generate time slots');
+      return [];
+    }
     
-    if (userPreferences?.calendar_work_start && userPreferences?.calendar_work_end) {
-      // Use user's working hours from settings
-      startHour = parseInt(userPreferences.calendar_work_start.split(':')[0]);
-      endHour = parseInt(userPreferences.calendar_work_end.split(':')[0]);
-      
-      // Ensure end hour is after start hour (handle overnight shifts)
-      if (endHour <= startHour) {
-        endHour = 23; // If end is before start, extend to end of day
-      }
-    } else {
-      // Fallback to default working hours if not set
-      startHour = 9;
-      endHour = 17;
+    const startHour = parseInt(userPreferences.calendar_work_start.split(':')[0]);
+    const endHour = parseInt(userPreferences.calendar_work_end.split(':')[0]);
+    
+    // Ensure end hour is after start hour (handle overnight shifts)
+    if (endHour <= startHour) {
+      console.warn('⚠️ End hour is before start hour, extending to end of day');
+      endHour = 23; // If end is before start, extend to end of day
     }
 
     // Always show full working hours range for scrolling
