@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
-import { GapLogic } from './utils/gapLogic';
+import { GapLogic, deduplicateGaps, mergeAndDeduplicateGaps } from './utils/gapLogic';
 import { supabase } from './utils/supabase/client';
 import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -295,7 +295,8 @@ export default function App() {
             // Only update if we don't already have gaps for today
             const hasTodayGaps = prev.some(gap => gap.date === today);
             if (!hasTodayGaps) {
-              return [...prev, ...gaps];
+              const mergedGaps = mergeAndDeduplicateGaps(prev, gaps);
+              return mergedGaps;
             }
             return prev;
           });
@@ -360,7 +361,7 @@ export default function App() {
             try {
               const parsedGaps = JSON.parse(storedGaps);
               console.log(`✅ Found ${parsedGaps.length} gaps in localStorage for ${dateStr}`);
-              setGaps(prev => [...prev, ...parsedGaps]);
+              setGaps(prev => mergeAndDeduplicateGaps(prev, parsedGaps));
               continue;
             } catch (error) {
               console.warn(`⚠️ Failed to parse gaps from localStorage for ${dateStr}:`, error);
@@ -392,7 +393,7 @@ export default function App() {
               
               if (newGaps.length > 0) {
                 console.log(`✅ Created ${newGaps.length} gaps for future date ${dateStr}`);
-                setGaps(prev => [...prev, ...newGaps]);
+                setGaps(prev => mergeAndDeduplicateGaps(prev, newGaps));
               }
             } catch (error) {
               console.error(`❌ Error creating gaps for future date ${dateStr}:`, error);
@@ -424,11 +425,52 @@ export default function App() {
       setGaps(event.detail.gaps);
     };
     
+    // Listen for preference change events that require gap recalculation
+    const handlePreferenceChange = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { requiresGapRecalculation, affectedDateRange } = customEvent.detail;
+      
+      if (requiresGapRecalculation && session?.access_token) {
+        console.log('🔄 Preference change detected, reloading gaps for affected date range:', affectedDateRange);
+        
+        try {
+          // Reload gaps for the affected date range
+          const { GapsAPI } = await import('./utils/gapsAPI');
+          const { GapLogic } = await import('./utils/gapLogic');
+          
+          // Get the rolling window to ensure we have all necessary gaps
+          GapLogic.calculateRollingWindow();
+          
+          // Reload all gaps in the rolling window
+          const updatedGaps = await GapsAPI.getGapsInRollingWindow(session.access_token, localFirstService);
+          console.log(`🔄 Reloaded ${updatedGaps.length} gaps after preference change`);
+          
+          // Update the gaps state
+          setGaps(updatedGaps);
+          
+          // Also reload gaps from localStorage for immediate UI update
+          const today = new Date().toLocaleDateString('en-CA');
+          const todayKey = `gaply_gaps_${today}`;
+          const storedGaps = localStorage.getItem(todayKey);
+          if (storedGaps) {
+            const parsedGaps = JSON.parse(storedGaps);
+            console.log(`📱 Reloaded ${parsedGaps.length} gaps from localStorage for today`);
+            setGaps(prev => mergeAndDeduplicateGaps(prev, parsedGaps));
+          }
+          
+        } catch (error) {
+          console.error('❌ Error reloading gaps after preference change:', error);
+        }
+      }
+    };
+    
     window.addEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
+    window.addEventListener('preferenceChange', handlePreferenceChange);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
+      window.removeEventListener('preferenceChange', handlePreferenceChange as EventListener);
     };
   }, [isAuthenticated, session?.access_token, preferences, gaps, localFirstService]);
 

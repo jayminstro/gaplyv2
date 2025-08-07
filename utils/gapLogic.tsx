@@ -14,34 +14,57 @@ export type GapModifier = 'system' | 'user' | 'calendar_sync';
  * Handles both array and object formats, with fallbacks
  */
 export function normalizeWorkingDays(workingDays: any): string[] {
-  // If it's already an array, return it
+  const dayMapping: { [key: string]: string } = {
+    'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday',
+    'monday': 'Monday', 'tuesday': 'Tuesday', 'wednesday': 'Wednesday', 'thursday': 'Thursday', 'friday': 'Friday', 'saturday': 'Saturday', 'sunday': 'Sunday'
+  };
+
+  // Helper to map a single day string to its full name
+  const mapDayToFull = (day: string): string => {
+    const lowerDay = day.toLowerCase();
+    return dayMapping[lowerDay] || day; // Return mapped full name or original if not found
+  };
+
+  // If it's already an array, normalize the day names within the array
   if (Array.isArray(workingDays)) {
-    return workingDays;
+    const normalized = workingDays.map(mapDayToFull);
+    console.log(`✅ Normalized array working days:`, normalized);
+    return normalized;
   }
   
-  // If it's an object, convert to array
+  // If it's an object, convert to array and normalize
   if (workingDays && typeof workingDays === 'object') {
     console.log(`🔍 Normalizing working days object:`, workingDays);
-    
-    // First try: get keys where value is true
-    let result = Object.keys(workingDays).filter(day => workingDays[day] === true);
-    
-    // If empty, try truthy values
-    if (result.length === 0) {
-      result = Object.keys(workingDays).filter(day => workingDays[day]);
-    }
-    
-    // If still empty, try day name mapping
-    if (result.length === 0) {
-      const dayMapping: { [key: string]: string } = {
-        'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday',
-        'monday': 'Monday', 'tuesday': 'Tuesday', 'wednesday': 'Wednesday', 'thursday': 'Thursday', 'friday': 'Friday', 'saturday': 'Saturday', 'sunday': 'Sunday'
-      };
+    let result: string[] = [];
+
+    // Check if keys are numerical (like "0", "1", "2") and values are abbreviated day names
+    // This is the specific case from the latest logs: {"0":"Mon","1":"Tue",...}
+    const isNumericalKeyedObject = Object.keys(workingDays).every(key => !isNaN(Number(key)));
+    if (isNumericalKeyedObject) {
+      result = Object.values(workingDays).map(value => mapDayToFull(String(value))).filter(Boolean);
+    } else {
+      // Original logic for objects with day names as keys (e.g., {Monday: true, Tuesday: false})
+      // First try: get keys where value is true and normalize them
+      result = Object.keys(workingDays)
+        .filter(day => workingDays[day] === true)
+        .map(mapDayToFull);
       
-      result = Object.keys(workingDays).map(key => dayMapping[key.toLowerCase()]).filter(Boolean);
+      // If empty, try truthy values and normalize them
+      if (result.length === 0) {
+        result = Object.keys(workingDays)
+          .filter(day => workingDays[day])
+          .map(mapDayToFull);
+      }
+      
+      // If still empty, try day name mapping for all keys (as a last resort for object keys)
+      if (result.length === 0) {
+        result = Object.keys(workingDays)
+          .map(mapDayToFull)
+          .filter(Boolean);
+      }
     }
     
-    // Final fallback: default working days
+    // Final fallback: default working days if nothing was normalized
     if (result.length === 0) {
       console.log(`❌ Could not normalize working days, using defaults`);
       result = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -54,6 +77,52 @@ export function normalizeWorkingDays(workingDays: any): string[] {
   // If it's null/undefined/other, return defaults
   console.log(`❌ Invalid working days format, using defaults`);
   return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+}
+
+/**
+ * Deduplicate gaps based on date, start_time, and end_time
+ * Keeps the most recent gap if duplicates are found
+ */
+export function deduplicateGaps(gaps: TimeGap[]): TimeGap[] {
+  const gapMap = new Map<string, TimeGap>();
+  
+  for (const gap of gaps) {
+    // Create a unique key based on date, start_time, and end_time
+    const key = `${gap.date}_${gap.start_time}_${gap.end_time}`;
+    
+    // If we already have a gap with this key, keep the one with the most recent updated_at
+    if (gapMap.has(key)) {
+      const existingGap = gapMap.get(key)!;
+      const existingTime = new Date(existingGap.updated_at || existingGap.created_at || 0).getTime();
+      const newTime = new Date(gap.updated_at || gap.created_at || 0).getTime();
+      
+      if (newTime > existingTime) {
+        gapMap.set(key, gap);
+        console.log(`🔄 Replaced duplicate gap for ${key} with newer version`);
+      } else {
+        console.log(`🔄 Skipped duplicate gap for ${key} (keeping older version)`);
+      }
+    } else {
+      gapMap.set(key, gap);
+    }
+  }
+  
+  const deduplicatedGaps = Array.from(gapMap.values());
+  
+  if (deduplicatedGaps.length < gaps.length) {
+    console.log(`🧹 Deduplicated gaps: ${gaps.length} → ${deduplicatedGaps.length} (removed ${gaps.length - deduplicatedGaps.length} duplicates)`);
+  }
+  
+  return deduplicatedGaps;
+}
+
+/**
+ * Merge gaps arrays and deduplicate
+ * Useful for combining gaps from different sources
+ */
+export function mergeAndDeduplicateGaps(...gapArrays: TimeGap[][]): TimeGap[] {
+  const allGaps = gapArrays.flat();
+  return deduplicateGaps(allGaps);
 }
 
 export class GapLogic {
@@ -150,9 +219,8 @@ export class GapLogic {
       return [];
     }
 
-    const dayOfWeek = new Date(formattedDate).getDay();
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const currentDay = dayNames[dayOfWeek];
+    const dayOfWeek = new Date(formattedDate).toLocaleDateString('en-US', { weekday: 'long' });
+    const currentDay = dayOfWeek;
     
     // Check if this day is in working days
     const workingDaysArray = normalizeWorkingDays(preferences.calendar_working_days);
@@ -191,11 +259,17 @@ export class GapLogic {
       calendar_working_days: preferences.calendar_working_days,
     }, null, 2));
     
-    // Create one gap per hour
+    // Create one gap per hour, ensuring gaps end at work end time (not start at it)
     for (let hour = workStart; hour < workEnd; hour += 60) {
       const startTime = minutesToTime(hour);
       const endTime = minutesToTime(Math.min(hour + 60, workEnd));
       const durationMinutes = Math.min(60, workEnd - hour);
+      
+      // Skip gaps that would start at the work end time (e.g., 18:00-19:00 when work ends at 18:00)
+      if (hour >= workEnd) {
+        console.log(`⏭️ Skipping gap that starts at or after work end time: ${startTime}-${endTime}`);
+        continue;
+      }
       
       const gap: TimeGap = {
         id: generateUUID(),

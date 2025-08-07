@@ -7,13 +7,13 @@ interface WorkingDaysSelectorProps {
 }
 
 const DAYS = [
-  { short: 'Mo', full: 'Mon' },
-  { short: 'Tu', full: 'Tue' },
-  { short: 'We', full: 'Wed' },
-  { short: 'Th', full: 'Thu' },
-  { short: 'Fri', full: 'Fri' },
-  { short: 'Sat', full: 'Sat' },
-  { short: 'Sun', full: 'Sun' },
+  { short: 'Mo', full: 'Monday' },
+  { short: 'Tu', full: 'Tuesday' },
+  { short: 'We', full: 'Wednesday' },
+  { short: 'Th', full: 'Thursday' },
+  { short: 'Fri', full: 'Friday' },
+  { short: 'Sat', full: 'Saturday' },
+  { short: 'Sun', full: 'Sunday' },
 ];
 
 export function WorkingDaysSelector({ selectedDays, onChange, className = '' }: WorkingDaysSelectorProps) {

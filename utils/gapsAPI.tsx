@@ -775,28 +775,116 @@ export class GapsAPI {
     try {
       console.log('🔄 Updating gaps for working time change');
       
-      if (this.LOCAL_DEVELOPMENT) {
-        console.log('🔧 Development mode - working time change not fully available locally');
+      // Check if working times actually changed
+      const workStartChanged = oldPreferences.calendar_work_start !== newPreferences.calendar_work_start;
+      const workEndChanged = oldPreferences.calendar_work_end !== newPreferences.calendar_work_end;
+      const workingDaysChanged = JSON.stringify(oldPreferences.calendar_working_days) !== JSON.stringify(newPreferences.calendar_working_days);
+      
+      if (!workStartChanged && !workEndChanged && !workingDaysChanged) {
+        console.log('🔄 No working time changes detected, skipping gap update');
         return { success: true, created: 0, deleted: 0, updated: 0 };
       }
       
-      const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/update-working-time`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ oldPreferences, newPreferences })
+      console.log('🔄 Working time changes detected:', {
+        workStartChanged,
+        workEndChanged,
+        workingDaysChanged,
+        oldWorkStart: oldPreferences.calendar_work_start,
+        newWorkStart: newPreferences.calendar_work_start,
+        oldWorkEnd: oldPreferences.calendar_work_end,
+        newWorkEnd: newPreferences.calendar_work_end
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to update gaps: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Working time change processed:', result);
       
+      // Try backend API first
+      try {
+        const response = await this.fetchWithTimeout(`${this.BASE_URL}/gaps/update-working-time`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ oldPreferences, newPreferences })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Working time change processed by backend:', result);
+          return result;
+        }
+      } catch (apiError) {
+        console.log('🔄 Backend API unavailable, using local gap recalculation');
+      }
+      
+      // Fallback to local gap recalculation
+      console.log('🔄 Performing local gap recalculation for working time change');
+      
+      const { GapLogic } = await import('./gapLogic');
+      const { window_start, window_end } = GapLogic.calculateRollingWindow();
+      const today = new Date().toLocaleDateString('en-CA');
+      
+      console.log(`📅 Recalculating gaps for rolling window: ${window_start} to ${window_end}`);
+      
+      let totalCreated = 0;
+      let totalDeleted = 0;
+      let totalUpdated = 0;
+      
+      // Get existing gaps for the rolling window
+      const existingGaps = await this.getGapsInRollingWindow(accessToken);
+      console.log(`📊 Found ${existingGaps.length} existing gaps to process`);
+      
+      // Process each date in the rolling window
+      const startDate = new Date(window_start);
+      const endDate = new Date(window_end);
+      
+      for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+        const dateStr = date.toLocaleDateString('en-CA');
+        
+        // Check if it's a working day
+        const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+        const { normalizeWorkingDays } = await import('./gapLogic');
+        const workingDays = normalizeWorkingDays(newPreferences.calendar_working_days);
+        
+        if (!workingDays.includes(dayOfWeek)) {
+          console.log(`⏸️ Skipping non-working day: ${dateStr} (${dayOfWeek})`);
+          continue;
+        }
+        
+        // Get existing gaps for this date
+        const existingGapsForDate = existingGaps.filter(gap => gap.date === dateStr);
+        console.log(`📅 Processing ${dateStr}: ${existingGapsForDate.length} existing gaps`);
+        
+        // Create new gaps for this date with updated preferences
+        const newGapsForDate = GapLogic.createFreeHourGaps(dateStr, newPreferences, existingGapsForDate[0]?.user_id || 'local-user');
+        console.log(`📅 Created ${newGapsForDate.length} new gaps for ${dateStr}`);
+        
+        // Calculate changes
+        const deleted = existingGapsForDate.length;
+        const created = newGapsForDate.length;
+        const updated = Math.min(deleted, created); // Gaps that were effectively updated
+        
+        totalDeleted += deleted;
+        totalCreated += created;
+        totalUpdated += updated;
+        
+        // Save new gaps for this date
+        try {
+          await this.saveGaps(newGapsForDate, accessToken);
+          console.log(`✅ Saved ${newGapsForDate.length} new gaps for ${dateStr}`);
+        } catch (saveError) {
+          console.warn(`⚠️ Failed to save gaps for ${dateStr}:`, saveError);
+        }
+      }
+      
+      const result = {
+        success: true,
+        created: totalCreated,
+        deleted: totalDeleted,
+        updated: totalUpdated
+      };
+      
+      console.log('✅ Local working time change processed:', result);
       return result;
+      
     } catch (error: unknown) {
       console.error('❌ Error updating gaps for working time change:', error);
       throw error;
