@@ -630,7 +630,6 @@ export class EnhancedStorageManager {
           'calendar_work_start',
           'calendar_work_end',
           'calendar_working_days',
-          'calendar_include_weekends',
           'calendar_min_gap'
         ],
         defaultFallback: true
@@ -659,7 +658,6 @@ export class EnhancedStorageManager {
           'calendar_work_start',
           'calendar_work_end',
           'calendar_working_days',
-          'calendar_include_weekends',
           'calendar_min_gap'
         ],
         defaultFallback: true

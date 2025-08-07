@@ -51,7 +51,6 @@ export interface UserPreferences {
   calendar_work_start: string;
   calendar_work_end: string;
   calendar_working_days: string[];
-  calendar_include_weekends: boolean;
   calendar_buffer_time: number;
   calendar_min_gap: number;
   gap_sync_frequency: number;
@@ -77,8 +76,6 @@ export interface UserPreferences {
   notification_activity_reminders: boolean;
   notification_upcoming_gaps: boolean;
   notification_lead_time: number;
-  quiet_hours_start: string;
-  quiet_hours_end: string;
   
   // Appearance & Interface
   dark_mode: boolean;

@@ -168,12 +168,6 @@ export class GapLogic {
       return [];
     }
     
-    // Skip weekends if not included
-    if (!preferences.calendar_include_weekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
-      console.log(`⏭️ Skipping gap creation for weekend day: ${currentDay}`);
-      return [];
-    }
-    
     const gaps: TimeGap[] = [];
     
     // Handle time format - convert HH:MM:SS to HH:MM if needed
@@ -195,7 +189,6 @@ export class GapLogic {
       calendar_work_start: preferences.calendar_work_start,
       calendar_work_end: preferences.calendar_work_end,
       calendar_working_days: preferences.calendar_working_days,
-      calendar_include_weekends: preferences.calendar_include_weekends
     }, null, 2));
     
     // Create one gap per hour

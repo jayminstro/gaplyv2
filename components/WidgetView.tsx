@@ -42,8 +42,8 @@ export function WidgetView({ tasks, gaps, userName }: WidgetViewProps) {
     
     // Filter today's tasks
     const todayTasks = tasks.filter(task => {
-      if (!task.due_date) return false;
-      const taskDate = new Date(task.due_date).toISOString().split('T')[0];
+      if (!task.dueDate) return false;
+      const taskDate = new Date(task.dueDate).toISOString().split('T')[0];
       return taskDate === today;
     });
 

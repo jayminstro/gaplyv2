@@ -43,7 +43,6 @@ export class PreferenceManager {
         'calendar_work_start',
         'calendar_work_end', 
         'calendar_working_days',
-        'calendar_include_weekends',
         'calendar_min_gap'
       ],
       defaultFallback: true,
@@ -272,7 +271,6 @@ export class PreferenceManager {
         calendar_work_start: DEFAULT_PREFERENCES.calendar_work_start,
         calendar_work_end: DEFAULT_PREFERENCES.calendar_work_end,
         calendar_working_days: DEFAULT_PREFERENCES.calendar_working_days,
-        calendar_include_weekends: DEFAULT_PREFERENCES.calendar_include_weekends,
         calendar_min_gap: DEFAULT_PREFERENCES.calendar_min_gap
       };
 
@@ -430,7 +428,7 @@ export class PreferenceManager {
     }
 
     // Validate time format
-    const timeFields = ['calendar_work_start', 'calendar_work_end', 'quiet_hours_start', 'quiet_hours_end'];
+    const timeFields = ['calendar_work_start', 'calendar_work_end'];
     for (const field of timeFields) {
       const value = preferences[field as keyof UserPreferences];
       if (value && typeof value === 'string' && !this.isValidTimeFormat(value)) {
@@ -457,7 +455,6 @@ export class PreferenceManager {
       calendar_work_start: preferences.calendar_work_start || DEFAULT_PREFERENCES.calendar_work_start,
       calendar_work_end: preferences.calendar_work_end || DEFAULT_PREFERENCES.calendar_work_end,
       calendar_working_days: preferences.calendar_working_days || DEFAULT_PREFERENCES.calendar_working_days,
-      calendar_include_weekends: preferences.calendar_include_weekends ?? DEFAULT_PREFERENCES.calendar_include_weekends,
       calendar_min_gap: preferences.calendar_min_gap || DEFAULT_PREFERENCES.calendar_min_gap
     };
   }

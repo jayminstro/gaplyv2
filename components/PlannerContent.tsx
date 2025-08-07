@@ -87,15 +87,6 @@ function PlannerContent({
         return;
       }
       
-      // Check if this is a weekend and user doesn't want weekends
-      const dayOfWeek = selectedDate.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
-      if (isWeekend && !userPreferences.calendar_include_weekends) {
-        console.log(`⏭️ Skipping weekend date: ${selectedDateStr}`);
-        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
-        return;
-      }
-      
       // Check if we have gaps for the selected date
       const gapsForSelectedDate = gaps.filter(gap => {
         if (!gap.date) return false;
@@ -130,7 +121,6 @@ function PlannerContent({
               calendar_work_start: userPreferences?.calendar_work_start,
               calendar_work_end: userPreferences?.calendar_work_end,
               calendar_working_days: userPreferences?.calendar_working_days,
-              calendar_include_weekends: userPreferences?.calendar_include_weekends
             }, null, 2));
             
             try {

@@ -62,7 +62,6 @@ export function usePreferences(
           'calendar_work_start',
           'calendar_work_end',
           'calendar_working_days',
-          'calendar_include_weekends',
           'calendar_min_gap'
         ],
         defaultFallback: true,
@@ -221,13 +220,11 @@ export function usePreferences(
       calendar_work_start: DEFAULT_PREFERENCES.calendar_work_start,
       calendar_work_end: DEFAULT_PREFERENCES.calendar_work_end,
       calendar_working_days: DEFAULT_PREFERENCES.calendar_working_days,
-      calendar_include_weekends: DEFAULT_PREFERENCES.calendar_include_weekends,
       calendar_min_gap: DEFAULT_PREFERENCES.calendar_min_gap
     } : {
       calendar_work_start: DEFAULT_PREFERENCES.calendar_work_start,
       calendar_work_end: DEFAULT_PREFERENCES.calendar_work_end,
       calendar_working_days: DEFAULT_PREFERENCES.calendar_working_days,
-      calendar_include_weekends: DEFAULT_PREFERENCES.calendar_include_weekends,
       calendar_min_gap: DEFAULT_PREFERENCES.calendar_min_gap
     };
 
@@ -284,7 +281,6 @@ export function usePreferenceValidation(preferences: UserPreferences | null) {
       'calendar_work_start',
       'calendar_work_end',
       'calendar_working_days',
-      'calendar_include_weekends',
       'calendar_min_gap'
     ];
 
