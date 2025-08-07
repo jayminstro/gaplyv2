@@ -39,9 +39,9 @@ function PlannerContent({
   // Track which dates we've already attempted to create gaps for
   const [processedDates, setProcessedDates] = useState<Set<string>>(new Set());
 
-  // Ensure gaps exist for the selected date
+  // Ensure gaps exist for the selected date and all future dates in rolling window
   useEffect(() => {
-    const ensureGapsForSelectedDate = async () => {
+    const ensureGapsForAllFutureDates = async () => {
       if (!session?.access_token || !userPreferences) {
         console.log('⏭️ Missing required dependencies for gap creation');
         return;
@@ -145,10 +145,106 @@ function PlannerContent({
         // If gaps exist, mark the date as processed
         setProcessedDates(prev => new Set([...prev, selectedDateStr]));
       }
+      
+      // Now ensure all future dates in the rolling window have gaps
+      await ensureAllFutureDatesHaveGaps();
     };
     
-    ensureGapsForSelectedDate();
-  }, [selectedDate, session?.access_token, userPreferences, processedDates]);
+    const ensureAllFutureDatesHaveGaps = async () => {
+      try {
+        const { GapLogic } = await import('../utils/gapLogic');
+        const { window_start, window_end } = GapLogic.calculateRollingWindow();
+        const today = new Date().toLocaleDateString('en-CA');
+        
+        console.log(`🔄 Ensuring gaps for all future dates in rolling window: ${window_start} to ${window_end}`);
+        
+        // Get all dates from today to the end of the rolling window
+        const startDate = new Date(today);
+        const endDate = new Date(window_end);
+        const datesToProcess: string[] = [];
+        
+        for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+          const dateStr = date.toLocaleDateString('en-CA');
+          
+          // Skip if already processed
+          if (processedDates.has(dateStr)) {
+            continue;
+          }
+          
+          // Check if it's a working day
+          const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+          const { normalizeWorkingDays } = await import('../utils/gapLogic');
+          const workingDays = normalizeWorkingDays(userPreferences.calendar_working_days);
+          if (!workingDays.includes(dayOfWeek)) {
+            console.log(`⏸️ Skipping non-working day: ${dateStr} (${dayOfWeek})`);
+            setProcessedDates(prev => new Set([...prev, dateStr]));
+            continue;
+          }
+          
+          // Check if we already have gaps for this date
+          const existingGaps = gaps.filter(gap => gap.date === dateStr);
+          if (existingGaps.length > 0) {
+            console.log(`✅ Already have ${existingGaps.length} gaps for ${dateStr}`);
+            setProcessedDates(prev => new Set([...prev, dateStr]));
+            continue;
+          }
+          
+          datesToProcess.push(dateStr);
+        }
+        
+        console.log(`📅 Found ${datesToProcess.length} future dates that need gaps`);
+        
+        // Create gaps for all future dates in parallel (but limit concurrency)
+        const batchSize = 3; // Process 3 dates at a time to avoid overwhelming the system
+        for (let i = 0; i < datesToProcess.length; i += batchSize) {
+          const batch = datesToProcess.slice(i, i + batchSize);
+          
+          await Promise.all(batch.map(async (dateStr) => {
+            try {
+              console.log(`🔄 Creating gaps for future date: ${dateStr}`);
+              
+              // Mark as processed to prevent duplicate processing
+              setProcessedDates(prev => new Set([...prev, dateStr]));
+              
+              // Try to get existing gaps first
+              let gapsForDate: TimeGap[] = [];
+              try {
+                gapsForDate = await GapsAPI.getGapsForDate(dateStr, session.access_token);
+              } catch (fetchError) {
+                // Ignore fetch errors, will create local gaps
+              }
+              
+              if (gapsForDate.length === 0) {
+                // Create local fallback gaps
+                gapsForDate = await GapsAPI.createLocalFallbackGaps(
+                  dateStr, 
+                  userPreferences, 
+                  session?.user?.id || 'local-user', 
+                  storageManager
+                );
+                console.log(`✅ Created ${gapsForDate.length} gaps for future date ${dateStr}`);
+              } else {
+                console.log(`✅ Found ${gapsForDate.length} existing gaps for future date ${dateStr}`);
+              }
+            } catch (error) {
+              console.error(`❌ Error creating gaps for future date ${dateStr}:`, error);
+            }
+          }));
+          
+          // Small delay between batches to avoid overwhelming the system
+          if (i + batchSize < datesToProcess.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        
+        console.log(`✅ Finished ensuring gaps for all future dates`);
+      } catch (error) {
+        console.error('❌ Error ensuring gaps for future dates:', error);
+      }
+    };
+    
+    ensureGapsForAllFutureDates();
+  }, [selectedDate, session?.access_token, userPreferences, processedDates, gaps]);
 
   // Reset processed dates when user changes
   useEffect(() => {
