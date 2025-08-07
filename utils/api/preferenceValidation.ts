@@ -168,17 +168,6 @@ export class PreferenceValidationAPI {
         }
       },
       {
-        field: 'calendar_include_weekends',
-        required: false,
-        critical: false,
-        validator: (value) => {
-          if (typeof value !== 'boolean') {
-            return { isValid: false, error: 'Include weekends must be a boolean' };
-          }
-          return { isValid: true };
-        }
-      },
-      {
         field: 'calendar_min_gap',
         required: false,
         critical: false,
@@ -193,28 +182,6 @@ export class PreferenceValidationAPI {
 
     if (level === 'strict') {
       baseRules.push(
-        {
-          field: 'quiet_hours_start',
-          required: false,
-          critical: false,
-          validator: (value) => {
-            if (value && !this.isValidTimeFormat(value)) {
-              return { isValid: false, error: 'Invalid quiet hours start time format' };
-            }
-            return { isValid: true };
-          }
-        },
-        {
-          field: 'quiet_hours_end',
-          required: false,
-          critical: false,
-          validator: (value) => {
-            if (value && !this.isValidTimeFormat(value)) {
-              return { isValid: false, error: 'Invalid quiet hours end time format' };
-            }
-            return { isValid: true };
-          }
-        },
         {
           field: 'preferred_categories',
           required: false,
@@ -264,36 +231,10 @@ export class PreferenceValidationAPI {
       }
     }
 
-    // Quiet hours logic
-    if (preferences.quiet_hours_start && preferences.quiet_hours_end) {
-      const quietStart = this.timeToMinutes(preferences.quiet_hours_start);
-      const quietEnd = this.timeToMinutes(preferences.quiet_hours_end);
-
-      if (quietStart >= quietEnd) {
-        warnings.push('Quiet hours start time should be before end time');
-      }
-
-      // Check if quiet hours overlap with work hours
-      if (preferences.calendar_work_start && preferences.calendar_work_end) {
-        const workStart = this.timeToMinutes(preferences.calendar_work_start);
-        const workEnd = this.timeToMinutes(preferences.calendar_work_end);
-
-        if (this.doTimeRangesOverlap(workStart, workEnd, quietStart, quietEnd)) {
-          warnings.push('Quiet hours overlap with work hours');
-          suggestions.push('Consider adjusting quiet hours to avoid work time conflicts');
-        }
-      }
-    }
-
     // Working days logic
     if (preferences.calendar_working_days) {
       if (preferences.calendar_working_days.length === 0) {
         errors.push('At least one working day must be selected');
-      }
-
-      if (preferences.calendar_working_days.length === 7 && !preferences.calendar_include_weekends) {
-        warnings.push('All days selected but weekends not included');
-        suggestions.push('Consider enabling weekend inclusion or reducing working days');
       }
     }
 
@@ -314,17 +255,5 @@ export class PreferenceValidationAPI {
   private static timeToMinutes(time: string): number {
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + (minutes || 0);
-  }
-
-  /**
-   * Check if two time ranges overlap
-   */
-  private static doTimeRangesOverlap(
-    start1: number, 
-    end1: number, 
-    start2: number, 
-    end2: number
-  ): boolean {
-    return start1 < end2 && end1 > start2;
   }
 } 

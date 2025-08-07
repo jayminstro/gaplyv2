@@ -199,8 +199,7 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
       const workingTimeChanged = 
         preferences.calendar_work_start !== localPreferences.calendar_work_start ||
         preferences.calendar_work_end !== localPreferences.calendar_work_end ||
-        JSON.stringify(preferences.calendar_working_days) !== JSON.stringify(localPreferences.calendar_working_days) ||
-        preferences.calendar_include_weekends !== localPreferences.calendar_include_weekends;
+        JSON.stringify(preferences.calendar_working_days) !== JSON.stringify(localPreferences.calendar_working_days);
 
       // Save to local storage first
       if (localFirstService) {
@@ -423,14 +422,6 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
                   onChange={(days) => updatePreference('calendar_working_days', days)}
                 />
               </div>
-
-              <SettingRow
-                icon={Calendar}
-                label="Include Weekends"
-                description="Show gaps on weekends"
-                value={localPreferences.calendar_include_weekends}
-                onChange={(checked: boolean) => updatePreference('calendar_include_weekends', checked)}
-              />
             </div>
 
             <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
@@ -547,27 +538,6 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
                   step={1}
                   className="w-full"
                 />
-              </div>
-
-              <div className="py-3">
-                <div className="flex items-center gap-3 mb-2">
-                  <Moon className="w-4 h-4 text-slate-400" />
-                  <Label className="text-sm font-medium">Quiet Hours</Label>
-                </div>
-                <div className="flex gap-3">
-                  <Input
-                    type="time"
-                    value={localPreferences.quiet_hours_start}
-                    onChange={(e) => updatePreference('quiet_hours_start', e.target.value)}
-                    className="bg-slate-800/50 border-slate-700 text-sm"
-                  />
-                  <Input
-                    type="time"
-                    value={localPreferences.quiet_hours_end}
-                    onChange={(e) => updatePreference('quiet_hours_end', e.target.value)}
-                    className="bg-slate-800/50 border-slate-700 text-sm"
-                  />
-                </div>
               </div>
             </div>
 

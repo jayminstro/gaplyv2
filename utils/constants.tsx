@@ -5,7 +5,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   calendar_work_start: '09:00',
   calendar_work_end: '18:00',
   calendar_working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  calendar_include_weekends: false,
   calendar_buffer_time: 5,
   calendar_min_gap: 15,
   gap_sync_frequency: 30,
@@ -23,8 +22,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   notification_activity_reminders: true,
   notification_upcoming_gaps: true,
   notification_lead_time: 5,
-  quiet_hours_start: '22:00',
-  quiet_hours_end: '07:00',
   
   // Appearance & Interface
   dark_mode: true,
@@ -56,8 +53,8 @@ export const DEFAULT_GAPS: TimeGap[] = [
     start_time: '09:00',
     end_time: '10:00',
     duration_minutes: 60,
-    parent_gap_id: null,
-    original_gap_id: null,
+    parent_gap_id: undefined,
+    original_gap_id: undefined,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     modified_by: 'system'
@@ -69,8 +66,8 @@ export const DEFAULT_GAPS: TimeGap[] = [
     start_time: '10:00',
     end_time: '11:00',
     duration_minutes: 60,
-    parent_gap_id: null,
-    original_gap_id: null,
+    parent_gap_id: undefined,
+    original_gap_id: undefined,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     modified_by: 'system'

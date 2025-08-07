@@ -55,7 +55,6 @@ export class PreferenceChangeDetector {
           'calendar_work_start',
           'calendar_work_end',
           'calendar_working_days',
-          'calendar_include_weekends'
         ],
         impact: 'high',
         requiresGapRecalculation: true,
@@ -65,8 +64,6 @@ export class PreferenceChangeDetector {
         fields: [
           'calendar_min_gap',
           'calendar_buffer_time',
-          'quiet_hours_start',
-          'quiet_hours_end'
         ],
         impact: 'medium',
         requiresGapRecalculation: true,
@@ -248,8 +245,6 @@ export class PreferenceChangeDetector {
         return `Work end time changed from ${oldValue} to ${newValue}`;
       case 'calendar_working_days':
         return `Working days changed from ${oldValue?.join(', ')} to ${newValue?.join(', ')}`;
-      case 'calendar_include_weekends':
-        return `Weekend inclusion changed from ${oldValue} to ${newValue}`;
       case 'calendar_min_gap':
         return `Minimum gap changed from ${oldValue} to ${newValue} minutes`;
       case 'dark_mode':
