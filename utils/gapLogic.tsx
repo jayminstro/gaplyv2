@@ -265,9 +265,9 @@ export class GapLogic {
       const endTime = minutesToTime(Math.min(hour + 60, workEnd));
       const durationMinutes = Math.min(60, workEnd - hour);
       
-      // Skip gaps that would start at the work end time (e.g., 18:00-19:00 when work ends at 18:00)
-      if (hour >= workEnd) {
-        console.log(`⏭️ Skipping gap that starts at or after work end time: ${startTime}-${endTime}`);
+      // Skip gaps with zero duration or that start at work end time
+      if (durationMinutes <= 0 || hour >= workEnd) {
+        console.log(`⏭️ Skipping invalid gap: ${startTime}-${endTime} (${durationMinutes} min)`);
         continue;
       }
       
@@ -289,8 +289,15 @@ export class GapLogic {
       console.log(`✅ Created gap: ${startTime}-${endTime} (${durationMinutes} min)`);
     }
     
-    console.log(`🎯 Created ${gaps.length} gaps for ${formattedDate}`);
-    return gaps;
+    // Filter out any zero-duration gaps that might have slipped through
+    const validGaps = gaps.filter(gap => gap.duration_minutes > 0);
+    
+    if (validGaps.length !== gaps.length) {
+      console.log(`⚠️ Filtered out ${gaps.length - validGaps.length} zero-duration gaps`);
+    }
+    
+    console.log(`🎯 Created ${validGaps.length} valid gaps for ${formattedDate}`);
+    return validGaps;
   }
 
   /**
@@ -421,7 +428,7 @@ export class GapLogic {
     // Case 2: Task partially fills gap - create remaining gaps
     
     // Gap before task (if any)
-    if (taskStart > gapStart) {
+    if (taskStart > gapStart && (taskStart - gapStart) > 0) {
       newGaps.push({
         id: generateUUID(),
         user_id: originalGap.user_id,
@@ -438,7 +445,7 @@ export class GapLogic {
     }
     
     // Gap after task (if any)
-    if (taskEnd < gapEnd) {
+    if (taskEnd < gapEnd && (gapEnd - taskEnd) > 0) {
       newGaps.push({
         id: generateUUID(),
         user_id: originalGap.user_id,
