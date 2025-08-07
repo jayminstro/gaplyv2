@@ -280,6 +280,158 @@ export default function App() {
     restoreAppState();
   }, []);
 
+  // Load gaps from localStorage on app start and ensure future dates have gaps
+  useEffect(() => {
+    const loadGapsFromLocalStorage = () => {
+      try {
+        const today = new Date().toLocaleDateString('en-CA');
+        const todayKey = `gaply_gaps_${today}`;
+        const storedGaps = localStorage.getItem(todayKey);
+        
+        if (storedGaps) {
+          const gaps = JSON.parse(storedGaps);
+          console.log(`📱 Loaded ${gaps.length} gaps from localStorage for today`);
+          setGaps(prev => {
+            // Only update if we don't already have gaps for today
+            const hasTodayGaps = prev.some(gap => gap.date === today);
+            if (!hasTodayGaps) {
+              return [...prev, ...gaps];
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to load gaps from localStorage:', error);
+      }
+    };
+
+    const ensureAllFutureDatesHaveGaps = async () => {
+      if (!isAuthenticated || !session?.access_token || !preferences) {
+        console.log('⚠️ Skipping ensureAllFutureDatesHaveGaps - missing auth or preferences');
+        return;
+      }
+
+      try {
+        console.log('🔄 Ensuring all future dates have gaps...');
+        
+        // Import GapLogic dynamically
+        const { GapLogic, normalizeWorkingDays } = await import('./utils/gapLogic');
+        const { window_start, window_end } = GapLogic.calculateRollingWindow();
+        const today = new Date().toLocaleDateString('en-CA');
+        
+        console.log(`📅 Checking future dates in rolling window: ${window_start} to ${window_end}`);
+        
+        // Use normalizeWorkingDays to handle any format of calendar_working_days
+        const workingDays = normalizeWorkingDays(preferences.calendar_working_days);
+        console.log('🔍 Debug - Using working days:', workingDays);
+        
+        // Safeguard: Don't proceed if working days is empty
+        if (!workingDays || workingDays.length === 0) {
+          console.log('⚠️ Working days is empty, skipping gap creation');
+          return;
+        }
+        
+        // Get all dates from today to the end of the rolling window
+        const startDate = new Date(today);
+        const endDate = new Date(window_end);
+        const datesToProcess: string[] = [];
+        
+        for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+          const dateStr = date.toLocaleDateString('en-CA');
+          
+          // Check if it's a working day
+          const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+          if (!workingDays.includes(dayOfWeek)) {
+            console.log(`⏸️ Skipping non-working day: ${dateStr} (${dayOfWeek})`);
+            continue;
+          }
+          
+          // Check if we already have gaps for this date
+          const existingGaps = gaps.filter(gap => gap.date === dateStr);
+          if (existingGaps.length > 0) {
+            console.log(`✅ Already have ${existingGaps.length} gaps for ${dateStr}`);
+            continue;
+          }
+          
+          // Check if gaps exist in localStorage
+          const localStorageKey = `gaply_gaps_${dateStr}`;
+          const storedGaps = localStorage.getItem(localStorageKey);
+          if (storedGaps) {
+            try {
+              const parsedGaps = JSON.parse(storedGaps);
+              console.log(`✅ Found ${parsedGaps.length} gaps in localStorage for ${dateStr}`);
+              setGaps(prev => [...prev, ...parsedGaps]);
+              continue;
+            } catch (error) {
+              console.warn(`⚠️ Failed to parse gaps from localStorage for ${dateStr}:`, error);
+            }
+          }
+          
+          datesToProcess.push(dateStr);
+        }
+        
+        console.log(`📅 Found ${datesToProcess.length} future dates that need gaps`);
+        
+        // Create gaps for all future dates in parallel (but limit concurrency)
+        const batchSize = 3; // Process 3 dates at a time
+        for (let i = 0; i < datesToProcess.length; i += batchSize) {
+          const batch = datesToProcess.slice(i, i + batchSize);
+          
+          await Promise.all(batch.map(async (dateStr) => {
+            try {
+              console.log(`🔄 Creating gaps for future date: ${dateStr}`);
+              
+              // Create local fallback gaps
+              const { GapsAPI } = await import('./utils/gapsAPI');
+              const newGaps = await GapsAPI.createLocalFallbackGaps(
+                dateStr, 
+                preferences, 
+                session?.user?.id || 'local-user', 
+                localFirstService
+              );
+              
+              if (newGaps.length > 0) {
+                console.log(`✅ Created ${newGaps.length} gaps for future date ${dateStr}`);
+                setGaps(prev => [...prev, ...newGaps]);
+              }
+            } catch (error) {
+              console.error(`❌ Error creating gaps for future date ${dateStr}:`, error);
+            }
+          }));
+          
+          // Small delay between batches
+          if (i + batchSize < datesToProcess.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        
+        console.log(`✅ Finished ensuring gaps for all future dates`);
+      } catch (error) {
+        console.error('❌ Error ensuring gaps for future dates:', error);
+      }
+    };
+
+    // Load gaps after a short delay to ensure app is initialized
+    const timer = setTimeout(() => {
+      loadGapsFromLocalStorage();
+      // Ensure future dates have gaps after loading current gaps
+      setTimeout(ensureAllFutureDatesHaveGaps, 500);
+    }, 1000);
+    
+    // Listen for manual gap reload events
+    const handleForceReloadGaps = (event: CustomEvent) => {
+      console.log('🔄 Force reloading gaps from event:', event.detail);
+      setGaps(event.detail.gaps);
+    };
+    
+    window.addEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
+    
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
+    };
+  }, [isAuthenticated, session?.access_token, preferences, gaps, localFirstService]);
+
   // Check for widget mode and authentication on app start
   useEffect(() => {
     // Check if widget mode is enabled via URL parameter
@@ -591,11 +743,20 @@ export default function App() {
             // Normalize preferences to ensure proper data types
             const normalizedPrefs = {
               ...prefsData,
-              calendar_working_days: Array.isArray(prefsData.calendar_working_days) 
-                ? prefsData.calendar_working_days 
-                : (prefsData.calendar_working_days && typeof prefsData.calendar_working_days === 'object' 
-                    ? Object.keys(prefsData.calendar_working_days).filter(key => prefsData.calendar_working_days[key])
-                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']),
+              calendar_working_days: (() => {
+                if (Array.isArray(prefsData.calendar_working_days)) {
+                  return prefsData.calendar_working_days.length > 0 
+                    ? prefsData.calendar_working_days 
+                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                }
+                if (prefsData.calendar_working_days && typeof prefsData.calendar_working_days === 'object' && Object.keys(prefsData.calendar_working_days).length > 0) {
+                  const filtered = Object.keys(prefsData.calendar_working_days).filter(key => prefsData.calendar_working_days[key]);
+                  return filtered.length > 0 
+                    ? filtered 
+                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                }
+                return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+              })(),
               preferred_categories: Array.isArray(prefsData.preferred_categories) 
                 ? prefsData.preferred_categories 
                 : []

@@ -6,7 +6,7 @@ const API_BASE = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/m
 async function apiRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
   const maxRetries = 2;
   const maxSessionRetries = 1; // Limit session retries to prevent infinite loops
-  const isLocalDevelopment = process.env.NODE_ENV === 'development';
+  const isLocalDevelopment = false; // Temporarily disabled to sync with production
   
   try {
     // In development mode, provide immediate feedback about API unavailability

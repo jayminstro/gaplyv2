@@ -1,0 +1,6 @@
+{
+	"appId": "io.gaply.app",
+	"appName": "Gaply",
+	"webDir": "dist",
+	"packageClassList": []
+}

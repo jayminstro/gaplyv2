@@ -1,6 +1,7 @@
 import { TimeGap, UserPreferences } from '../types/index';
 import { GapLogic, GapManager } from './gapLogic';
 import { supabaseConfig } from './supabase/config';
+import { supabase } from './supabase/client';
 import { timeToMinutes, minutesToTime } from './helpers';
 import { generateUUID } from './uuid';
 
@@ -12,7 +13,7 @@ import { generateUUID } from './uuid';
 export class GapsAPI {
   private static readonly BASE_URL = `https://${supabaseConfig.projectId}.supabase.co/functions/v1/make-server-966d4846`;
   private static readonly TIMEOUT_MS = 5000;
-  private static readonly LOCAL_DEVELOPMENT = process.env.NODE_ENV === 'development';
+  private static readonly LOCAL_DEVELOPMENT = false; // Temporarily disabled to sync with production
 
   /**
    * Helper method to create a fetch request with timeout
@@ -168,11 +169,55 @@ export class GapsAPI {
           return [];
         }
         
+        // Get actual user ID from session or storage
+        let userId = 'local-user';
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user?.id) {
+            userId = session.user.id;
+          }
+        } catch (sessionError) {
+          console.warn('⚠️ Could not get user ID from session:', sessionError);
+        }
+        
         // Create gaps for each day in the rolling window
         for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
           const dateStr = date.toLocaleDateString('en-CA');
-          const dayGaps = GapLogic.createFreeHourGaps(dateStr, preferences, 'local-user');
+          
+          // Check if it's a working day
+          const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+          if (!preferences.calendar_working_days.includes(dayOfWeek)) {
+            console.log(`⏸️ Skipping non-working day: ${dateStr} (${dayOfWeek})`);
+            continue;
+          }
+          
+          const dayGaps = GapLogic.createFreeHourGaps(dateStr, preferences, userId);
           localGaps.push(...dayGaps);
+          console.log(`✅ Created ${dayGaps.length} gaps for ${dateStr} (${dayOfWeek})`);
+        }
+        
+        // Save gaps to storage if storage manager is available
+        if (storageManager && localGaps.length > 0) {
+          try {
+            console.log('💾 Saving rolling window gaps to storage...');
+            // Group gaps by date and save
+            const gapsByDate = new Map<string, TimeGap[]>();
+            localGaps.forEach(gap => {
+              const date = gap.date || new Date().toLocaleDateString('en-CA');
+              if (!gapsByDate.has(date)) {
+                gapsByDate.set(date, []);
+              }
+              gapsByDate.get(date)!.push(gap);
+            });
+            
+            // Save each date's gaps
+            for (const [date, gaps] of gapsByDate.entries()) {
+              await storageManager.saveGaps(gaps, date);
+            }
+            console.log(`💾 Saved ${localGaps.length} gaps across ${gapsByDate.size} dates to storage`);
+          } catch (storageError) {
+            console.warn('⚠️ Could not save rolling window gaps to storage:', storageError);
+          }
         }
         
         console.log(`✅ Created ${localGaps.length} local fallback gaps for rolling window`);
@@ -335,6 +380,14 @@ export class GapsAPI {
         }
       }
       
+      // Also save to localStorage as backup for immediate access
+      try {
+        localStorage.setItem(`gaply_gaps_${date}`, JSON.stringify(gaps));
+        console.log(`💾 Also saved ${gaps.length} gaps to localStorage as backup for ${date}`);
+      } catch (localStorageError) {
+        console.warn('⚠️ Failed to save gaps to localStorage backup:', localStorageError);
+      }
+      
       return gaps;
     } catch (error: unknown) {
       console.error('❌ Error creating local fallback gaps:', error);
@@ -373,8 +426,25 @@ export class GapsAPI {
       return gaps;
     } catch (error: unknown) {
       if (this.shouldUseFallback(error)) {
-        console.log('🔄 API unavailable, using local fallback gaps');
-        return [];
+        console.log('🔄 API unavailable, checking localStorage for gaps');
+        
+        // Try to get gaps from localStorage as fallback
+        try {
+          const localStorageKey = `gaply_gaps_${date}`;
+          const storedGaps = localStorage.getItem(localStorageKey);
+          
+          if (storedGaps) {
+            const gaps = JSON.parse(storedGaps);
+            console.log(`✅ Retrieved ${gaps.length} gaps from localStorage for ${date}`);
+            return gaps;
+          } else {
+            console.log(`📝 No gaps found in localStorage for ${date}`);
+            return [];
+          }
+        } catch (localStorageError) {
+          console.warn('⚠️ Failed to read gaps from localStorage:', localStorageError);
+          return [];
+        }
       }
       throw error;
     }
