@@ -26,6 +26,8 @@ interface PlannerTimelineProps {
   onTaskOpen: (task: Task) => void;
   onGapUtilize: (gap: TimeGap) => void;
   userPreferences?: UserPreferences;
+  isWorkingDay?: boolean;
+  hasWorkingDays?: boolean;
 }
 
 function PlannerTimeline({ 
@@ -35,7 +37,9 @@ function PlannerTimeline({
   currentTime,
   onTaskOpen, 
   onGapUtilize,
-  userPreferences 
+  userPreferences,
+  isWorkingDay = true,
+  hasWorkingDays = true
 }: PlannerTimelineProps) {
   
   // Ref for the timeline container to enable auto-scrolling
@@ -93,7 +97,7 @@ function PlannerTimeline({
     const items: TimelineItem[] = [];
     
     // Debug: Log gaps being processed
-    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${selectedDate.toLocaleDateString('en-CA')}`);
+    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${format(selectedDate, 'yyyy-MM-dd')}`);
     if (gaps.length > 0) {
       console.log(`🔍 PlannerTimeline Debug - Gap dates:`, gaps.map(g => g.date).slice(0, 5));
     }
@@ -280,7 +284,7 @@ function PlannerTimeline({
     return slots;
   };
   
-  const timeSlots = generateTimeSlots();
+  const timeSlots = hasWorkingDays && isWorkingDay ? generateTimeSlots() : [];
   
   // Check if current time should be shown (only for today)
   const shouldShowCurrentTime = isSameDay(selectedDate, currentTime);
@@ -289,7 +293,7 @@ function PlannerTimeline({
   
   // Auto-scroll to current time when viewing today
   useEffect(() => {
-    if (!timelineRef.current || !shouldShowCurrentTime) return;
+    if (!timelineRef.current || !shouldShowCurrentTime || !isWorkingDay || !hasWorkingDays) return;
     
     // Find the current hour element
     const currentHourIndex = timeSlots.findIndex(slot => slot.hour24 === currentHour);
@@ -336,6 +340,20 @@ function PlannerTimeline({
 
   return (
     <div ref={timelineRef} className="space-y-4 pb-8 relative">
+      {!hasWorkingDays && (
+        <div className="text-center py-8 bg-slate-800/30 border border-slate-700/30 rounded-2xl">
+          <h3 className="text-slate-200 font-medium mb-1">No working days selected</h3>
+          <p className="text-slate-400 text-sm">Set your working days in Settings to generate planner gaps.</p>
+        </div>
+      )}
+      {hasWorkingDays && !isWorkingDay && (
+        <div className="text-center py-6 bg-slate-800/20 border border-slate-700/20 rounded-2xl">
+          <p className="text-slate-400 text-sm">This date isn’t a working day. Select a working day to see gaps.</p>
+        </div>
+      )}
+      {hasWorkingDays && isWorkingDay && timeSlots.length === 0 && (
+        <div className="text-center py-6 text-slate-400">No time slots available.</div>
+      )}
       {timeSlots.map((slot) => {
         const itemsAtHour = getItemsForHour(slot.hour24);
         
@@ -426,14 +444,14 @@ function PlannerTimeline({
                       if (gap.start_time.includes('T')) {
                         gapStart = parseISO(gap.start_time);
                       } else {
-                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                        const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
                         gapStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
                       }
                       
-                      if (gap.end_time.includes('T')) {
+                        if (gap.end_time.includes('T')) {
                         gapEnd = parseISO(gap.end_time);
                       } else {
-                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                          const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
                         gapEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
                       }
                       

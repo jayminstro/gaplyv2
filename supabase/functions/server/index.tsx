@@ -422,6 +422,27 @@ app.post("/make-server-966d4846/preferences", async (c) => {
     
     console.log("Received preferences data for user:", user.id);
 
+    // Local helper: normalize working days to full names without defaulting (server should respect empty)
+    const normalizeWorkingDaysServer = (workingDays: any): string[] => {
+      const dayMapping: Record<string, string> = {
+        mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+        monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
+      };
+      const mapDay = (d: string) => dayMapping[d.toLowerCase()] || d;
+      if (Array.isArray(workingDays)) {
+        return workingDays.map((d) => mapDay(String(d))).filter(Boolean);
+      }
+      if (workingDays && typeof workingDays === 'object') {
+        const keys = Object.keys(workingDays);
+        const isNumeric = keys.every(k => !isNaN(Number(k)));
+        if (isNumeric) return Object.values(workingDays).map(v => mapDay(String(v))).filter(Boolean);
+        const truthyKeys = keys.filter(k => !!workingDays[k]);
+        if (truthyKeys.length > 0) return truthyKeys.map(mapDay);
+        return keys.map(mapDay);
+      }
+      return [];
+    };
+
     // Sanitize incoming payload to match DB expectations
     const toHHMMSS = (t: any): string => {
       try {
@@ -446,7 +467,7 @@ app.post("/make-server-966d4846/preferences", async (c) => {
 
     // Normalize working days to a clean array of full day names
     if (body.calendar_working_days !== undefined) {
-      body.calendar_working_days = normalizeWorkingDays(body.calendar_working_days);
+      body.calendar_working_days = normalizeWorkingDaysServer(body.calendar_working_days);
     }
     if (body.calendar_work_start !== undefined) {
       body.calendar_work_start = toHHMMSS(body.calendar_work_start);
@@ -465,8 +486,8 @@ app.post("/make-server-966d4846/preferences", async (c) => {
       .eq('user_id', user.id)
       .single();
 
-    // Prepare preferences data
-    const prefsData: any = {
+    // Prepare preferences data (calendar_* schema variant)
+    const prefsDataCalendar: any = {
       user_id: user.id,
       updated_at: new Date().toISOString()
     };
@@ -502,65 +523,68 @@ app.post("/make-server-966d4846/preferences", async (c) => {
     // Only include preferences fields in the database operation
     preferencesFields.forEach(field => {
       if (body[field] !== undefined) {
-        prefsData[field] = body[field];
+        prefsDataCalendar[field] = body[field];
       }
     });
 
-    // Map local keys to DB schema keys if DB uses legacy columns
-    // Prefer legacy keys 'work_start', 'work_end', 'working_days'
-    const dbData: any = { ...prefsData };
-    if (prefsData.calendar_work_start !== undefined) {
-      dbData.work_start = prefsData.calendar_work_start;
-      delete dbData.calendar_work_start;
-    }
-    if (prefsData.calendar_work_end !== undefined) {
-      dbData.work_end = prefsData.calendar_work_end;
-      delete dbData.calendar_work_end;
-    }
-    if (prefsData.calendar_working_days !== undefined) {
-      dbData.working_days = prefsData.calendar_working_days;
-      delete dbData.calendar_working_days;
-    }
+    // Legacy schema variant mapping (only known legacy keys)
+    const prefsDataLegacy: any = { user_id: user.id, updated_at: new Date().toISOString() };
+    if (prefsDataCalendar.calendar_work_start !== undefined) prefsDataLegacy.work_start = prefsDataCalendar.calendar_work_start;
+    if (prefsDataCalendar.calendar_work_end !== undefined) prefsDataLegacy.work_end = prefsDataCalendar.calendar_work_end;
+    if (prefsDataCalendar.calendar_working_days !== undefined) prefsDataLegacy.working_days = prefsDataCalendar.calendar_working_days;
 
+    // Try saving with calendar_* schema first, then legacy mapping if needed
     let result;
     if (existingPrefs) {
-      // Update existing record
-      result = await supabase
-        .from('user_preferences')
-        .update(dbData)
-        .eq('user_id', user.id);
+      result = await supabase.from('user_preferences').update(prefsDataCalendar).eq('user_id', user.id);
+      if (result.error) {
+        console.log('Calendar schema update failed, trying legacy mapping:', result.error);
+        result = await supabase.from('user_preferences').update(prefsDataLegacy).eq('user_id', user.id);
+      }
     } else {
-      // Insert new record with defaults
       const defaultPrefs = getDefaultPreferences();
-      // Merge defaults then mapped data
-      const insertData = { 
-        ...defaultPrefs,
-        ...dbData
-      };
-      result = await supabase
-        .from('user_preferences')
-        .insert(insertData);
+      const insertCalendar = { ...defaultPrefs, ...prefsDataCalendar };
+      result = await supabase.from('user_preferences').insert(insertCalendar);
+      if (result.error) {
+        console.log('Calendar schema insert failed, trying legacy mapping:', result.error);
+        // Build legacy defaults
+        const legacyDefaults: any = { ...defaultPrefs };
+        legacyDefaults.work_start = defaultPrefs.calendar_work_start;
+        legacyDefaults.work_end = defaultPrefs.calendar_work_end;
+        legacyDefaults.working_days = defaultPrefs.calendar_working_days;
+        delete legacyDefaults.calendar_work_start;
+        delete legacyDefaults.calendar_work_end;
+        delete legacyDefaults.calendar_working_days;
+        const insertLegacy = { ...legacyDefaults, ...prefsDataLegacy };
+        result = await supabase.from('user_preferences').insert(insertLegacy);
+      }
     }
 
     if (result.error) {
       console.log("Database error details (first attempt):", result.error);
-      // Fallback: retry with minimal safe fields only
-      const minimalFields = ['calendar_work_start','calendar_work_end','calendar_working_days','preferred_categories','default_energy_level'];
-      const minimalData: any = { user_id: user.id, updated_at: new Date().toISOString() };
-      for (const f of minimalFields) {
-        if (body[f] !== undefined) minimalData[f] = body[f];
-      }
+      // Fallback: retry with minimal safe fields only (calendar first, then legacy)
+      const minimalFields = ['calendar_work_start','calendar_work_end','calendar_working_days'];
+      const minimalCalendar: any = { user_id: user.id, updated_at: new Date().toISOString() };
+      for (const f of minimalFields) if (body[f] !== undefined) minimalCalendar[f] = body[f];
+      const minimalLegacy: any = { user_id: user.id, updated_at: new Date().toISOString() };
+      if (minimalCalendar.calendar_work_start !== undefined) minimalLegacy.work_start = minimalCalendar.calendar_work_start;
+      if (minimalCalendar.calendar_work_end !== undefined) minimalLegacy.work_end = minimalCalendar.calendar_work_end;
+      if (minimalCalendar.calendar_working_days !== undefined) minimalLegacy.working_days = minimalCalendar.calendar_working_days;
+      // Do NOT include optional fields in legacy fallback to avoid schema mismatches
 
       let fallbackResult;
       if (existingPrefs) {
-        fallbackResult = await supabase
-          .from('user_preferences')
-          .update(minimalData)
-          .eq('user_id', user.id);
+        fallbackResult = await supabase.from('user_preferences').update(minimalCalendar).eq('user_id', user.id);
+        if (fallbackResult.error) {
+          console.log('Minimal calendar update failed, trying legacy:', fallbackResult.error);
+          fallbackResult = await supabase.from('user_preferences').update(minimalLegacy).eq('user_id', user.id);
+        }
       } else {
-        fallbackResult = await supabase
-          .from('user_preferences')
-          .insert(minimalData);
+        fallbackResult = await supabase.from('user_preferences').insert(minimalCalendar);
+        if (fallbackResult.error) {
+          console.log('Minimal calendar insert failed, trying legacy:', fallbackResult.error);
+          fallbackResult = await supabase.from('user_preferences').insert(minimalLegacy);
+        }
       }
 
       if (fallbackResult.error) {

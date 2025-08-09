@@ -1,6 +1,7 @@
 import { TimeGap, UserPreferences, Task } from '../types/index';
 import { timeToMinutes, minutesToTime } from './helpers';
 import { generateUUID } from './uuid';
+import { format, parseISO } from 'date-fns';
 
 export type GapModifier = 'system' | 'user' | 'calendar_sync';
 
@@ -139,8 +140,8 @@ export class GapLogic {
     window_end.setDate(today.getDate() + 7);
     
     return {
-      window_start: window_start.toLocaleDateString('en-CA'),
-      window_end: window_end.toLocaleDateString('en-CA')
+      window_start: format(window_start, 'yyyy-MM-dd'),
+      window_end: format(window_end, 'yyyy-MM-dd')
     };
   }
 
@@ -160,9 +161,9 @@ export class GapLogic {
     const preloadDates: string[] = [];
     
     for (let i = 1; i <= 3; i++) {
-      const preloadDate = new Date(window_end);
+      const preloadDate = parseISO(window_end);
       preloadDate.setDate(preloadDate.getDate() + i);
-      preloadDates.push(preloadDate.toLocaleDateString('en-CA'));
+      preloadDates.push(format(preloadDate, 'yyyy-MM-dd'));
     }
     
     return preloadDates;
@@ -174,7 +175,6 @@ export class GapLogic {
    */
   static getGapsToCleanup(existingGaps: TimeGap[]): string[] {
     const { window_start } = this.calculateRollingWindow();
-    const today = new Date().toLocaleDateString('en-CA');
     
     return existingGaps
       .filter(gap => {
@@ -210,8 +210,16 @@ export class GapLogic {
       });
       return [];
     }
-    // Ensure date is in YYYY-MM-DD format
-    const formattedDate = new Date(date).toLocaleDateString('en-CA');
+    // Ensure date is in YYYY-MM-DD format, iOS-safe
+    let formattedDate = date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(formattedDate)) {
+      try {
+        const parsed = parseISO(date);
+        formattedDate = format(parsed, 'yyyy-MM-dd');
+      } catch {
+        formattedDate = format(new Date(), 'yyyy-MM-dd');
+      }
+    }
     
     // Only create gaps within the rolling window
     if (!this.isDateInRollingWindow(formattedDate)) {
@@ -219,7 +227,7 @@ export class GapLogic {
       return [];
     }
 
-    const dayOfWeek = new Date(formattedDate).toLocaleDateString('en-US', { weekday: 'long' });
+    const dayOfWeek = parseISO(formattedDate).toLocaleDateString('en-US', { weekday: 'long' });
     const currentDay = dayOfWeek;
     
     // Check if this day is in working days
@@ -467,9 +475,9 @@ export class GapLogic {
   /**
    * Calculate duration between two times in minutes
    */
-  private static calculateDuration(startTime: string, endTime: string): number {
-    return timeToMinutes(endTime) - timeToMinutes(startTime);
-  }
+  // private static calculateDuration(startTime: string, endTime: string): number {
+  //   return timeToMinutes(endTime) - timeToMinutes(startTime);
+  // }
 
   /**
    * Check if two gaps overlap

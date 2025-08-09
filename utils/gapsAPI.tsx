@@ -3,6 +3,7 @@ import { GapLogic, normalizeWorkingDays } from './gapLogic';
 import { supabaseConfig } from './supabase/config';
 import { supabase } from './supabase/client';
 import { timeToMinutes } from './helpers';
+import { format } from 'date-fns';
 import { generateUUID } from './uuid';
 
 /**
@@ -184,7 +185,7 @@ export class GapsAPI {
         // Normalize working days once to handle any server/client shape
         const normalizedWorkingDays = normalizeWorkingDays(preferences.calendar_working_days);
         for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-          const dateStr = date.toLocaleDateString('en-CA');
+          const dateStr = format(date, 'yyyy-MM-dd');
           
           // Check if it's a working day
           const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
@@ -205,7 +206,7 @@ export class GapsAPI {
             // Group gaps by date and save
             const gapsByDate = new Map<string, TimeGap[]>();
             localGaps.forEach(gap => {
-              const date = gap.date || new Date().toLocaleDateString('en-CA');
+              const date = gap.date || format(new Date(), 'yyyy-MM-dd');
               if (!gapsByDate.has(date)) {
                 gapsByDate.set(date, []);
               }

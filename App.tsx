@@ -285,16 +285,16 @@ export default function App() {
   useEffect(() => {
     const loadGapsFromLocalStorage = () => {
       try {
-        const today = new Date().toLocaleDateString('en-CA');
-        const todayKey = `gaply_gaps_${today}`;
-        const storedGaps = localStorage.getItem(todayKey);
+        const today = new Date();
+        const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        const storedGaps = localStorage.getItem(`gaply_gaps_${todayKey}`);
         
         if (storedGaps) {
           const gaps = JSON.parse(storedGaps);
           console.log(`📱 Loaded ${gaps.length} gaps from localStorage for today`);
           setGaps(prev => {
             // Only update if we don't already have gaps for today
-            const hasTodayGaps = prev.some(gap => gap.date === today);
+            const hasTodayGaps = prev.some(gap => gap.date === todayKey);
             if (!hasTodayGaps) {
               const mergedGaps = mergeAndDeduplicateGaps(prev, gaps);
               return mergedGaps;
@@ -337,12 +337,13 @@ export default function App() {
         }
         
         // Get all dates from the start of the rolling window to the end (includes past)
-        const startDate = new Date(window_start);
-        const endDate = new Date(window_end);
+        // Parse window bounds safely for iOS
+        const startDate = new Date(window_start + 'T00:00:00');
+        const endDate = new Date(window_end + 'T00:00:00');
         const datesToProcess: string[] = [];
         
         for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-          const dateStr = date.toLocaleDateString('en-CA');
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
           
           // Check if it's a working day
           const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
@@ -471,11 +472,21 @@ export default function App() {
     
     window.addEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
     window.addEventListener('preferenceChange', handlePreferenceChange);
+    // Simple navigation event for internal components (e.g., to open Settings)
+    const handleNavigateTo = (event: Event) => {
+      const custom = event as CustomEvent;
+      const tab = custom.detail?.tab;
+      if (typeof tab === 'string') {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener('navigateTo', handleNavigateTo as EventListener);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
       window.removeEventListener('preferenceChange', handlePreferenceChange as EventListener);
+      window.removeEventListener('navigateTo', handleNavigateTo as EventListener);
     };
   }, [isAuthenticated, session?.access_token, preferences, localFirstService]);
 

@@ -286,7 +286,11 @@ export class EnhancedLoginSyncService {
       
       // Add local gaps
       localGaps.forEach(gap => {
-        const date = gap.date || new Date().toLocaleDateString('en-CA');
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const date = gap.date || `${yyyy}-${mm}-${dd}`;
         if (!gapsByDate.has(date)) {
           gapsByDate.set(date, []);
         }
@@ -297,7 +301,11 @@ export class EnhancedLoginSyncService {
       if (remoteData.gaps.length > 0) {
         console.log('☁️ Remote gaps found, merging with local gaps...');
         remoteData.gaps.forEach(gap => {
-          const date = gap.date || new Date().toLocaleDateString('en-CA');
+          const now2 = new Date();
+          const yyyy2 = now2.getFullYear();
+          const mm2 = String(now2.getMonth() + 1).padStart(2, '0');
+          const dd2 = String(now2.getDate()).padStart(2, '0');
+          const date = gap.date || `${yyyy2}-${mm2}-${dd2}`;
           // Only overwrite if local doesn't have gaps for this date
           if (!gapsByDate.has(date) || gapsByDate.get(date)!.length === 0) {
             gapsByDate.set(date, [gap]);
@@ -309,7 +317,11 @@ export class EnhancedLoginSyncService {
         // If remote has no gaps, preserve all local gaps
         console.log(`🔄 Remote gaps empty, preserving all ${localGaps.length} local gaps.`);
         localGaps.forEach(gap => {
-          const date = gap.date || new Date().toLocaleDateString('en-CA'); // Use consistent date format
+          const now3 = new Date();
+          const yyyy3 = now3.getFullYear();
+          const mm3 = String(now3.getMonth() + 1).padStart(2, '0');
+          const dd3 = String(now3.getDate()).padStart(2, '0');
+          const date = gap.date || `${yyyy3}-${mm3}-${dd3}`; // Use consistent date format
           if (!gapsByDate.has(date)) {
             gapsByDate.set(date, []);
           }
