@@ -189,6 +189,11 @@ function PlannerContent({
     });
   }, [workingDays]);
 
+  const isSelectedDateWorkingDay = useMemo(() => {
+    const dayName = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
+    return workingDays.includes(dayName);
+  }, [selectedDate, workingDays]);
+
   // Ensure selected date is always one of the visible working days
   useEffect(() => {
     if (dateTabs.length === 0) return;
@@ -462,7 +467,26 @@ function PlannerContent({
             <ChevronRight className="w-4 h-4 text-slate-400 opacity-60" />
           </div>
           
-          <div 
+          {/* If no working days selected, show empty state instead of tabs */}
+          {workingDays.length === 0 ? (
+            <div className="flex items-center justify-between bg-slate-800/40 border border-slate-700/40 rounded-2xl p-4">
+              <div className="text-slate-300 text-sm">
+                No working days selected. Set them in Settings to generate planner gaps.
+              </div>
+              <button
+                onClick={() => {
+                  try {
+                    window.dispatchEvent(new CustomEvent('navigateTo', { detail: { tab: 'settings' } }));
+                  } catch {}
+                }}
+                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium"
+                type="button"
+              >
+                Open Settings
+              </button>
+            </div>
+          ) : (
+          <div
             className="flex items-center gap-3 overflow-x-auto ios-scroll android-scroll pb-4 px-8" 
             style={{ 
               scrollbarWidth: 'none', 
@@ -508,6 +532,12 @@ function PlannerContent({
             {/* Now button integrated into the date navigation */}
             <button
               onClick={() => {
+                if (workingDays.length === 0) {
+                  try {
+                    window.dispatchEvent(new CustomEvent('navigateTo', { detail: { tab: 'settings' } }));
+                  } catch {}
+                  return;
+                }
                 const today = startOfDay(new Date());
                 const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
                 let targetDate = today;
@@ -531,6 +561,7 @@ function PlannerContent({
               Now
             </button>
           </div>
+          )}
         </div>
       </div>
 
@@ -548,6 +579,8 @@ function PlannerContent({
           onTaskOpen={onTaskOpen}
           onGapUtilize={onGapUtilize}
           userPreferences={userPreferences}
+          isWorkingDay={isSelectedDateWorkingDay}
+          hasWorkingDays={workingDays.length > 0}
         />
       </div>
     </div>

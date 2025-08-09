@@ -472,11 +472,21 @@ export default function App() {
     
     window.addEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
     window.addEventListener('preferenceChange', handlePreferenceChange);
+    // Simple navigation event for internal components (e.g., to open Settings)
+    const handleNavigateTo = (event: Event) => {
+      const custom = event as CustomEvent;
+      const tab = custom.detail?.tab;
+      if (typeof tab === 'string') {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener('navigateTo', handleNavigateTo as EventListener);
     
     return () => {
       clearTimeout(timer);
       window.removeEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
       window.removeEventListener('preferenceChange', handlePreferenceChange as EventListener);
+      window.removeEventListener('navigateTo', handleNavigateTo as EventListener);
     };
   }, [isAuthenticated, session?.access_token, preferences, localFirstService]);
 
