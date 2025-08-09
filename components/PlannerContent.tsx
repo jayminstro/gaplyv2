@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, addDays, startOfDay, isSameDay, isAfter, isBefore } from 'date-fns';
+import { format, addDays, startOfDay, isSameDay } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
 import { deduplicateGaps } from '../utils/gapLogic';
+import { normalizeWorkingDays } from '../utils/gapLogic';
 
 interface PlannerContentProps {
   globalTasks: Task[];
@@ -27,6 +28,7 @@ function PlannerContent({
 }: PlannerContentProps) {
   const [selectedDate, setSelectedDate] = useState(startOfDay(new Date()));
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [overrideWorkingDays, setOverrideWorkingDays] = useState<string[] | null>(null);
   
   // Update current time every minute
   useEffect(() => {
@@ -35,6 +37,20 @@ function PlannerContent({
     }, 60000); // Update every minute
     
     return () => clearInterval(interval);
+  }, []);
+
+  // Listen for live working days changes from settings (preview without save)
+  useEffect(() => {
+    const handleWorkingDaysPreview = (event: Event) => {
+      const customEvent = event as CustomEvent<string[] | null>;
+      if (Array.isArray(customEvent.detail)) {
+        setOverrideWorkingDays(customEvent.detail);
+      } else {
+        setOverrideWorkingDays(null);
+      }
+    };
+    window.addEventListener('workingDaysPreviewChange', handleWorkingDaysPreview as EventListener);
+    return () => window.removeEventListener('workingDaysPreviewChange', handleWorkingDaysPreview as EventListener);
   }, []);
 
   // Track which dates we've already attempted to create gaps for
@@ -150,18 +166,47 @@ function PlannerContent({
     setProcessedDates(new Set());
   }, [session?.access_token]);
 
-  // Generate date tabs (7 days in past + today + 7 days forward = 15 total)
-  const dateTabs = Array.from({ length: 15 }, (_, index) => {
-    // Calculate date: -7 to +7 (index 7 is today)
-    const date = addDays(new Date(), index - 7);
-    const isToday = index === 7;
-    
-    return {
-      date: startOfDay(date),
-      label: format(date, 'EEE'), // Day of week (Mon, Tue, Wed, etc.)
-      isToday: isToday
-    };
-  });
+  // Generate date tabs (7 days in past + today + 7 days forward = 15 total) filtered by working days
+  const workingDays = useMemo(() => {
+    if (overrideWorkingDays && overrideWorkingDays.length > 0) {
+      return normalizeWorkingDays(overrideWorkingDays);
+    }
+    return normalizeWorkingDays(userPreferences?.calendar_working_days);
+  }, [overrideWorkingDays, userPreferences?.calendar_working_days]);
+  const dateTabs = useMemo(() => {
+    const allTabs = Array.from({ length: 15 }, (_, index) => {
+      const date = addDays(new Date(), index - 7);
+      return {
+        date: startOfDay(date),
+        label: format(date, 'EEE'),
+        isToday: isSameDay(startOfDay(date), startOfDay(new Date()))
+      };
+    });
+    // Filter to only user's working days
+    return allTabs.filter(tab => {
+      const dayName = tab.date.toLocaleDateString('en-US', { weekday: 'long' });
+      return workingDays.includes(dayName);
+    });
+  }, [workingDays]);
+
+  // Ensure selected date is always one of the visible working days
+  useEffect(() => {
+    if (dateTabs.length === 0) return;
+    const isSelectedVisible = dateTabs.some(tab => isSameDay(tab.date, selectedDate));
+    if (!isSelectedVisible) {
+      // Pick the closest visible date to today
+      const today = startOfDay(new Date());
+      // Prefer today if visible
+      const todayTab = dateTabs.find(tab => isSameDay(tab.date, today));
+      if (todayTab) {
+        setSelectedDate(todayTab.date);
+        return;
+      }
+      // Otherwise choose the first future working day, else fallback to last past working day
+      const futureTab = dateTabs.find(tab => tab.date >= today);
+      setSelectedDate(futureTab ? futureTab.date : dateTabs[dateTabs.length - 1].date);
+    }
+  }, [dateTabs]);
 
   // Filter tasks for selected date - Temporarily show all tasks for debugging
   const selectedDateTasks = globalTasks.filter(task => {
@@ -428,15 +473,16 @@ function PlannerContent({
             ref={(el) => {
               // Auto-scroll to today on mount
               if (el && !el.dataset.scrolled) {
-                const todayIndex = 7; // Today is at index 7
-                const todayButton = el.children[todayIndex] as HTMLElement;
-                if (todayButton) {
+                const today = startOfDay(new Date());
+                const index = dateTabs.findIndex(tab => isSameDay(tab.date, today));
+                const targetChild = index >= 0 ? (el.children[index] as HTMLElement) : (el.children[0] as HTMLElement);
+                if (targetChild) {
                   const containerWidth = el.offsetWidth;
-                  const buttonWidth = todayButton.offsetWidth;
-                  const scrollLeft = todayButton.offsetLeft - (containerWidth / 2) + (buttonWidth / 2);
-                  el.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-                  el.dataset.scrolled = 'true';
+                  const buttonWidth = targetChild.offsetWidth;
+                  const scrollLeft = targetChild.offsetLeft - (containerWidth / 2) + (buttonWidth / 2);
+                  el.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
                 }
+                el.dataset.scrolled = 'true';
               }
             }}
           >
@@ -462,7 +508,20 @@ function PlannerContent({
             {/* Now button integrated into the date navigation */}
             <button
               onClick={() => {
-                setSelectedDate(startOfDay(new Date()));
+                const today = startOfDay(new Date());
+                const todayName = today.toLocaleDateString('en-US', { weekday: 'long' });
+                let targetDate = today;
+                if (!workingDays.includes(todayName)) {
+                  // Find the next working day within the window
+                  const future = Array.from({ length: 14 }, (_, i) => addDays(today, i + 1));
+                  const next = future.find(d => workingDays.includes(d.toLocaleDateString('en-US', { weekday: 'long' })));
+                  if (next) {
+                    targetDate = startOfDay(next);
+                  } else if (dateTabs.length > 0) {
+                    targetDate = dateTabs[0].date;
+                  }
+                }
+                setSelectedDate(targetDate);
                 setTimeout(scrollToCurrentTime, 150);
               }}
               className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation flex-shrink-0 border border-slate-600/30 hover:border-slate-500/50"

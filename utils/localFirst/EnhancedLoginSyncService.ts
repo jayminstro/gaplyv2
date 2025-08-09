@@ -1,5 +1,7 @@
 import { EnhancedStorageManager } from '../storage/EnhancedStorageManager';
 import { Task, TimeGap, UserPreferences } from '../../types/index';
+import { DEFAULT_PREFERENCES } from '../constants';
+import { normalizeWorkingDays } from '../gapLogic';
 import { supabase } from '../supabase/client';
 
 export interface LoginSyncResult {
@@ -330,7 +332,8 @@ export class EnhancedLoginSyncService {
       // Merge preferences (remote takes precedence)
       if (remoteData.preferences) {
         console.log('⚙️ Saving remote preferences...');
-        await this.storage.savePreferences(remoteData.preferences);
+        const mapped = this.mapRemotePreferencesToLocal(remoteData.preferences);
+        await this.storage.savePreferences(mapped);
         console.log('✅ Synced preferences');
       }
 
@@ -348,6 +351,36 @@ export class EnhancedLoginSyncService {
     }
 
     return result;
+  }
+
+  /**
+   * Map remote preference schema to local UserPreferences
+   */
+  private mapRemotePreferencesToLocal(remote: any): UserPreferences {
+    const toHHMM = (t: any): string => {
+      if (!t || typeof t !== 'string') return '';
+      const parts = t.split(':');
+      if (parts.length >= 2) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+      return t;
+    };
+
+    // Prefer local-named keys; fallback to remote-named
+    const workStart = remote.calendar_work_start || remote.work_start || remote.workStart || DEFAULT_PREFERENCES.calendar_work_start;
+    const workEnd = remote.calendar_work_end || remote.work_end || remote.workEnd || DEFAULT_PREFERENCES.calendar_work_end;
+    const workingDaysRaw = remote.calendar_working_days ?? remote.working_days ?? DEFAULT_PREFERENCES.calendar_working_days;
+
+    const workingDays = normalizeWorkingDays(workingDaysRaw);
+
+    // Merge onto defaults so all fields exist
+    const mapped: UserPreferences = {
+      ...DEFAULT_PREFERENCES,
+      ...remote,
+      calendar_work_start: toHHMM(workStart),
+      calendar_work_end: toHHMM(workEnd),
+      calendar_working_days: workingDays,
+    };
+
+    return mapped;
   }
 
   // Delegate storage methods to the enhanced storage manager

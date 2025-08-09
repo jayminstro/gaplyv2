@@ -243,8 +243,11 @@ export class PreferenceChangeDetector {
         return `Work start time changed from ${oldValue} to ${newValue}`;
       case 'calendar_work_end':
         return `Work end time changed from ${oldValue} to ${newValue}`;
-      case 'calendar_working_days':
-        return `Working days changed from ${oldValue?.join(', ')} to ${newValue?.join(', ')}`;
+      case 'calendar_working_days': {
+        const oldList = Array.isArray(oldValue) ? oldValue : Object.values(oldValue || {});
+        const newList = Array.isArray(newValue) ? newValue : Object.values(newValue || {});
+        return `Working days changed from ${oldList.join(', ')} to ${newList.join(', ')}`;
+      }
       case 'calendar_min_gap':
         return `Minimum gap changed from ${oldValue} to ${newValue} minutes`;
       case 'dark_mode':
