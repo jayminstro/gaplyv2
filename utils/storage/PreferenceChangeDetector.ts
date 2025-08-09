@@ -189,8 +189,9 @@ export class PreferenceChangeDetector {
 
     // For critical changes, affect the next 14 days
     const today = new Date();
-    const start = today.toLocaleDateString('en-CA');
-    const end = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
+    const start = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const endDateObj = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const end = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth()+1).padStart(2,'0')}-${String(endDateObj.getDate()).padStart(2,'0')}`;
 
     return { start, end };
   }
@@ -210,21 +211,21 @@ export class PreferenceChangeDetector {
     if (field === 'calendar_working_days') {
       for (let i = 0; i < 14; i++) {
         const date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-        dates.push(date.toLocaleDateString('en-CA'));
+        dates.push(`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`);
       }
     }
     // For work hours changes, affect all future dates
     else if (field === 'calendar_work_start' || field === 'calendar_work_end') {
       for (let i = 0; i < 14; i++) {
         const date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-        dates.push(date.toLocaleDateString('en-CA'));
+        dates.push(`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`);
       }
     }
     // For other changes, affect today and tomorrow
     else {
-      dates.push(today.toLocaleDateString('en-CA'));
+      dates.push(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`);
       const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-      dates.push(tomorrow.toLocaleDateString('en-CA'));
+      dates.push(`${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`);
     }
 
     return dates;

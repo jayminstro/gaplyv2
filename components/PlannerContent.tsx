@@ -71,8 +71,8 @@ function PlannerContent({
       }
       
       // Use local date strings to avoid timezone issues
-      const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
-      const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+      const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+      const today = format(new Date(), 'yyyy-MM-dd');
       
       // Debug: Log the dates being processed
       console.log(`🔍 Processing date: ${selectedDateStr}, Today: ${today}`);
@@ -256,7 +256,7 @@ function PlannerContent({
   });
   
   // Debug: Log gap information
-  console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${selectedDate.toLocaleDateString('en-CA')}, Gaps for selected date: ${selectedDateGaps.length}`);
+  console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${format(selectedDate, 'yyyy-MM-dd')}, Gaps for selected date: ${selectedDateGaps.length}`);
   if (gaps.length > 0) {
     console.log(`🔍 Gap Debug - Available gap dates:`, gaps.map(g => g.date).slice(0, 5));
   }

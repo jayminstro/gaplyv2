@@ -93,7 +93,7 @@ function PlannerTimeline({
     const items: TimelineItem[] = [];
     
     // Debug: Log gaps being processed
-    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${selectedDate.toLocaleDateString('en-CA')}`);
+    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${format(selectedDate, 'yyyy-MM-dd')}`);
     if (gaps.length > 0) {
       console.log(`🔍 PlannerTimeline Debug - Gap dates:`, gaps.map(g => g.date).slice(0, 5));
     }
@@ -426,14 +426,14 @@ function PlannerTimeline({
                       if (gap.start_time.includes('T')) {
                         gapStart = parseISO(gap.start_time);
                       } else {
-                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                        const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
                         gapStart = parseISO(`${selectedDateStr}T${gap.start_time}`);
                       }
                       
-                      if (gap.end_time.includes('T')) {
+                        if (gap.end_time.includes('T')) {
                         gapEnd = parseISO(gap.end_time);
                       } else {
-                        const selectedDateStr = selectedDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                          const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
                         gapEnd = parseISO(`${selectedDateStr}T${gap.end_time}`);
                       }
                       
