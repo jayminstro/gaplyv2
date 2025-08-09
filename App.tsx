@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
-import { GapLogic, deduplicateGaps, mergeAndDeduplicateGaps } from './utils/gapLogic';
+import { GapLogic, mergeAndDeduplicateGaps } from './utils/gapLogic';
 import { supabase } from './utils/supabase/client';
 import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -20,7 +20,7 @@ import { FloatingTimer } from "./components/FloatingTimer";
 import { GapUtilizationModal } from "./components/GapUtilizationModal";
 import { WidgetView } from './components/WidgetView';
 import { Task, TimeGap, UserPreferences } from './types/index';
-import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES, DEFAULT_GAPS } from './utils/constants';
+import { DEFAULT_PREFERENCES, DEFAULT_UNSAVED_CHANGES } from './utils/constants';
 import { sanitizeTasks } from './utils/helpers';
 import { debugDataSaving as _debugDataSaving } from './utils/debug';
 import { debounce } from './utils/debounce';
@@ -58,7 +58,7 @@ export default function App() {
   const [_unsavedChanges, setUnsavedChanges] = useState(DEFAULT_UNSAVED_CHANGES);
 
   // Activities state - moved here to avoid conditional hook calls
-  const [currentActivitiesTab, setCurrentActivitiesTab] = useState('discover');
+  const [currentActivitiesTab, setCurrentActivitiesTab] = useState('discover'); // used elsewhere for UI
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
 
@@ -74,7 +74,7 @@ export default function App() {
 
   // App lifecycle state
   const [isAppInitialized, setIsAppInitialized] = useState(false);
-  const [isAppVisible, setIsAppVisible] = useState(true);
+  const [isAppVisible, setIsAppVisible] = useState(true); // used by lifecycle handlers
   
   // Daily cleanup state
   const [lastCleanupDate, setLastCleanupDate] = useState<string>('');
@@ -318,14 +318,13 @@ export default function App() {
       }
 
       try {
-        console.log('🔄 Ensuring all future dates have gaps...');
+        console.log('🔄 Ensuring all rolling-window dates have gaps (past and future)...');
         
         // Import GapLogic dynamically
         const { GapLogic, normalizeWorkingDays } = await import('./utils/gapLogic');
         const { window_start, window_end } = GapLogic.calculateRollingWindow();
-        const today = new Date().toLocaleDateString('en-CA');
         
-        console.log(`📅 Checking future dates in rolling window: ${window_start} to ${window_end}`);
+        console.log(`📅 Checking dates in rolling window: ${window_start} to ${window_end}`);
         
         // Use normalizeWorkingDays to handle any format of calendar_working_days
         const workingDays = normalizeWorkingDays(preferences.calendar_working_days);
@@ -337,8 +336,8 @@ export default function App() {
           return;
         }
         
-        // Get all dates from today to the end of the rolling window
-        const startDate = new Date(today);
+        // Get all dates from the start of the rolling window to the end (includes past)
+        const startDate = new Date(window_start);
         const endDate = new Date(window_end);
         const datesToProcess: string[] = [];
         

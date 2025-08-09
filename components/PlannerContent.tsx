@@ -83,12 +83,7 @@ function PlannerContent({
         return;
       }
       
-      // Don't create gaps for past dates (except today)
-      if (selectedDateStr < today) {
-        console.log(`⏭️ Skipping past date: ${selectedDateStr}`);
-        setProcessedDates(prev => new Set([...prev, selectedDateStr]));
-        return;
-      }
+      // Allow past dates within rolling window so timeline can show historic gaps
       
       // Check if date is within the 14-day rolling window
       const { GapLogic } = await import('../utils/gapLogic');
