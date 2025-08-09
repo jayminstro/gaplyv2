@@ -4,7 +4,7 @@ import { format, addDays, startOfDay, isSameDay } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
-import { deduplicateGaps } from '../utils/gapLogic';
+import { deduplicateGaps, mergeAndDeduplicateGaps } from '../utils/gapLogic';
 import { normalizeWorkingDays } from '../utils/gapLogic';
 
 interface PlannerContentProps {
@@ -146,8 +146,13 @@ function PlannerContent({
           
           if (gapsForDate.length > 0) {
             console.log(`✅ Created ${gapsForDate.length} gaps for ${selectedDateStr}`);
-            // Don't update gaps state here - let the main app handle it
-            // The gaps will be saved to storage and loaded by the main app flow
+            // Proactively update app state via event so planner reflects immediately
+            try {
+              const merged = mergeAndDeduplicateGaps(gaps, gapsForDate);
+              window.dispatchEvent(new CustomEvent('forceReloadGaps', { detail: { gaps: merged } }));
+            } catch (e) {
+              console.warn('⚠️ Failed to broadcast new gaps to app state:', e);
+            }
           }
         } catch (error) {
           console.error('❌ Error creating gaps for selected date:', error);

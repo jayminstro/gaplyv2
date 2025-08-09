@@ -251,8 +251,9 @@ function PlannerTimeline({
       endHour = 23; // If end is before start, extend to end of day
     }
 
-    // Always show full working hours range for scrolling
-    for (let hour = startHour; hour <= endHour; hour++) {
+    // Show hour slots from start up to the last starting hour
+    // Example: 06:00–16:00 workday → slots: 06,07,...,15; last gap (15:00–16:00) renders inside 15:00 slot
+    for (let hour = startHour; hour < endHour; hour++) {
       const timeString = `${hour.toString().padStart(2, '0')}:00`;
       let displayTime;
 
