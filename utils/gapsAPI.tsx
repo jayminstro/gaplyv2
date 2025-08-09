@@ -1,8 +1,8 @@
 import { TimeGap, UserPreferences } from '../types/index';
-import { GapLogic, GapManager } from './gapLogic';
+import { GapLogic, normalizeWorkingDays } from './gapLogic';
 import { supabaseConfig } from './supabase/config';
 import { supabase } from './supabase/client';
-import { timeToMinutes, minutesToTime } from './helpers';
+import { timeToMinutes } from './helpers';
 import { generateUUID } from './uuid';
 
 /**
@@ -181,12 +181,14 @@ export class GapsAPI {
         }
         
         // Create gaps for each day in the rolling window
+        // Normalize working days once to handle any server/client shape
+        const normalizedWorkingDays = normalizeWorkingDays(preferences.calendar_working_days);
         for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
           const dateStr = date.toLocaleDateString('en-CA');
           
           // Check if it's a working day
           const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
-          if (!preferences.calendar_working_days.includes(dayOfWeek)) {
+          if (!normalizedWorkingDays.includes(dayOfWeek)) {
             console.log(`⏸️ Skipping non-working day: ${dateStr} (${dayOfWeek})`);
             continue;
           }
@@ -820,7 +822,7 @@ export class GapsAPI {
       
       const { GapLogic } = await import('./gapLogic');
       const { window_start, window_end } = GapLogic.calculateRollingWindow();
-      const today = new Date().toLocaleDateString('en-CA');
+      // no-op variable removed (today not used here)
       
       console.log(`📅 Recalculating gaps for rolling window: ${window_start} to ${window_end}`);
       
