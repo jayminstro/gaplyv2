@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
 import { GapLogic, deduplicateGaps, mergeAndDeduplicateGaps } from './utils/gapLogic';
@@ -281,6 +281,7 @@ export default function App() {
   }, []);
 
   // Load gaps from localStorage on app start and ensure future dates have gaps
+  const hasEnsuredFutureGapsRef = useRef(false);
   useEffect(() => {
     const loadGapsFromLocalStorage = () => {
       try {
@@ -307,6 +308,10 @@ export default function App() {
     };
 
     const ensureAllFutureDatesHaveGaps = async () => {
+      // Prevent effect-induced loops and redundant runs
+      if (hasEnsuredFutureGapsRef.current) {
+        return;
+      }
       if (!isAuthenticated || !session?.access_token || !preferences) {
         console.log('⚠️ Skipping ensureAllFutureDatesHaveGaps - missing auth or preferences');
         return;
@@ -407,6 +412,7 @@ export default function App() {
         }
         
         console.log(`✅ Finished ensuring gaps for all future dates`);
+        hasEnsuredFutureGapsRef.current = true;
       } catch (error) {
         console.error('❌ Error ensuring gaps for future dates:', error);
       }
@@ -472,7 +478,7 @@ export default function App() {
       window.removeEventListener('forceReloadGaps', handleForceReloadGaps as EventListener);
       window.removeEventListener('preferenceChange', handlePreferenceChange as EventListener);
     };
-  }, [isAuthenticated, session?.access_token, preferences, gaps, localFirstService]);
+  }, [isAuthenticated, session?.access_token, preferences, localFirstService]);
 
   // Check for widget mode and authentication on app start
   useEffect(() => {

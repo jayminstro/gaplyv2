@@ -71,7 +71,25 @@ export class PreferenceManager {
         PreferenceManager.instance.preloader = PreferencePreloader.getInstance();
         PreferenceManager.instance.preloader.initialize(storage);
       }
+      return PreferenceManager.instance;
     }
+
+    // If instance already exists, refresh its dependencies when a new storage is provided
+    if (storage && PreferenceManager.instance.storage !== storage) {
+      PreferenceManager.instance.storage = storage;
+      if (PreferenceManager.instance.preloader) {
+        PreferenceManager.instance.preloader.initialize(storage);
+      }
+    }
+
+    // Optionally merge in any new config flags without removing existing ones
+    if (config && Object.keys(config).length > 0) {
+      PreferenceManager.instance.config = {
+        ...PreferenceManager.instance.config,
+        ...config,
+      };
+    }
+
     return PreferenceManager.instance;
   }
 
@@ -193,7 +211,10 @@ export class PreferenceManager {
     
     // Change detection (Phase 2)
     if (this.changeDetector && this.preferences) {
-      const changeResult = this.changeDetector.detectChanges(this.preferences, preferences);
+      const normalizeDays = (val: any) => Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : val);
+      const normalizedOld = { ...this.preferences, calendar_working_days: normalizeDays(this.preferences.calendar_working_days) } as UserPreferences;
+      const normalizedNew = { ...preferences, calendar_working_days: normalizeDays(preferences.calendar_working_days) } as UserPreferences;
+      const changeResult = this.changeDetector.detectChanges(normalizedOld, normalizedNew);
       if (changeResult.hasChanges) {
         console.log('🔄 Preference changes detected:', changeResult.summary);
         

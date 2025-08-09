@@ -148,6 +148,29 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
     setLocalPreferences(safePreferences);
   }, [preferences]);
 
+  // Live preview: broadcast working day changes so planner can react immediately
+  useEffect(() => {
+    if (!localPreferences) return;
+    try {
+      window.dispatchEvent(new CustomEvent('workingDaysPreviewChange', {
+        detail: localPreferences.calendar_working_days as any
+      }));
+    } catch (e) {
+      // no-op
+    }
+  }, [localPreferences?.calendar_working_days]);
+
+  // Cleanup preview on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        window.dispatchEvent(new CustomEvent('workingDaysPreviewChange', { detail: null as any }));
+      } catch (e) {
+        // no-op
+      }
+    };
+  }, []);
+
   // Simplified settings categories with better grouping
   const settingsItems = [
     {
@@ -213,6 +236,13 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
         console.log('🌐 Syncing preferences to remote API...');
         await preferencesAPI.save(localPreferences);
         console.log('✅ Preferences synced to remote API');
+
+        // Clear live preview after successful save (planner will use committed prefs)
+        try {
+          window.dispatchEvent(new CustomEvent('workingDaysPreviewChange', { detail: null as any }));
+        } catch (e) {
+          // no-op
+        }
 
         // Update gaps if working time changed
         if (workingTimeChanged && session?.access_token) {

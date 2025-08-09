@@ -421,6 +421,42 @@ app.post("/make-server-966d4846/preferences", async (c) => {
     const body = await c.req.json();
     
     console.log("Received preferences data for user:", user.id);
+
+    // Sanitize incoming payload to match DB expectations
+    const toHHMMSS = (t: any): string => {
+      try {
+        if (!t || typeof t !== 'string') return t;
+        const parts = t.split(':');
+        if (parts.length >= 3) {
+          const hh = parts[0].padStart(2, '0');
+          const mm = parts[1].padStart(2, '0');
+          const ss = (parts[2] ?? '00').padStart(2, '0');
+          return `${hh}:${mm}:${ss}`;
+        } else if (parts.length === 2) {
+          const hh = parts[0].padStart(2, '0');
+          const mm = parts[1].padStart(2, '0');
+          return `${hh}:${mm}:00`;
+        } else {
+          return t;
+        }
+      } catch (_) {
+        return t;
+      }
+    };
+
+    // Normalize working days to a clean array of full day names
+    if (body.calendar_working_days !== undefined) {
+      body.calendar_working_days = normalizeWorkingDays(body.calendar_working_days);
+    }
+    if (body.calendar_work_start !== undefined) {
+      body.calendar_work_start = toHHMMSS(body.calendar_work_start);
+    }
+    if (body.calendar_work_end !== undefined) {
+      body.calendar_work_end = toHHMMSS(body.calendar_work_end);
+    }
+    if (body.preferred_categories !== undefined && !Array.isArray(body.preferred_categories)) {
+      body.preferred_categories = [];
+    }
     
     // Check if user preferences record exists
     const { data: existingPrefs, error: checkError } = await supabase
@@ -470,19 +506,36 @@ app.post("/make-server-966d4846/preferences", async (c) => {
       }
     });
 
+    // Map local keys to DB schema keys if DB uses legacy columns
+    // Prefer legacy keys 'work_start', 'work_end', 'working_days'
+    const dbData: any = { ...prefsData };
+    if (prefsData.calendar_work_start !== undefined) {
+      dbData.work_start = prefsData.calendar_work_start;
+      delete dbData.calendar_work_start;
+    }
+    if (prefsData.calendar_work_end !== undefined) {
+      dbData.work_end = prefsData.calendar_work_end;
+      delete dbData.calendar_work_end;
+    }
+    if (prefsData.calendar_working_days !== undefined) {
+      dbData.working_days = prefsData.calendar_working_days;
+      delete dbData.calendar_working_days;
+    }
+
     let result;
     if (existingPrefs) {
       // Update existing record
       result = await supabase
         .from('user_preferences')
-        .update(prefsData)
+        .update(dbData)
         .eq('user_id', user.id);
     } else {
       // Insert new record with defaults
       const defaultPrefs = getDefaultPreferences();
+      // Merge defaults then mapped data
       const insertData = { 
         ...defaultPrefs,
-        ...prefsData
+        ...dbData
       };
       result = await supabase
         .from('user_preferences')
@@ -490,12 +543,36 @@ app.post("/make-server-966d4846/preferences", async (c) => {
     }
 
     if (result.error) {
-      console.log("Database error details:", result.error);
-      return c.json({ 
-        error: "Failed to save preferences",
-        details: result.error.message,
-        code: result.error.code
-      }, 500);
+      console.log("Database error details (first attempt):", result.error);
+      // Fallback: retry with minimal safe fields only
+      const minimalFields = ['calendar_work_start','calendar_work_end','calendar_working_days','preferred_categories','default_energy_level'];
+      const minimalData: any = { user_id: user.id, updated_at: new Date().toISOString() };
+      for (const f of minimalFields) {
+        if (body[f] !== undefined) minimalData[f] = body[f];
+      }
+
+      let fallbackResult;
+      if (existingPrefs) {
+        fallbackResult = await supabase
+          .from('user_preferences')
+          .update(minimalData)
+          .eq('user_id', user.id);
+      } else {
+        fallbackResult = await supabase
+          .from('user_preferences')
+          .insert(minimalData);
+      }
+
+      if (fallbackResult.error) {
+        console.log("Database error details (fallback attempt):", fallbackResult.error);
+        return c.json({ 
+          error: "Failed to save preferences",
+          details: fallbackResult.error.message,
+          code: fallbackResult.error.code
+        }, 500);
+      }
+      console.log("Preferences saved successfully for user (fallback):", user.id);
+      return c.json({ success: true, fallback: true });
     }
 
     console.log("Preferences saved successfully for user:", user.id);
