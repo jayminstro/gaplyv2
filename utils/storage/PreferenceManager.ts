@@ -497,10 +497,8 @@ export class PreferenceManager {
    */
   private async loadFromServer(): Promise<UserPreferences | null> {
     try {
-      // This would call your preferences API
-      // const response = await preferencesAPI.get();
-      // return response;
-      return null; // Placeholder
+      const { preferencesAPI } = await import('../api');
+      return await preferencesAPI.get();
     } catch (error) {
       console.warn('⚠️ Failed to load preferences from server:', error);
       return null;
@@ -522,13 +520,27 @@ export class PreferenceManager {
   /**
    * Sync preferences to server in background
    */
-  private async syncToServer(_preferences: UserPreferences): Promise<void> {
+  private async syncToServer(preferences: UserPreferences): Promise<void> {
     try {
-      // This would call your preferences API
-      // await preferencesAPI.update(preferences);
+      const { preferencesAPI } = await import('../api');
+      const diff = this.preferences ? this.computePreferenceDiff(this.preferences, preferences) : preferences;
+      if (Object.keys(diff).length === 0) return;
+      await preferencesAPI.patch(diff);
     } catch (error) {
       console.warn('⚠️ Background server sync failed:', error);
     }
+  }
+
+  private computePreferenceDiff(oldPrefs: any, newPrefs: any) {
+    const normalizeDays = (val: any) => Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : []);
+    const diff: any = {};
+    const keys = Object.keys(newPrefs || {});
+    for (const k of keys) {
+      const ov = k === 'calendar_working_days' ? normalizeDays(oldPrefs?.[k]) : oldPrefs?.[k];
+      const nv = k === 'calendar_working_days' ? normalizeDays(newPrefs?.[k]) : newPrefs?.[k];
+      if (JSON.stringify(ov) !== JSON.stringify(nv)) diff[k] = nv;
+    }
+    return diff;
   }
 
   /**

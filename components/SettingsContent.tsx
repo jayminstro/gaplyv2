@@ -215,26 +215,51 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
     setLocalPreferences(prev => ({ ...prev, [key]: value }));
   };
 
+  const normalizeDays = (val: any): string[] => Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : []);
+  const computePreferenceDiff = (oldPrefs: any, newPrefs: any) => {
+    const diff: any = {};
+    const keys = Object.keys(newPrefs || {});
+    for (const k of keys) {
+      const ov = k === 'calendar_working_days' ? normalizeDays(oldPrefs?.[k]) : oldPrefs?.[k];
+      const nv = k === 'calendar_working_days' ? normalizeDays(newPrefs?.[k]) : newPrefs?.[k];
+      if (JSON.stringify(ov) !== JSON.stringify(nv)) diff[k] = nv;
+    }
+    return diff;
+  };
+
+  const isWorkingTimeChanged = (oldP: any, newP: any) => (
+    oldP?.calendar_work_start !== newP?.calendar_work_start ||
+    oldP?.calendar_work_end !== newP?.calendar_work_end ||
+    JSON.stringify(normalizeDays(oldP?.calendar_working_days)) !== JSON.stringify(normalizeDays(newP?.calendar_working_days))
+  );
+
   const savePreferences = async () => {
     setIsSaving(true);
     try {
-      // Check if working time preferences changed
-      const workingTimeChanged = 
-        preferences.calendar_work_start !== localPreferences.calendar_work_start ||
-        preferences.calendar_work_end !== localPreferences.calendar_work_end ||
-        JSON.stringify(preferences.calendar_working_days) !== JSON.stringify(localPreferences.calendar_working_days);
+      // Compute minimal diff against current props (last known canonical in state)
+      const diff = computePreferenceDiff(preferences, localPreferences);
+      const hasChanges = Object.keys(diff).length > 0;
 
-      // Save to local storage first
+      // Save to local storage first for offline-first
       if (localFirstService) {
         console.log('💾 Saving preferences to local storage...');
         await localFirstService.savePreferences(localPreferences);
         console.log('✅ Preferences saved to local storage');
       }
 
-      // Then sync to remote API
+      // If no changes, skip network
+      if (!hasChanges) {
+        onPreferencesUpdate?.(localPreferences);
+        toast.success('Settings saved');
+        return;
+      }
+
+      // Then sync to remote API with minimal diff and optimistic concurrency
       try {
-        console.log('🌐 Syncing preferences to remote API...');
-        await preferencesAPI.save(localPreferences);
+        console.log('🌐 Syncing preferences to remote API (PATCH)...');
+        const expected = preferences?.updated_at;
+        const payload = expected ? { ...diff, expected_updated_at: expected } : diff;
+        let canonical = await preferencesAPI.patch(payload);
         console.log('✅ Preferences synced to remote API');
 
         // Clear live preview after successful save (planner will use committed prefs)
@@ -244,13 +269,18 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
           // no-op
         }
 
-        // Update gaps if working time changed
+        // Replace local state with canonical server response
+        onPreferencesUpdate?.(canonical);
+        setLocalPreferences(canonical);
+
+        // Update gaps if working time changed (based on canonical vs previous)
+        const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
         if (workingTimeChanged && session?.access_token) {
           try {
             console.log('🔄 Working time changed, updating gaps...');
             const result = await GapsAPI.updateGapsForWorkingTimeChange(
               preferences,
-              localPreferences,
+              canonical,
               session.access_token
             );
             console.log('✅ Gaps updated for working time change:', result);
@@ -273,13 +303,59 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
         } else {
           toast.success('Settings saved');
         }
-      } catch (apiError) {
-        console.error('⚠️ Failed to sync to remote API, but local save succeeded:', apiError);
-        // Don't show error to user since local save worked
-        toast.success('Settings saved locally');
+      } catch (apiError: any) {
+        // Fallback 1: try legacy POST + then GET canonical
+        try {
+          console.warn('⚠️ PATCH failed, attempting POST fallback...');
+          await preferencesAPI.save(localPreferences);
+          const canonical = await preferencesAPI.get();
+          onPreferencesUpdate?.(canonical);
+          setLocalPreferences(canonical);
+
+          const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
+          if (workingTimeChanged && session?.access_token) {
+            try {
+              await GapsAPI.updateGapsForWorkingTimeChange(preferences, canonical, session.access_token);
+            } catch {}
+          }
+          toast.success('Settings saved');
+        } catch (postError: any) {
+          // Handle concurrency conflict: 409 → refetch, reapply diff, retry PATCH once
+          const message = (apiError instanceof Error ? apiError.message : '') || '';
+          if ((message.includes('409') || message.toLowerCase().includes('conflict')) && preferencesAPI.get) {
+            try {
+              console.log('🔁 Version conflict detected, refetching canonical and retrying...');
+              const serverPrefs = await preferencesAPI.get();
+              const retryDiff = computePreferenceDiff(serverPrefs, localPreferences);
+              if (Object.keys(retryDiff).length > 0) {
+                const retryPayload = { ...retryDiff, expected_updated_at: serverPrefs?.updated_at };
+                const canonical = await preferencesAPI.patch(retryPayload);
+                onPreferencesUpdate?.(canonical);
+                setLocalPreferences(canonical);
+
+                const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
+                if (workingTimeChanged && session?.access_token) {
+                  try {
+                    await GapsAPI.updateGapsForWorkingTimeChange(serverPrefs, canonical, session.access_token);
+                  } catch {}
+                }
+                toast.success('Settings saved');
+              } else {
+                onPreferencesUpdate?.(serverPrefs);
+                setLocalPreferences(serverPrefs);
+                toast.success('Settings saved');
+              }
+            } catch (retryError) {
+              console.error('⚠️ Conflict retry failed:', retryError);
+              toast.success('Settings saved locally');
+            }
+          } else {
+            console.error('⚠️ Failed to sync to remote API, but local save succeeded:', apiError, postError);
+            toast.success('Settings saved locally');
+          }
+        }
       }
 
-      onPreferencesUpdate?.(localPreferences);
     } catch (error) {
       console.error('Error saving preferences:', error);
       toast.error('Failed to save settings');

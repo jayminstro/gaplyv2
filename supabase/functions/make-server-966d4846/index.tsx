@@ -3,10 +3,6 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 
-// Workaround for editor lints in non-Deno environment
-// deno-lint-ignore no-explicit-any
-declare const Deno: any;
-
 // UUID generation function
 const generateUUID = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -1128,8 +1124,8 @@ app.put("/make-server-966d4846/tasks/:id", async (c) => {
         .eq('user_id', user.id)
         .single();
       
-      let existingDate: string | null = null;
-      let existingTime: string | null = null;
+      let existingDate = null;
+      let existingTime = null;
       if (existingTask?.due_date) {
         const existing = new Date(existingTask.due_date);
         existingDate = existing.toISOString().split('T')[0];
@@ -1152,8 +1148,8 @@ app.put("/make-server-966d4846/tasks/:id", async (c) => {
         .eq('user_id', user.id)
         .single();
       
-      let existingDate: string | null = null;
-      let existingTime: string | null = null;
+      let existingDate = null;
+      let existingTime = null;
       if (existingTask?.reminder_date) {
         const existing = new Date(existingTask.reminder_date);
         existingDate = existing.toISOString().split('T')[0];
@@ -1360,8 +1356,8 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
       }, 400);
     }
 
-    // Calculate remaining gaps (do not include columns that may not exist in DB)
-    const newGaps: any[] = [];
+    // Calculate remaining gaps
+    const newGaps = [];
     
     // Gap before task (if any)
     if (taskStartMinutes > gapStartMinutes) {
@@ -1373,6 +1369,8 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         start_time: originalGap.start_time,
         end_time: taskStartTime,
         duration_minutes: beforeGapDuration,
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         modified_by: 'user'
@@ -1389,14 +1387,28 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         start_time: taskEndTime,
         end_time: originalGap.end_time,
         duration_minutes: afterGapDuration,
+        parent_gap_id: originalGap.id,
+        original_gap_id: originalGap.original_gap_id || originalGap.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         modified_by: 'user'
       });
     }
 
-    // Execute the split robustly: insert new gaps first, then delete original gap.
-    // This avoids deleting the original gap if creation of new gaps fails.
+    // Execute the split in a transaction
+    // 1. Delete original gap
+    const { error: deleteError } = await supabase
+      .from('gaps')
+      .delete()
+      .eq('id', gapId)
+      .eq('user_id', user.id);
+
+    if (deleteError) {
+      console.log('❌ [Gap Schedule] Error deleting original gap:', deleteError);
+      return c.json({ error: "Failed to delete original gap" }, 500);
+    }
+
+    // 2. Insert new gaps (if any)
     if (newGaps.length > 0) {
       const { error: insertError } = await supabase
         .from('gaps')
@@ -1406,59 +1418,24 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
         console.log('❌ [Gap Schedule] Error inserting new gaps:', insertError);
         return c.json({ error: "Failed to create new gaps" }, 500);
       }
-
-      const { error: deleteError } = await supabase
-        .from('gaps')
-        .delete()
-        .eq('id', gapId)
-        .eq('user_id', user.id);
-
-      if (deleteError) {
-        console.log('❌ [Gap Schedule] Error deleting original gap after insert:', deleteError);
-        return c.json({ error: "Failed to delete original gap" }, 500);
-      }
-    } else {
-      // Task fully consumes gap: just delete the original gap
-      const { error: deleteError } = await supabase
-        .from('gaps')
-        .delete()
-        .eq('id', gapId)
-        .eq('user_id', user.id);
-
-      if (deleteError) {
-        console.log('❌ [Gap Schedule] Error deleting fully-consumed original gap:', deleteError);
-        return c.json({ error: "Failed to delete original gap" }, 500);
-      }
     }
 
-    // 3. Create/update the task (map to DB schema)
-    const taskId = (taskData && taskData.id) ? taskData.id : generateUUID();
-    const durationMinutes = typeof taskData?.duration === 'string' 
-      ? parseDurationToMinutes(taskData.duration)
-      : (taskData?.duration || 0);
-    const dueDateIso = combineDateAndTime(originalGap.date, taskStartTime);
-    const reminderIso = combineDateAndTime(taskData?.reminderDate || null, taskData?.reminderTime || null);
-
-    const dbTask: any = {
-      id: taskId,
+    // 3. Create/update the task
+    const taskWithGap = {
+      ...taskData,
+      id: taskData.id || generateUUID(),
       user_id: user.id,
-      title: taskData?.title,
-      category: taskData?.category || 'Personal',
-      duration: durationMinutes,
-      energy_level: taskData?.energyLevel || 'Medium',
-      notes: taskData?.notes || null,
-      priority: taskData?.priority || 'Medium',
-      completed: taskData?.isCompleted || taskData?.is_completed || false,
-      due_date: dueDateIso,
-      reminder_date: reminderIso,
-      timerStoppedAt: taskData?.timerStoppedAt || null,
+      scheduled_gap_id: gapId,
+      dueDate: originalGap.date,
+      dueTime: taskStartTime,
+      status: 'scheduled',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    const { data: upsertedTask, error: taskError } = await supabase
+    const { data: createdTask, error: taskError } = await supabase
       .from('tasks')
-      .upsert(dbTask)
+      .upsert(taskWithGap)
       .select()
       .single();
 
@@ -1467,42 +1444,10 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
       return c.json({ error: "Failed to create task" }, 500);
     }
 
-    // Transform database task back to frontend format
-    const dueDateTime = splitTimestamp(upsertedTask.due_date);
-    const reminderDateTime = splitTimestamp(upsertedTask.reminder_date);
-    const transformedTask = {
-      id: upsertedTask.id,
-      user_id: upsertedTask.user_id,
-      title: upsertedTask.title,
-      category: upsertedTask.category,
-      duration: formatDurationFromMinutes(upsertedTask.duration),
-      dueDate: dueDateTime.date,
-      dueTime: dueDateTime.time,
-      status: upsertedTask.completed ? 'completed' : 'draft',
-      isTimerRunning: false,
-      timerRemaining: upsertedTask.duration * 60,
-      timerTotal: upsertedTask.duration * 60,
-      iconColor: getDefaultIconColor(upsertedTask.category),
-      icon: getDefaultIcon(upsertedTask.category),
-      notes: upsertedTask.notes,
-      energyLevel: upsertedTask.energy_level,
-      reminderDate: reminderDateTime.date,
-      reminderTime: reminderDateTime.time,
-      priority: upsertedTask.priority,
-      scheduledGapId: null,
-      googleCalendarEventId: null,
-      completedSessions: 0,
-      isCompleted: upsertedTask.completed || false,
-      is_completed: upsertedTask.completed || false,
-      timerStoppedAt: upsertedTask.timerStoppedAt,
-      created_at: upsertedTask.created_at,
-      updated_at: upsertedTask.updated_at
-    };
-
     console.log('✅ [Gap Schedule] Successfully scheduled task:', {
       originalGapId: gapId,
       newGapsCount: newGaps.length,
-      taskId: upsertedTask.id,
+      taskId: createdTask.id,
       newGaps: newGaps.map(g => ({ id: g.id, start_time: g.start_time, end_time: g.end_time }))
     });
 
@@ -1510,7 +1455,7 @@ app.post("/make-server-966d4846/gaps/schedule", async (c) => {
       success: true, 
       originalGapId: gapId,
       newGaps: newGaps,
-      task: transformedTask
+      task: createdTask
     });
 
   } catch (error) {
@@ -1586,7 +1531,7 @@ app.post("/make-server-966d4846/gaps/initialize", async (c) => {
     // Create default free hour gaps
     const workStart = timeToMinutes(preferences.calendar_work_start);
     const workEnd = timeToMinutes(preferences.calendar_work_end);
-    const gaps: any[] = [];
+    const gaps = [];
 
     // Create one gap per hour
     for (let hour = workStart; hour < workEnd; hour += 60) {
@@ -1732,7 +1677,7 @@ app.post("/make-server-966d4846/gaps/preload", async (c) => {
     const window_end = new Date(today);
     window_end.setDate(today.getDate() + 7);
     
-    const preloadDates: string[] = [];
+    const preloadDates = [];
     for (let i = 1; i <= 3; i++) {
       const preloadDate = new Date(window_end);
       preloadDate.setDate(preloadDate.getDate() + i);
@@ -1741,7 +1686,7 @@ app.post("/make-server-966d4846/gaps/preload", async (c) => {
 
     console.log(`🔄 [Preload] Creating gaps for ${preloadDates.length} dates:`, preloadDates);
 
-    const allGaps: any[] = [];
+    const allGaps = [];
     
     for (const date of preloadDates) {
       // Check if gaps already exist for this date
@@ -1759,7 +1704,7 @@ app.post("/make-server-966d4846/gaps/preload", async (c) => {
       // Create gaps for this date
       const workStart = timeToMinutes(preferences.calendar_work_start);
       const workEnd = timeToMinutes(preferences.calendar_work_end);
-      const gaps: any[] = [];
+      const gaps = [];
 
       // Create one gap per hour
       for (let hour = workStart; hour < workEnd; hour += 60) {
