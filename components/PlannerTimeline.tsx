@@ -3,6 +3,7 @@ import { format, parseISO, addMinutes, isBefore, isAfter, isSameDay } from 'date
 import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Zap, Calendar, Settings, Sparkles } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
+import { ActivityStackModal } from './ActivityStackModal';
 
 interface TimelineItem {
   id: string;
@@ -44,6 +45,11 @@ function PlannerTimeline({
   
   // Ref for the timeline container to enable auto-scrolling
   const timelineRef = useRef<HTMLDivElement>(null);
+  
+  // Stacking modal state (overlaps only)
+  const [stackModalOpen, setStackModalOpen] = useState(false);
+  const [selectedStack, setSelectedStack] = useState<Task[]>([]);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
   
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
@@ -322,6 +328,50 @@ function PlannerTimeline({
     });
   };
   
+  // Group overlapping tasks among a set of timeline items (tasks only)
+  const groupOverlappingTasks = (items: TimelineItem[]) => {
+    const taskItems = items
+      .filter((it) => it.type === 'task')
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+    const groups: { items: TimelineItem[]; startTime: Date; endTime: Date }[] = [];
+    let currentGroup: TimelineItem[] = [];
+    let currentGroupEnd: Date | null = null;
+
+    for (const item of taskItems) {
+      if (currentGroup.length === 0) {
+        currentGroup = [item];
+        currentGroupEnd = item.endTime;
+      } else {
+        if (item.startTime < (currentGroupEnd as Date)) {
+          currentGroup.push(item);
+          // Extend end if needed
+          if (item.endTime > (currentGroupEnd as Date)) {
+            currentGroupEnd = item.endTime;
+          }
+        } else {
+          groups.push({
+            items: currentGroup,
+            startTime: currentGroup[0].startTime,
+            endTime: currentGroupEnd as Date,
+          });
+          currentGroup = [item];
+          currentGroupEnd = item.endTime;
+        }
+      }
+    }
+
+    if (currentGroup.length > 0) {
+      groups.push({
+        items: currentGroup,
+        startTime: currentGroup[0].startTime,
+        endTime: currentGroupEnd as Date,
+      });
+    }
+
+    return groups;
+  };
+  
   const formatTimeRange = (startTime: Date, endTime: Date) => {
     const is24Hour = userPreferences?.time_format === '24h';
     const timeFormat = is24Hour ? 'HH:mm' : 'h:mm a';
@@ -339,6 +389,7 @@ function PlannerTimeline({
   };
 
   return (
+    <>
     <div ref={timelineRef} className="space-y-4 pb-8 relative">
       {!hasWorkingDays && (
         <div className="text-center py-8 bg-slate-800/30 border border-slate-700/30 rounded-2xl">
@@ -356,7 +407,30 @@ function PlannerTimeline({
       )}
       {timeSlots.map((slot) => {
         const itemsAtHour = getItemsForHour(slot.hour24);
-        
+
+        // Build render units: gaps as-is, tasks grouped by overlap
+        type RenderUnit =
+          | { kind: 'gap'; item: TimelineItem }
+          | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date };
+
+        const gapUnits: RenderUnit[] = itemsAtHour
+          .filter((it) => it.type === 'gap')
+          .map((gap) => ({ kind: 'gap', item: gap }));
+
+        const taskGroups = groupOverlappingTasks(itemsAtHour);
+        const groupUnits: RenderUnit[] = taskGroups.map((g) => ({
+          kind: 'taskGroup',
+          items: g.items,
+          startTime: g.startTime,
+          endTime: g.endTime,
+        }));
+
+        const renderUnits: RenderUnit[] = [...gapUnits, ...groupUnits].sort(
+          (a, b) =>
+            (a.kind === 'gap' ? a.item.startTime.getTime() : a.startTime.getTime()) -
+            (b.kind === 'gap' ? b.item.startTime.getTime() : b.startTime.getTime())
+        );
+
         return (
           <div key={slot.time} className="flex items-start gap-4 relative">
             {/* Time label */}
@@ -371,59 +445,117 @@ function PlannerTimeline({
             
             {/* Timeline items */}
             <div className="flex-1 space-y-3">
-              {itemsAtHour.length > 0 ? (
-                itemsAtHour.map((item) => {
-                  const isGap = item.type === 'gap';
-                  const gapSourceInfo = isGap ? getGapSourceInfo(item.data as TimeGap) : null;
-                  
-                  return (
-                    <button
-                      key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
-                      onClick={() => handleItemClick(item)}
-                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation ${
-                        isGap
-                          ? `bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`
-                          : 'bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50'
-                      }`}
-                      type="button"
-                    >
-                      <div className="flex items-center gap-3">
-                        {/* Icon */}
-                        <div 
-                          className={`w-10 h-10 ${item.iconColor} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
-                        >
-                          {item.type === 'gap' ? item.icon : renderSafeIcon(item.icon)}
-                        </div>
-                        
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <h3 className="text-white font-medium truncate text-base">
-                              {item.title}
-                            </h3>
-                            {isGap && gapSourceInfo && (
+              {renderUnits.length > 0 ? (
+                renderUnits.map((unit) => {
+                  if (unit.kind === 'gap') {
+                    const item = unit.item;
+                    const gapSourceInfo = getGapSourceInfo(item.data as TimeGap);
+                    return (
+                      <button
+                        key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
+                        onClick={() => handleItemClick(item)}
+                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`}
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className={`w-10 h-10 ${gapSourceInfo.color} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                          >
+                            {gapSourceInfo.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="text-white font-medium truncate text-base">Gap</h3>
                               <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full">
                                 {gapSourceInfo.label}
                               </span>
-                            )}
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-slate-400">
+                              <span className="truncate font-medium">
+                                {formatTimeRange(item.startTime, item.endTime)}
+                              </span>
+                              {userPreferences?.show_duration_in_planner && (
+                                <>
+                                  <span>•</span>
+                                  <span>{item.duration}</span>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  // taskGroup unit
+                  const items = unit.items;
+                  const startTime = unit.startTime;
+                  const endTime = unit.endTime;
+
+                  if (items.length === 1) {
+                    const item = items[0];
+                    return (
+                      <button
+                        key={`task-${item.id}-${item.startTime.getTime()}`}
+                        onClick={() => handleItemClick(item)}
+                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50`}
+                        type="button"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className={`w-10 h-10 ${item.iconColor} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                          >
+                            {renderSafeIcon(item.icon)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-slate-400">
+                              <span className="truncate font-medium">{formatTimeRange(item.startTime, item.endTime)}</span>
+                              {userPreferences?.show_duration_in_planner && (
+                                <>
+                                  <span>•</span>
+                                  <span>{item.duration}</span>
+                                </>
+                              )}
+                              {item.category && (
+                                <>
+                                  <span>•</span>
+                                  <span className="truncate">{item.category}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  // Stack button for overlapping tasks
+                  return (
+                    <button
+                      key={`stack-${slot.hour24}-${startTime.getTime()}`}
+                      onClick={() => {
+                        setSelectedStack(items.map((t) => t.data as Task));
+                        setSelectedTimeSlot(formatTimeRange(startTime, endTime));
+                        setStackModalOpen(true);
+                      }}
+                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-amber-500/30 hover:border-amber-500/50`}
+                      type="button"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 bg-amber-500/20 rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                          <Clock className="w-4 h-4 text-amber-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-white font-medium truncate text-base">{items.length} overlapping activities</h3>
+                          </div>
                           <div className="flex items-center gap-3 text-sm text-slate-400">
-                            <span className="truncate font-medium">
-                              {formatTimeRange(item.startTime, item.endTime)}
-                            </span>
-                            {userPreferences?.show_duration_in_planner && (
-                              <>
-                                <span>•</span>
-                                <span>{item.duration}</span>
-                              </>
-                            )}
-                            {item.type === 'task' && item.category && (
-                              <>
-                                <span>•</span>
-                                <span className="truncate">{item.category}</span>
-                              </>
-                            )}
+                            <span className="truncate font-medium">{formatTimeRange(startTime, endTime)}</span>
+                            <span>•</span>
+                            <span>{items.length} tasks</span>
                           </div>
                         </div>
                       </div>
@@ -579,6 +711,23 @@ function PlannerTimeline({
         </div>
       )}
     </div>
+    {/* Activity Stack Modal - handles overlapping task groups */}
+    <ActivityStackModal
+      isOpen={stackModalOpen}
+      onClose={() => setStackModalOpen(false)}
+      activities={selectedStack}
+      timeSlot={selectedTimeSlot}
+      onActivitySelect={(activity) => {
+        setStackModalOpen(false);
+        onTaskOpen(activity);
+      }}
+      onStartTimer={(activity) => {
+        setStackModalOpen(false);
+        onTaskOpen(activity);
+      }}
+      stackReason={selectedStack.length <= 1 ? 'single' : 'time_overlap'}
+    />
+    </>
   );
 }
 
