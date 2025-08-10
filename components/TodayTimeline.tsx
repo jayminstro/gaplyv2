@@ -146,23 +146,7 @@ export function TodayTimeline({
   const startTimeStr = minutesToTime(timelineStartMinutes);
   const endTimeStr = minutesToTime(timelineEndMinutes);
   
-  // Calculate real-time display for middle position - show actual current time if within timeline
-  const getCurrentTimeDisplay = () => {
-    if (currentMinutes >= timelineStartMinutes && currentMinutes <= timelineEndMinutes) {
-      // Show current time if it's within the visible timeline
-      const hours = actualCurrentTime.getHours();
-      const minutes = actualCurrentTime.getMinutes();
-      const period = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
-      return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
-    } else {
-      // Show middle time of timeline range
-      const middleMinutes = Math.floor((timelineStartMinutes + timelineEndMinutes) / 2);
-      const middleHour = Math.floor(middleMinutes / 60);
-      const middleMinute = middleMinutes % 60;
-      return formatTimelineTime(middleHour, middleMinute);
-    }
-  };
+  // Remove unused helper in compact view
 
   // Time-collision configuration: only stack actual overlaps
   const maxStackSize = 3; // Maximum individual activities before creating a summary stack
@@ -189,8 +173,8 @@ export function TodayTimeline({
         return false;
       }
       
-      // Only include activities within the timeline's time range
-      const isInTimelineRange = taskMinutes >= timelineStartMinutes && taskMinutes < timelineEndMinutes;
+      // Include activities that overlap the visible timeline (even if already started)
+      const isInTimelineRange = (taskEndMinutes > timelineStartMinutes) && (taskMinutes < timelineEndMinutes);
       if (!isInTimelineRange) {
         console.log('🔍 Filtered out task outside timeline range:', task.title, 'taskTime:', minutesToTime(taskMinutes), 'timelineRange:', `${minutesToTime(timelineStartMinutes)}-${minutesToTime(timelineEndMinutes)}`);
         return false;
@@ -456,6 +440,11 @@ export function TodayTimeline({
   if (displayItems.length < 3) {
     const firstUpcomingGap = upcomingItems.find((i) => i.type === 'gap');
     if (firstUpcomingGap) {
+      // If the original gap is already present in displayItems, remove it before chunking
+      const originalGapIndex = displayItems.findIndex((d) => d.id === firstUpcomingGap.id);
+      if (originalGapIndex !== -1) {
+        displayItems.splice(originalGapIndex, 1);
+      }
       const gapStartMin = Math.max(timeToMinutes(firstUpcomingGap.startTime), roundedCurrentMinutes);
       const gapEndMin = timeToMinutes(firstUpcomingGap.endTime);
       const chunkSize = 60; // split into 60-minute chunks (consistent with gap generation)
@@ -514,23 +503,18 @@ export function TodayTimeline({
   }
 
   // Define a compact display range spanning only the visible items
-  const displayRangeStartMinutes = displayItems.length > 0
-    ? timeToMinutes(displayItems[0].startTime)
-    : timelineStartMinutes;
-  const displayRangeEndMinutes = displayItems.length > 0
-    ? Math.max(...displayItems.map((i) => timeToMinutes(i.endTime)))
-    : timelineEndMinutes;
-  const compactRangeMinutes = Math.max(displayRangeEndMinutes - displayRangeStartMinutes, 15);
+  // Expand compact range slightly to avoid full-width rounding issues
+  // Equal-width layout does not require explicit compact range
+  // Kept for potential future proportional layout; not needed in equal-width layout
+  // const compactRangeMinutes = Math.max(displayRangeEndMinutes - displayRangeStartMinutes, 15);
 
-  // Centered header time: show the start time of the first visible item; fallback to current time display
-  const headerTimeDisplay = displayItems.length > 0
-    ? (() => {
-        const start = displayRangeStartMinutes;
-        const h = Math.floor(start / 60);
-        const m = start % 60;
-        return formatTimelineTime(h, m);
-      })()
-    : getCurrentTimeDisplay();
+  // Helper: pretty label from HH:MM string
+  const formatTimeLabel = (hhmm: string) => {
+    const mins = timeToMinutes(hhmm);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return formatTimelineTime(h, m);
+  };
 
   // Compact view does not render progress bar/line
 
@@ -635,20 +619,24 @@ export function TodayTimeline({
   return (
     <>
       <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
-        {/* Centered Start Time for the visible items */}
-        <div className="flex items-center justify-center mb-4 text-sm text-slate-300">
-          <span className="text-slate-300 font-medium">{headerTimeDisplay}</span>
+        {/* Time labels for each of the three items, same level/style as header */}
+        <div className="flex items-center justify-between mb-3 text-sm text-slate-300">
+          {displayItems.slice(0, 3).map((it, idx) => (
+            <div key={`lbl-${it.id}-${idx}`} className="flex-1 text-center font-medium">
+              {formatTimeLabel(it.startTime)}
+            </div>
+          ))}
         </div>
         
         <div className="relative">
-          {/* Compact Timeline Container showing only the next 3 items */}
-          <div className="relative h-12 mb-3 bg-slate-800/40 rounded-2xl border border-slate-700/50 overflow-hidden">
-            {displayItems.map((item) => {
-              const itemStart = timeToMinutes(item.startTime);
-              const itemEnd = timeToMinutes(item.endTime);
-              const leftPct = ((itemStart - displayRangeStartMinutes) / compactRangeMinutes) * 100;
-              const widthPct = Math.max(((itemEnd - itemStart) / compactRangeMinutes) * 100, 8);
-              const clampedLeft = Math.max(0, Math.min(leftPct, 100 - widthPct));
+          {/* Compact Timeline Container with 3 equal-sized items */}
+          <div className="relative h-12 mb-1 bg-slate-800/40 rounded-2xl border border-slate-700/50 overflow-hidden">
+            {displayItems.slice(0, 3).map((item, idx) => {
+              const displayCount = Math.min(displayItems.length, 3);
+              const slotWidth = 100 / displayCount;
+              const gutter = 1; // percent
+              const widthPct = Math.max(slotWidth - gutter, 5);
+              const leftPct = idx * slotWidth + gutter / 2;
 
               if (item.type === 'gap') {
                 return (
@@ -656,7 +644,7 @@ export function TodayTimeline({
                     key={item.id}
                     onClick={() => handleItemClick(item)}
                     className={`absolute top-0 h-full transition-all duration-200 flex items-center justify-center group rounded-2xl bg-slate-600/25 hover:bg-slate-600/35 cursor-pointer border border-slate-600/30 z-10`}
-                    style={{ left: `${clampedLeft}%`, width: `${widthPct}%`, margin: '0 1px' }}
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%`, margin: '0 1px' }}
                   >
                     <div className="flex items-center gap-1 text-slate-300 group-hover:text-slate-200 px-3 truncate">
                       <div className="w-2 h-2 bg-slate-400/60 rounded-full flex-shrink-0"></div>
@@ -672,7 +660,7 @@ export function TodayTimeline({
                   key={item.id}
                   onClick={() => handleItemClick(item)}
                   className={`absolute top-0 h-full px-3 ${getActivityColor(item)} rounded-2xl transition-all duration-200 hover:opacity-90 hover:scale-[1.02] flex items-center gap-2 z-20 shadow-lg border-2 border-white/20 mx-0.5`}
-                  style={{ left: `${clampedLeft}%`, width: `${widthPct}%`, margin: '0 1px' }}
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%`, margin: '0 1px' }}
                 >
                   {item.type === 'stack' ? (
                     <>
