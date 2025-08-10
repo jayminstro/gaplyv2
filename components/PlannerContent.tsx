@@ -12,6 +12,7 @@ interface PlannerContentProps {
   globalTasks: Task[];
   gaps: TimeGap[];
   onTaskOpen: (task: Task) => void;
+  onTaskEdit: (task: Task) => void;
   onGapUtilize: (gap: TimeGap) => void;
   userPreferences?: UserPreferences;
   session?: any;
@@ -22,6 +23,7 @@ function PlannerContent({
   globalTasks, 
   gaps, 
   onTaskOpen, 
+  onTaskEdit,
   onGapUtilize,
   userPreferences,
   session,
@@ -575,6 +577,7 @@ function PlannerContent({
           selectedDate={selectedDate}
           currentTime={currentTime}
           onTaskOpen={onTaskOpen}
+          onTaskEdit={onTaskEdit}
           onGapUtilize={onGapUtilize}
           userPreferences={userPreferences}
           isWorkingDay={isSelectedDateWorkingDay}
