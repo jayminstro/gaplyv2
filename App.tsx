@@ -671,6 +671,56 @@ export default function App() {
     initializeWithLoginSync();
   }, [isAuthenticated, user?.id]);
 
+  // Realtime subscription to tasks changes for this user (INSERT/UPDATE/DELETE)
+  useEffect(() => {
+    if (!isAuthenticated || !session?.user?.id || !localFirstService) return;
+
+    const userId = session.user.id;
+    console.log('🔔 Subscribing to realtime task changes for user:', userId);
+
+    const channel = supabase.channel(`tasks:user:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+        async (payload) => {
+          try {
+            if (payload.eventType === 'DELETE') {
+              const deletedId = (payload as any)?.old?.id as string | undefined;
+              if (deletedId) {
+                console.log('🗑️ Realtime delete received for task:', deletedId);
+                await localFirstService.deleteTask(deletedId);
+                setGlobalTasks(prev => prev.filter(t => t.id !== deletedId));
+              }
+              return;
+            }
+
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              console.log('🔄 Realtime upsert received, refreshing tasks from server...');
+              try {
+                const serverTasks = await tasksAPI.get();
+                await localFirstService.saveTasks(serverTasks, true);
+                setGlobalTasks(serverTasks);
+              } catch (refreshError) {
+                console.warn('⚠️ Failed to refresh tasks on realtime event:', refreshError);
+              }
+            }
+          } catch (e) {
+            console.warn('Realtime handler error:', e);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime channel status:', status);
+      });
+
+    return () => {
+      try {
+        console.log('🔕 Unsubscribing from realtime task changes');
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [isAuthenticated, session?.user?.id, localFirstService]);
+
   // Battery-aware cache optimization
   useEffect(() => {
     const enableBatteryOptimization = () => {

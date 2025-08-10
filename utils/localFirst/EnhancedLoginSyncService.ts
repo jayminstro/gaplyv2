@@ -243,9 +243,13 @@ export class EnhancedLoginSyncService {
         remotePreferences: !!remoteData.preferences
       });
 
-      // Merge tasks based on timestamps
+      // Merge tasks based on timestamps, but respect server-side deletions.
+      // Strategy:
+      // - Start with local tasks
+      // - Overlay newer remote versions
+      // - Then DROP any tasks that are not present on the server (treat server as source of truth for deletions)
       const mergedTasks = new Map<string, Task>();
-      
+
       // First add all local tasks
       localTasks.forEach(task => {
         mergedTasks.set(task.id, task);
@@ -254,7 +258,7 @@ export class EnhancedLoginSyncService {
       // Then merge remote tasks, only overwriting if they're newer
       remoteData.tasks.forEach(remoteTask => {
         const localTask = mergedTasks.get(remoteTask.id);
-        
+
         if (!localTask) {
           // Task doesn't exist locally, add it
           mergedTasks.set(remoteTask.id, remoteTask);
@@ -262,7 +266,7 @@ export class EnhancedLoginSyncService {
           // Compare timestamps
           const remoteTimestamp = new Date(remoteTask.updated_at || '').getTime();
           const localTimestamp = new Date(localTask.updated_at || '').getTime();
-          
+
           if (remoteTimestamp > localTimestamp) {
             // Remote task is newer, use it
             mergedTasks.set(remoteTask.id, remoteTask);
@@ -271,8 +275,37 @@ export class EnhancedLoginSyncService {
         }
       });
 
-      // Save merged tasks
-      const finalTasks = Array.from(mergedTasks.values());
+      // Before respecting deletions, UPLOAD any local-only tasks (created/edited offline)
+      try {
+        const localOnlyTasks = localTasks.filter(
+          (t) => !remoteData.tasks.some((rt) => rt.id === t.id)
+        );
+        if (localOnlyTasks.length > 0) {
+          console.log(`📤 Found ${localOnlyTasks.length} local-only tasks; upserting to server before merge`);
+          const { tasksAPIExtended } = await import('../api');
+          const nowIso = new Date().toISOString();
+          await Promise.all(
+            localOnlyTasks.map(async (t) => {
+              const payload: any = { ...t } as any;
+              // Ensure updated_at exists so server considers it newer
+              if (!payload.updated_at) payload.updated_at = nowIso;
+              try {
+                await tasksAPIExtended.updateWithTimestamp(t.id, payload);
+              } catch (err) {
+                console.warn('⚠️ Failed to upsert local-only task to server:', t.id, err);
+              }
+            })
+          );
+          // Optimistically add them to remoteData so they are preserved in this merge
+          remoteData.tasks.push(...localOnlyTasks.map((t) => ({ ...t })));
+        }
+      } catch (uploadError) {
+        console.warn('⚠️ Error uploading local-only tasks prior to merge:', uploadError);
+      }
+
+      // Respect server deletions: only keep tasks that exist on the server (after upserting local-only)
+      const remoteIds = new Set(remoteData.tasks.map(t => t.id));
+      const finalTasks = Array.from(mergedTasks.values()).filter(t => remoteIds.has(t.id));
       if (finalTasks.length > 0) {
         console.log('💾 Saving merged tasks...');
         await this.storage.saveTasks(finalTasks, true);
