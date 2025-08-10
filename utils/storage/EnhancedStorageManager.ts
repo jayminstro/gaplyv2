@@ -330,6 +330,11 @@ export class EnhancedStorageManager {
     try {
       console.log(`🔄 EnhancedStorageManager: Saving single task: ${task.id}`);
       await this.getActiveStorage(true).saveTask(task);
+      // Invalidate memory cache for tasks so the next read reflects this save
+      if (this.memoryCache) {
+        this.memoryCache.delete(`tasks_${this.userId}`);
+        console.log('🗑️ Invalidated tasks cache after single task save');
+      }
       await this.trackOperation('saveTask', task.id, 'task', 1, performance.now() - startTime);
       console.log(`✅ EnhancedStorageManager: Successfully saved task ${task.id}`);
     } catch (error) {
