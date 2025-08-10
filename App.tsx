@@ -1332,7 +1332,12 @@ export default function App() {
         // Save the new task
         await localFirstService.saveTask(task);
         
-        // Get all tasks and update local state
+        // Optimistically update tasks list to avoid cache staleness across devices
+        setGlobalTasks(prev => {
+          const updated = [...prev.filter(t => t.id !== task.id), task];
+          return updated;
+        });
+        // Also fetch fresh tasks from storage to align caches
         const tasks = await localFirstService.getTasks();
         setGlobalTasks(tasks);
 
@@ -1381,6 +1386,25 @@ export default function App() {
         } else {
           // Show offline indicator if offline
           toast.success('Task created (offline - will sync when online)');
+        }
+      }
+      else {
+        // Fallback when storage service not ready: still update UI gaps locally
+        setGlobalTasks(prev => [...prev, task]);
+        if (task.dueDate && preferences) {
+          try {
+            const localTasks = [...globalTasks, task];
+            const recalculatedGaps = GapLogic.recalculateGapsForDate(
+              task.dueDate,
+              localTasks,
+              preferences,
+              session?.user?.id || 'local-user'
+            );
+            if (recalculatedGaps.length > 0) {
+              const currentGaps = gaps.filter(gap => gap.date !== task.dueDate);
+              setGaps([...currentGaps, ...recalculatedGaps]);
+            }
+          } catch {}
         }
       }
     } catch (error) {
