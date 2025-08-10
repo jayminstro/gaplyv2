@@ -10,6 +10,16 @@ import { tasksAPIExtended, exploreAPI } from '../utils/api';
 import { renderSafeIcon } from '../utils/helpers';
 import { toast } from 'sonner';
 import { ActivitySchedulingModal } from './ActivitySchedulingModal';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from './ui/alert-dialog';
 import { 
   LAYOUT_CONSTANTS, 
   COMPONENT_PATTERNS, 
@@ -52,6 +62,8 @@ export function ActivitiesContent({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [filteredActivities, setFilteredActivities] = useState<any[]>([]);
   const [schedulingActivity, setSchedulingActivity] = useState<any | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   useEffect(() => {
     const loadDiscoverData = async () => {
@@ -262,6 +274,30 @@ export function ActivitiesContent({
         description: 'Your changes may not be saved. Please try again.',
       });
       throw error;
+    }
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return;
+    const taskId = taskToDelete.id;
+    const previous = [...globalTasks];
+    const updatedTasks = globalTasks.filter((t) => t.id !== taskId);
+    setIsDeleting(true);
+    setGlobalTasks(updatedTasks);
+    try {
+      await tasksAPIExtended.delete(taskId);
+      await updateTasksInDatabase(updatedTasks);
+      toast.success('Task deleted');
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      setGlobalTasks(previous);
+      toast.error('Could not delete task', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setIsDeleting(false);
+      setTaskToDelete(null);
     }
   };
 
@@ -508,9 +544,8 @@ export function ActivitiesContent({
                   updateTasksInDatabase(updatedTasks);
                 }}
                 onDelete={(taskId) => {
-                  const updatedTasks = globalTasks.filter(t => t.id !== taskId);
-                  setGlobalTasks(updatedTasks);
-                  updateTasksInDatabase(updatedTasks);
+                  const task = globalTasks.find((t) => t.id === taskId) || null;
+                  setTaskToDelete(task);
                 }}
               />
             </div>
@@ -562,6 +597,31 @@ export function ActivitiesContent({
           activity={schedulingActivity}
           onTaskCreated={handleTaskCreated}
         />
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+          <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. It will permanently delete
+                {taskToDelete ? ` "${taskToDelete.title}"` : ' this task'}.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700"
+                onClick={confirmDeleteTask}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
