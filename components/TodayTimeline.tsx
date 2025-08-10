@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
-import { Clock, Users, User, Briefcase, Heart, BookOpen, Home } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { ActivityStackModal } from './ActivityStackModal';
 import { GapUtilizationModal } from './GapUtilizationModal';
 import { DayCompleteBanner } from './DayCompleteBanner';
@@ -8,14 +7,8 @@ import {
   renderSafeIcon, 
   formatTimelineTime, 
   timeToMinutes, 
-  minutesToTime,
-  safeTimeToMinutes,
-  extractTimeFromDateTime,
-  calculateGapDuration
+  minutesToTime
 } from '../utils/helpers';
-import { GapLogic } from '../utils/gapLogic';
-import { GapsAPI } from '../utils/gapsAPI';
-import { supabase } from '../utils/supabase/client';
 
 interface TimelineItem {
   type: 'activity' | 'gap' | 'stack';
@@ -47,15 +40,14 @@ interface TodayTimelineProps {
 
 export function TodayTimeline({ 
   tasks, 
-  gaps, 
-  currentTime = new Date(), 
+  gaps: _gaps, 
+  currentTime: _currentTime = new Date(), 
   userPreferences,
   onItemClick,
   onTaskSelect,
   onStartTimer,
   onTaskCreated
 }: TodayTimelineProps) {
-  const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
   const [stackModalOpen, setStackModalOpen] = useState(false);
   const [selectedStack, setSelectedStack] = useState<Task[]>([]);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
@@ -172,9 +164,7 @@ export function TodayTimeline({
     }
   };
 
-  // Time-collision configuration
-  const timeOverlapThresholdMinutes = 5; // Activities that actually overlap in time
-  const visualProximityThresholdMinutes = 45; // Activities within 45 minutes get grouped to reduce visual clutter
+  // Time-collision configuration: only stack actual overlaps
   const maxStackSize = 3; // Maximum individual activities before creating a summary stack
   
   // Process and sort scheduled activities chronologically
@@ -243,22 +233,11 @@ export function TodayTimeline({
         // Start new stack
         currentStack = [currentActivity];
       } else {
-        // Check for both time overlap and visual proximity
+        // Only group if activities truly overlap in time
         const shouldGroup = currentStack.some(stackActivity => {
-          // 1. Check for actual time overlap
           const overlaps = (currentActivity.startMinutes < stackActivity.endMinutes && 
                            currentActivity.endMinutes > stackActivity.startMinutes);
-          
-          // 2. Check for close time proximity (within threshold)
-          const timeGap = Math.min(
-            Math.abs(currentActivity.startMinutes - stackActivity.endMinutes),
-            Math.abs(stackActivity.startMinutes - currentActivity.endMinutes)
-          );
-          
-          const isTimeOverlap = overlaps || timeGap <= timeOverlapThresholdMinutes;
-          const isVisuallyClose = timeGap <= visualProximityThresholdMinutes;
-          
-          return isTimeOverlap || isVisuallyClose;
+          return overlaps;
         });
         
         if (shouldGroup) {
@@ -269,19 +248,12 @@ export function TodayTimeline({
           const stackStartMinutes = Math.min(...currentStack.map(a => a.startMinutes));
           const stackEndMinutes = Math.max(...currentStack.map(a => a.endMinutes));
           
-          // Determine stack reason
-          let stackReason: 'time_overlap' | 'visual_proximity' | 'single' = 'single';
-          if (currentStack.length > 1) {
-            // Check if any activities actually overlap
-            const hasTimeOverlap = currentStack.some((act1, idx) => 
-              currentStack.some((act2, idx2) => 
-                idx !== idx2 && 
-                act1.startMinutes < act2.endMinutes && 
-                act1.endMinutes > act2.startMinutes
-              )
-            );
-            stackReason = hasTimeOverlap ? 'time_overlap' : 'visual_proximity';
-          }
+           // Determine stack reason
+           let stackReason: 'time_overlap' | 'visual_proximity' | 'single' = 'single';
+           if (currentStack.length > 1) {
+             // Only overlapping stacks are allowed
+             stackReason = 'time_overlap';
+           }
           
           stacks.push({
             activities: currentStack,
@@ -305,14 +277,7 @@ export function TodayTimeline({
       // Determine stack reason
       let stackReason: 'time_overlap' | 'visual_proximity' | 'single' = 'single';
       if (currentStack.length > 1) {
-        const hasTimeOverlap = currentStack.some((act1, idx) => 
-          currentStack.some((act2, idx2) => 
-            idx !== idx2 && 
-            act1.startMinutes < act2.endMinutes && 
-            act1.endMinutes > act2.startMinutes
-          )
-        );
-        stackReason = hasTimeOverlap ? 'time_overlap' : 'visual_proximity';
+        stackReason = 'time_overlap';
       }
       
       stacks.push({
@@ -478,24 +443,98 @@ export function TodayTimeline({
   const gapBlocks = generateTimeTrimmedGaps();
   const allItems = [...activityItems, ...gapBlocks];
 
-  // Calculate current time progress within the visible timeline
-  const calculateCurrentProgress = (): number => {
-    if (currentMinutes < timelineStartMinutes) return 0;
-    if (currentMinutes > timelineEndMinutes) return 100;
-    return ((currentMinutes - timelineStartMinutes) / totalTimelineMinutes) * 100;
-  };
-  
-  const currentProgress = calculateCurrentProgress();
+  // Compute the next 3 items (activities or gaps) from current time
+  const itemsSortedByStart = [...allItems].sort(
+    (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+  );
+  const upcomingItems = itemsSortedByStart.filter(
+    (item) => timeToMinutes(item.endTime) > roundedCurrentMinutes
+  );
+  let displayItems = upcomingItems.slice(0, 3);
 
-  // Format gap duration for display
-  const formatGapDuration = (minutes: number): string => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours > 0) {
-      return mins > 0 ? `${hours}hr ${mins}m` : `${hours}hr`;
+  // If we have fewer than 3 items, try to split a long upcoming gap into chunks
+  if (displayItems.length < 3) {
+    const firstUpcomingGap = upcomingItems.find((i) => i.type === 'gap');
+    if (firstUpcomingGap) {
+      const gapStartMin = Math.max(timeToMinutes(firstUpcomingGap.startTime), roundedCurrentMinutes);
+      const gapEndMin = timeToMinutes(firstUpcomingGap.endTime);
+      const chunkSize = 60; // split into 60-minute chunks (consistent with gap generation)
+      const chunks: TimelineItem[] = [];
+      for (let s = gapStartMin; s < gapEndMin; s += chunkSize) {
+        const e = Math.min(s + chunkSize, gapEndMin);
+        const duration = e - s;
+        if (duration <= 0) break;
+        chunks.push({
+          ...firstUpcomingGap,
+          id: `${firstUpcomingGap.id}-c${s}`,
+          startTime: minutesToTime(s),
+          endTime: minutesToTime(e),
+          duration,
+        });
+      }
+
+      // Append chunks after the first included item(s), avoiding duplicates by id
+      for (const ch of chunks) {
+        if (displayItems.length >= 3) break;
+        if (!displayItems.some((d) => d.id === ch.id)) {
+          displayItems.push(ch);
+        }
+      }
+
+      // Keep chronological order
+      displayItems = displayItems.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
     }
-    return `${mins}m`;
-  };
+  }
+
+  // Ensure that if there is a stacked activity (not the last on the timeline),
+  // we also show the next unstacked activity within the 3 visible items.
+  const firstStackIndex = upcomingItems.findIndex((i) => i.type === 'stack');
+  if (firstStackIndex !== -1 && firstStackIndex < upcomingItems.length - 1) {
+    const nextUnstackedActivity = upcomingItems
+      .slice(firstStackIndex + 1)
+      .find((i) => i.type === 'activity');
+
+    if (nextUnstackedActivity && !displayItems.some((i) => i.id === nextUnstackedActivity.id)) {
+      if (displayItems.length < 3) {
+        displayItems = [...displayItems, nextUnstackedActivity];
+      } else {
+        // Prefer to replace the last gap if present; otherwise replace the last item
+        let replaceIndex = displayItems.length - 1;
+        for (let r = displayItems.length - 1; r >= 0; r--) {
+          if (displayItems[r].type === 'gap') {
+            replaceIndex = r;
+            break;
+          }
+        }
+        displayItems = displayItems
+          .map((itm, idx) => (idx === replaceIndex ? nextUnstackedActivity : itm))
+          .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+      }
+    }
+  }
+
+  // Define a compact display range spanning only the visible items
+  const displayRangeStartMinutes = displayItems.length > 0
+    ? timeToMinutes(displayItems[0].startTime)
+    : timelineStartMinutes;
+  const displayRangeEndMinutes = displayItems.length > 0
+    ? Math.max(...displayItems.map((i) => timeToMinutes(i.endTime)))
+    : timelineEndMinutes;
+  const compactRangeMinutes = Math.max(displayRangeEndMinutes - displayRangeStartMinutes, 15);
+
+  // Centered header time: show the start time of the first visible item; fallback to current time display
+  const headerTimeDisplay = displayItems.length > 0
+    ? (() => {
+        const start = displayRangeStartMinutes;
+        const h = Math.floor(start / 60);
+        const m = start % 60;
+        return formatTimelineTime(h, m);
+      })()
+    : getCurrentTimeDisplay();
+
+  // Compact view does not render progress bar/line
+
+  // No duration formatting needed in compact view
 
   // Unified interaction handler - all items open modals for consistency
   const handleItemClick = (item: TimelineItem) => {
@@ -596,129 +635,63 @@ export function TodayTimeline({
   return (
     <>
       <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
-        {/* Time Markers */}
-        <div className="flex items-center justify-between mb-4 text-sm text-slate-300">
-          <span>{startTimeStr}</span>
-          <div className="flex items-center gap-1">
-            <div className={`w-1 h-1 rounded-full ${
-              currentMinutes >= timelineStartMinutes && currentMinutes <= timelineEndMinutes 
-                ? 'bg-orange-400' 
-                : 'bg-slate-400'
-            }`}></div>
-            <span className={
-              currentMinutes >= timelineStartMinutes && currentMinutes <= timelineEndMinutes 
-                ? 'text-orange-300 font-medium' 
-                : 'text-slate-300'
-            }>
-              {getCurrentTimeDisplay()}
-            </span>
-            <div className={`w-1 h-1 rounded-full ${
-              currentMinutes >= timelineStartMinutes && currentMinutes <= timelineEndMinutes 
-                ? 'bg-orange-400' 
-                : 'bg-slate-400'
-            }`}></div>
-          </div>
-          <span>{endTimeStr}</span>
+        {/* Centered Start Time for the visible items */}
+        <div className="flex items-center justify-center mb-4 text-sm text-slate-300">
+          <span className="text-slate-300 font-medium">{headerTimeDisplay}</span>
         </div>
         
         <div className="relative">
-          {/* Timeline Container - consistent rounded-2xl and overflow hidden */}
+          {/* Compact Timeline Container showing only the next 3 items */}
           <div className="relative h-12 mb-3 bg-slate-800/40 rounded-2xl border border-slate-700/50 overflow-hidden">
-            {/* Gap Blocks - background layer with proper z-index */}
-            {gapBlocks.map((gap) => {
-              const isExpanded = expandedGapId === gap.id;
-              // Check if this gap is obscured by any activities
-              const isObscured = activityItems.some(activity => {
-                const activityEnd = activity.position + activity.width;
-                const gapEnd = gap.position + gap.width;
-                return !(activity.position >= gapEnd || activityEnd <= gap.position);
-              });
-              
-              return (
-                <button
-                  key={gap.id}
-                  onClick={() => !isObscured && handleItemClick(gap)}
-                  disabled={isObscured}
-                  className={`absolute top-0 h-full transition-all duration-200 flex items-center justify-center group border-0 z-10 rounded-2xl ${
-                    isObscured 
-                      ? 'bg-slate-600/15 cursor-default' 
-                      : 'bg-slate-600/25 hover:bg-slate-600/35 cursor-pointer border border-slate-600/30'
-                  }`}
-                  style={{ 
-                    left: `${gap.position}%`,
-                    width: `${gap.width}%`,
-                    margin: '0 1px' // Add small margin for separation
-                  }}
-                >
-                  {!isObscured && (
+            {displayItems.map((item) => {
+              const itemStart = timeToMinutes(item.startTime);
+              const itemEnd = timeToMinutes(item.endTime);
+              const leftPct = ((itemStart - displayRangeStartMinutes) / compactRangeMinutes) * 100;
+              const widthPct = Math.max(((itemEnd - itemStart) / compactRangeMinutes) * 100, 8);
+              const clampedLeft = Math.max(0, Math.min(leftPct, 100 - widthPct));
+
+              if (item.type === 'gap') {
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
+                    className={`absolute top-0 h-full transition-all duration-200 flex items-center justify-center group rounded-2xl bg-slate-600/25 hover:bg-slate-600/35 cursor-pointer border border-slate-600/30 z-10`}
+                    style={{ left: `${clampedLeft}%`, width: `${widthPct}%`, margin: '0 1px' }}
+                  >
                     <div className="flex items-center gap-1 text-slate-300 group-hover:text-slate-200 px-3 truncate">
-                      {isExpanded ? (
-                        <span className="text-xs font-medium">{formatGapDuration(gap.duration)}</span>
-                      ) : (
-                        <>
-                          <div className="w-2 h-2 bg-slate-400/60 rounded-full flex-shrink-0"></div>
-                          <span className="text-xs">Gap</span>
-                        </>
-                      )}
+                      <div className="w-2 h-2 bg-slate-400/60 rounded-full flex-shrink-0"></div>
+                      <span className="text-xs">Gap</span>
                     </div>
-                  )}
-                </button>
-              );
-            })}
-            
-            {/* Activity Pills - foreground layer with consistent sizing */}
-            {activityItems.map((activity) => {
+                  </button>
+                );
+              }
+
+              // activity or stack
               return (
                 <button
-                  key={activity.id}
-                  onClick={() => handleItemClick(activity)}
-                  className={`absolute top-0 h-full px-3 ${getActivityColor(activity)} rounded-2xl transition-all duration-200 hover:opacity-90 hover:scale-[1.02] flex items-center gap-2 z-20 shadow-lg border-2 border-white/20 mx-0.5`}
-                  style={{ 
-                    left: `${Math.max(0, Math.min(activity.position, 100 - activity.width))}%`,
-                    width: `${activity.width}%`,
-                    margin: '0 1px' // Add small margin for separation
-                  }}
+                  key={item.id}
+                  onClick={() => handleItemClick(item)}
+                  className={`absolute top-0 h-full px-3 ${getActivityColor(item)} rounded-2xl transition-all duration-200 hover:opacity-90 hover:scale-[1.02] flex items-center gap-2 z-20 shadow-lg border-2 border-white/20 mx-0.5`}
+                  style={{ left: `${clampedLeft}%`, width: `${widthPct}%`, margin: '0 1px' }}
                 >
-                  {activity.type === 'stack' ? (
+                  {item.type === 'stack' ? (
                     <>
                       <div className="w-6 h-6 bg-white/30 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-white">
-                          {activity.count}
-                        </span>
+                        <span className="text-xs font-bold text-white">{item.count}</span>
                       </div>
-                      <span className="text-xs text-white font-medium truncate">
-                        {activity.stackType === 'summary' ? 'tasks' : 'activities'}
-                      </span>
+                      <span className="text-xs text-white font-medium truncate">{item.stackType === 'summary' ? 'tasks' : 'activities'}</span>
                     </>
                   ) : (
                     <>
                       <div className="w-4 h-4 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
-                        {renderSafeIcon(activity.icon || 'default')}
+                        {renderSafeIcon(item.icon || 'default')}
                       </div>
-                      <span className="text-xs text-white font-medium truncate">{activity.duration}m</span>
+                      <span className="text-xs text-white font-medium truncate">{item.duration}m</span>
                     </>
                   )}
                 </button>
               );
             })}
-            
-            {/* Current Time Indicator - highest z-index */}
-            {currentProgress >= 0 && currentProgress <= 100 && (
-              <div 
-                className="absolute top-0 bottom-0 w-0.5 bg-orange-400 z-30 rounded-full"
-                style={{ left: `${currentProgress}%` }}
-              >
-                <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-orange-400 rounded-full border-2 border-white shadow-sm"></div>
-              </div>
-            )}
-          </div>
-          
-          {/* Timeline Progress Bar */}
-          <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-orange-400 to-pink-400 rounded-full transition-all duration-1000"
-              style={{ width: `${currentProgress}%` }}
-            ></div>
           </div>
         </div>
       </div>
