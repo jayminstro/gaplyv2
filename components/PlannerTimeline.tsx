@@ -25,6 +25,7 @@ interface PlannerTimelineProps {
   selectedDate: Date;
   currentTime: Date;
   onTaskOpen: (task: Task) => void;
+  onTaskEdit?: (task: Task) => void;
   onGapUtilize: (gap: TimeGap) => void;
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
@@ -37,6 +38,7 @@ function PlannerTimeline({
   selectedDate, 
   currentTime,
   onTaskOpen, 
+  onTaskEdit,
   onGapUtilize,
   userPreferences,
   isWorkingDay = true,
@@ -719,7 +721,7 @@ function PlannerTimeline({
       timeSlot={selectedTimeSlot}
       onActivitySelect={(activity) => {
         setStackModalOpen(false);
-        onTaskOpen(activity);
+        onTaskEdit?.(activity);
       }}
       onStartTimer={(activity) => {
         setStackModalOpen(false);

@@ -16,6 +16,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from './components/ui/sonner';
 import { Home as HomeIcon, Activity, Settings, Calendar } from 'lucide-react';
 import { TimerModal } from "./components/TimerModal";
+import { EditTaskModal } from "./components/EditTaskModal";
 import { FloatingTimer } from "./components/FloatingTimer";
 import { GapUtilizationModal } from "./components/GapUtilizationModal";
 import { WidgetView } from './components/WidgetView';
@@ -59,6 +60,7 @@ export default function App() {
 
   // Activities state - moved here to avoid conditional hook calls
   const [currentActivitiesTab, setCurrentActivitiesTab] = useState('discover'); // used elsewhere for UI
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
 
@@ -74,6 +76,7 @@ export default function App() {
 
   // App lifecycle state
   const [isAppInitialized, setIsAppInitialized] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isAppVisible, setIsAppVisible] = useState(true); // used by lifecycle handlers
   
   // Daily cleanup state
@@ -1630,6 +1633,9 @@ export default function App() {
               setTimerTask(task);
               setIsTimerModalOpen(true);
             }}
+            onTaskEdit={(task) => {
+              setEditingTask(task);
+            }}
             onGapUtilize={(gap) => {
               setSelectedGap(gap);
               setIsGapModalOpen(true);
@@ -1814,13 +1820,27 @@ export default function App() {
           </div>
         </div>
 
-              {/* Timer Modal */}
+        {/* Timer Modal */}
       <TimerModal
         isOpen={isTimerModalOpen}
         onClose={() => setIsTimerModalOpen(false)}
         task={timerTask}
         onTimerUpdate={handleGlobalTimerUpdate}
       />
+
+        {/* Edit Task Modal (global) */}
+        <EditTaskModal
+          task={editingTask}
+          isOpen={!!editingTask}
+          onClose={() => setEditingTask(null)}
+          onSave={(updatedTask) => {
+            const updated = globalTasks.map(t => t.id === updatedTask.id ? { ...updatedTask, updated_at: new Date().toISOString() } : t);
+            setGlobalTasks(updated);
+            // best-effort: persist via existing debounced saver
+            try { (async () => { await tasksAPIExtended.updateWithTimestamp(updatedTask.id, updatedTask); })(); } catch {}
+            setEditingTask(null);
+          }}
+        />
 
       {/* Gap Utilization Modal */}
       <GapUtilizationModal
