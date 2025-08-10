@@ -229,16 +229,16 @@ export function ActivitiesContent({
       // Try to save to server if online
       if (navigator.onLine) {
         try {
-          // Save each task individually to preserve timestamps
-          for (const task of tasksWithTimestamp) {
-            if (task.id) {
-              await tasksAPIExtended.update(task.id, task);
-              console.log(`✅ [ActivitiesContent] Task ${task.id} saved to server`);
-            } else {
-              const result = await tasksAPIExtended.create(task);
-              console.log(`✅ [ActivitiesContent] New task created on server:`, result);
+            // Save each task individually to preserve timestamps
+            for (const task of tasksWithTimestamp) {
+              if (task.id) {
+                await tasksAPIExtended.updateWithTimestamp(task.id, task);
+                console.log(`✅ [ActivitiesContent] Task ${task.id} saved to server`);
+              } else {
+                const result = await tasksAPIExtended.create(task);
+                console.log(`✅ [ActivitiesContent] New task created on server:`, result);
+              }
             }
-          }
         } catch (serverError) {
           console.warn('⚠️ [ActivitiesContent] Could not save to server (will sync later):', serverError);
           // Don't show error toast when offline - it's expected
