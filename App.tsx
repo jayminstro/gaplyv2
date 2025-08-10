@@ -109,7 +109,7 @@ export default function App() {
         if (localDate > serverDate) {
           // Local task is newer, update server
           console.log(`🔄 Updating server task with newer local version: ${localTask.title}`);
-          await tasksAPIExtended.update(localTask.id, localTask);
+          await tasksAPIExtended.updateWithTimestamp(localTask.id, localTask);
         }
       }
       
@@ -1365,9 +1365,21 @@ export default function App() {
         }
 
         console.log(`✅ Task created: ${task.title}`);
-        
-        // Show offline indicator if offline
-        if (!navigator.onLine) {
+
+        // If online, immediately sync the newly created task to the server (upsert)
+        if (navigator.onLine) {
+          try {
+            console.log('🔄 Syncing new task with server...');
+            await tasksAPIExtended.updateWithTimestamp(task.id, {
+              ...task,
+              updated_at: new Date().toISOString(),
+            });
+            console.log('✅ Task created synced with server');
+          } catch (syncError) {
+            console.warn('⚠️ Failed to sync new task with server - will sync later:', syncError);
+          }
+        } else {
+          // Show offline indicator if offline
           toast.success('Task created (offline - will sync when online)');
         }
       }
@@ -1430,7 +1442,7 @@ export default function App() {
         if (navigator.onLine) {
           try {
             console.log('🔄 Syncing task update with server...');
-            await tasksAPIExtended.update(updatedTask.id, updatedTask);
+            await tasksAPIExtended.updateWithTimestamp(updatedTask.id, updatedTask);
             console.log('✅ Task synced with server');
           } catch (error) {
             console.warn('⚠️ Failed to sync task with server - will sync later:', error);

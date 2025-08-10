@@ -4,6 +4,7 @@ import { format, addDays, startOfDay, isSameDay } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
+import { useGaps } from '../hooks/useGaps';
 import { deduplicateGaps, mergeAndDeduplicateGaps } from '../utils/gapLogic';
 import { normalizeWorkingDays } from '../utils/gapLogic';
 
@@ -253,12 +254,9 @@ function PlannerContent({
     console.log(`🔍 Task Debug - Tasks for today (${today}): ${tasksForToday.length}`);
   }
 
-  // Filter gaps for selected date (assuming gaps have a date field)
-  const selectedDateGaps = gaps.filter(gap => {
-    if (!gap.date) return false;
-    const gapDate = startOfDay(new Date(gap.date));
-    return isSameDay(gapDate, selectedDate);
-  });
+  // Compute gaps locally for selected date from tasks and preferences
+  const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+  const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
   
   // Debug: Log gap information
   console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${format(selectedDate, 'yyyy-MM-dd')}, Gaps for selected date: ${selectedDateGaps.length}`);

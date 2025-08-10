@@ -17,7 +17,7 @@ export interface Task {
   priority?: string; // Added priority field from database schema
   reminderDate?: string;
   reminderTime?: string;
-  scheduledGapId?: string; // ID of the gap this task is scheduled in
+  scheduledGapId?: string; // Client-only/ephemeral identifier for UI interactions; not sent to server
   googleCalendarEventId?: string; // Google Calendar event ID if created
   completedSessions?: number;
   isCompleted?: boolean;
@@ -117,6 +117,7 @@ export interface UserProfile {
   updated_at?: string;
 }
 
+// Deprecated: server-only legacy type. Not used by client; gaps are derived locally.
 export interface ScheduledGap {
   id: string;
   user_id: string;

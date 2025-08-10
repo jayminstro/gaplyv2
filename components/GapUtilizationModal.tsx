@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Clock, Calendar, Plus, ArrowRight, Zap, Sparkles, User, CheckSquare } from 'lucide-react';
+import { X, Clock, Calendar, Plus, ArrowRight, Zap, Sparkles, User } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
-import { renderSafeIcon, minutesToTime, timeToMinutes, combineDateAndTime, safeTimeToMinutes, extractTimeFromDateTime, calculateGapDuration } from '../utils/helpers';
+import { renderSafeIcon, minutesToTime, timeToMinutes, combineDateAndTime, extractTimeFromDateTime } from '../utils/helpers';
 import { generateUUID } from '../utils/uuid';
-import { GapsAPI } from '../utils/gapsAPI';
+// Gaps are computed locally; no server scheduling needed
 import { supabase } from '../utils/supabase/client';
 import { exploreAPI, calendarAPI } from '../utils/api';
 import { toast } from 'sonner';
@@ -34,18 +34,19 @@ export function GapUtilizationModal({
   onClose,
   gap,
   existingTasks,
-  onTaskCreated,
-  userPreferences
+  onTaskCreated
 }: GapUtilizationModalProps) {
   const [suitableActivities, setSuitableActivities] = useState<SuitableActivity[]>([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
   const [selectedOption, setSelectedOption] = useState<'activities' | 'new-task' | null>(null);
+  const [activityStartTime, setActivityStartTime] = useState<string>('');
   const [newTaskForm, setNewTaskForm] = useState({
     title: '',
     category: 'Personal',
     duration: '',
     addToCalendar: false
   });
+  const [newTaskStartTime, setNewTaskStartTime] = useState<string>('');
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isLoadingCalendarStatus, setIsLoadingCalendarStatus] = useState(true);
 
@@ -53,6 +54,8 @@ export function GapUtilizationModal({
     if (isOpen && gap) {
       loadSuitableActivities();
       checkCalendarStatus();
+      setActivityStartTime(gap.start_time);
+      setNewTaskStartTime(gap.start_time);
     }
   }, [isOpen, gap]);
 
@@ -189,8 +192,21 @@ export function GapUtilizationModal({
       }
 
       let taskToSchedule: Task;
-      let taskStartTime = gap.start_time;
-      let taskEndTime: string;
+      const chosenStart = activityStartTime || gap.start_time;
+      const startMinutes = timeToMinutes(chosenStart);
+      const endMinutes = startMinutes + activity.duration;
+      const gapStartMinutes = timeToMinutes(gap.start_time);
+      const gapEndMinutes = timeToMinutes(gap.end_time);
+
+      if (startMinutes < gapStartMinutes || endMinutes > gapEndMinutes) {
+        toast.error('Selected time does not fit', {
+          description: `"${activity.title}" (${formatDuration(activity.duration)}) doesn't fit starting at ${chosenStart}. Choose an earlier time.`,
+        });
+        return;
+      }
+
+      let taskStartTime = chosenStart;
+      let taskEndTime: string = minutesToTime(endMinutes);
 
       if (activity.type === 'task' && activity.originalTask) {
         // Schedule existing task
@@ -198,10 +214,9 @@ export function GapUtilizationModal({
           ...activity.originalTask,
           status: 'scheduled' as const,
           dueDate: gap.date,
-          dueTime: gap.start_time,
+          dueTime: taskStartTime,
           scheduledGapId: gap.id
         };
-        taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + activity.duration);
       } else {
         // Create new task from suggestion
         taskToSchedule = {
@@ -214,20 +229,19 @@ export function GapUtilizationModal({
           icon: activity.icon,
           notes: `Scheduled from gap utilization`,
           dueDate: gap.date,
-          dueTime: gap.start_time,
+          dueTime: taskStartTime,
           priority: 'Medium',
           energyLevel: 'Medium',
           isCompleted: false,
           is_completed: false,
           scheduledGapId: gap.id
         };
-        taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + activity.duration);
       }
 
       // Create calendar event if requested and calendar is connected
       let googleCalendarEventId = null;
-      if (addToCalendar && isCalendarConnected && gap.date && gap.start_time) {
-        const extractedStartTime = extractTimeFromDateTime(gap.start_time);
+      if (addToCalendar && isCalendarConnected && gap.date && taskStartTime) {
+        const extractedStartTime = extractTimeFromDateTime(taskStartTime);
         const startDateTime = combineDateAndTime(gap.date, extractedStartTime);
         const endDateTime = combineDateAndTime(gap.date, taskEndTime);
         
@@ -246,28 +260,13 @@ export function GapUtilizationModal({
         taskToSchedule.googleCalendarEventId = googleCalendarEventId;
       }
 
-      // Schedule task in gap using new API
-      const result = await GapsAPI.scheduleTaskInGap(
-        gap.id,
-        taskStartTime,
-        taskEndTime,
-        taskToSchedule,
-        session.access_token
-      );
-
-      if (result.success) {
-        onTaskCreated(result.task);
-        
-        const successDescription = googleCalendarEventId 
-          ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
-          : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
-          
-        toast.success(`Scheduled "${activity.title}"`, {
-          description: successDescription,
-        });
-        
-        onClose();
-      }
+      // Local-only: update task and notify caller; UI will recompute the day's gaps
+      onTaskCreated(taskToSchedule);
+      const successDescription = googleCalendarEventId 
+        ? `Added to ${taskStartTime} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
+        : `Added to ${taskStartTime} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+      toast.success(`Scheduled "${activity.title}"`, { description: successDescription });
+      onClose();
     } catch (error) {
       console.error('Error scheduling activity:', error);
       toast.error('Failed to schedule activity', {
@@ -318,7 +317,7 @@ export function GapUtilizationModal({
         icon: newTaskForm.category,
         notes: 'Created in gap utilization',
         dueDate: gap.date,
-        dueTime: gap.start_time,
+        dueTime: newTaskStartTime || gap.start_time,
         priority: 'Medium',
         energyLevel: 'Medium',
         isCompleted: false,
@@ -326,14 +325,25 @@ export function GapUtilizationModal({
         scheduledGapId: gap.id
       };
 
-      // Calculate task end time
-      const taskStartTime = gap.start_time;
-      const taskEndTime = minutesToTime(timeToMinutes(gap.start_time) + taskDurationMinutes);
+      // Calculate and validate against gap window
+      const taskStartTime = newTaskStartTime || gap.start_time;
+      const startMinutes = timeToMinutes(taskStartTime);
+      const endMinutes = startMinutes + taskDurationMinutes;
+      const taskEndTime = minutesToTime(endMinutes);
+      const gapStartMinutes = timeToMinutes(gap.start_time);
+      const gapEndMinutes = timeToMinutes(gap.end_time);
+
+      if (startMinutes < gapStartMinutes || endMinutes > gapEndMinutes) {
+        toast.error('Selected time does not fit', {
+          description: `Task duration (${formatDuration(taskDurationMinutes)}) doesn't fit starting at ${taskStartTime}. Choose an earlier time.`,
+        });
+        return;
+      }
 
       // Create calendar event if requested and calendar is connected
       let googleCalendarEventId = null;
-      if (newTaskForm.addToCalendar && isCalendarConnected && gap.date && gap.start_time) {
-        const extractedStartTime = extractTimeFromDateTime(gap.start_time);
+      if (newTaskForm.addToCalendar && isCalendarConnected && gap.date && taskStartTime) {
+        const extractedStartTime = extractTimeFromDateTime(taskStartTime);
         const startDateTime = combineDateAndTime(gap.date, extractedStartTime);
         const endDateTime = combineDateAndTime(gap.date, taskEndTime);
         
@@ -352,28 +362,13 @@ export function GapUtilizationModal({
         newTask.googleCalendarEventId = googleCalendarEventId;
       }
 
-      // Schedule task in gap using new API
-      const result = await GapsAPI.scheduleTaskInGap(
-        gap.id,
-        taskStartTime,
-        taskEndTime,
-        newTask,
-        session.access_token
-      );
-
-      if (result.success) {
-        onTaskCreated(result.task);
-        
-        const successDescription = googleCalendarEventId 
-          ? `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
-          : `Added to ${gap.start_time} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
-          
-        toast.success(`Created and scheduled "${newTask.title}"`, {
-          description: successDescription,
-        });
-        
-        onClose();
-      }
+      // Local-only: update task and notify caller; UI will recompute the day's gaps
+      onTaskCreated(newTask);
+      const successDescription = googleCalendarEventId 
+        ? `Added to ${taskStartTime} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''} and Google Calendar`
+        : `Added to ${taskStartTime} - ${taskEndTime} ${gap.date ? `on ${gap.date}` : ''}`;
+      toast.success(`Created and scheduled "${newTask.title}"`, { description: successDescription });
+      onClose();
     } catch (error) {
       console.error('Error creating new task:', error);
       toast.error('Failed to create task', {
@@ -421,6 +416,8 @@ export function GapUtilizationModal({
       duration: '',
       addToCalendar: false
     });
+    setActivityStartTime(gap?.start_time || '');
+    setNewTaskStartTime(gap?.start_time || '');
     setSelectedOption(null);
   };
 
@@ -540,6 +537,20 @@ export function GapUtilizationModal({
                     </div>
                   ) : (
                     <>
+                      {/* Start time selector for activities */}
+                      <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
+                        <label className="text-slate-300 text-sm font-medium mb-1 block">Start at</label>
+                        <input
+                          type="time"
+                          value={activityStartTime}
+                          onChange={(e) => setActivityStartTime(e.target.value)}
+                          min={gap.start_time}
+                          max={gap.end_time}
+                          step={900}
+                          className="w-40 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                        />
+                        <div className="text-xs text-slate-500 mt-1">Within {formatGapTime(gap)}</div>
+                      </div>
                       {/* Calendar Toggle for Activities */}
                       {isCalendarConnected && (
                         <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
@@ -720,6 +731,25 @@ export function GapUtilizationModal({
                     </div>
                   </div>
 
+                  {/* Start time for new task */}
+                  <div>
+                    <label className="text-slate-300 text-sm font-medium mb-1 block">
+                      Start at
+                    </label>
+                    <input
+                      type="time"
+                      value={newTaskStartTime}
+                      onChange={(e) => setNewTaskStartTime(e.target.value)}
+                      min={gap.start_time}
+                      max={gap.end_time}
+                      step={900}
+                      className="w-40 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    />
+                    {newTaskForm.duration && (
+                      <div className="text-xs text-slate-500 mt-1">Within {formatGapTime(gap)}</div>
+                    )}
+                  </div>
+
                   {/* Calendar Toggle */}
                   {isCalendarConnected && (
                     <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-xl border border-slate-600/30">
@@ -749,10 +779,20 @@ export function GapUtilizationModal({
                       {(() => {
                         const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
                         const taskDurationMinutes = (hours * 60) + minutes;
+                        const start = newTaskStartTime || gap.start_time;
+                        const startM = timeToMinutes(start);
+                        const endM = startM + taskDurationMinutes;
+                        const exceedsWindow = endM > timeToMinutes(gap.end_time) || startM < timeToMinutes(gap.start_time);
                         if (taskDurationMinutes > gapDurationMinutes) {
                           return (
                             <span className="text-red-400">
                               Task duration ({formatDuration(taskDurationMinutes)}) exceeds gap duration ({formatDuration(gapDurationMinutes)})
+                            </span>
+                          );
+                        } else if (exceedsWindow) {
+                          return (
+                            <span className="text-red-400">
+                              Selected start ({start}) pushes end past {extractTimeFromDateTime(gap.end_time) || gap.end_time}
                             </span>
                           );
                         }
@@ -768,7 +808,10 @@ export function GapUtilizationModal({
                       if (!newTaskForm.duration) return true;
                       const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
                       const taskDurationMinutes = (hours * 60) + minutes;
-                      return taskDurationMinutes > gapDurationMinutes;
+                      const start = newTaskStartTime || gap.start_time;
+                      const startM = timeToMinutes(start);
+                      const endM = startM + taskDurationMinutes;
+                      return taskDurationMinutes > gapDurationMinutes || startM < timeToMinutes(gap.start_time) || endM > timeToMinutes(gap.end_time);
                     })()}
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-xl py-2 text-sm font-medium transition-colors"
                   >
