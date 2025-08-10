@@ -493,7 +493,17 @@ export function ActivitiesContent({
                 onEdit={(task) => setEditingTask(task)}
                 onTimer={(task) => onTimerOpen(task)}
                 onComplete={(task) => {
-                  const updatedTasks = globalTasks.filter(t => t.id !== task.id);
+                  const updatedTasks: Task[] = globalTasks.map((t) =>
+                    t.id === task.id
+                      ? ({
+                          ...t,
+                          isCompleted: true,
+                          is_completed: true,
+                          status: 'completed' as const,
+                          updated_at: new Date().toISOString(),
+                        } as Task)
+                      : t
+                  );
                   setGlobalTasks(updatedTasks);
                   updateTasksInDatabase(updatedTasks);
                 }}
