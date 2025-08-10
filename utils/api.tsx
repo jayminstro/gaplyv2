@@ -111,6 +111,10 @@ export const preferencesAPI = {
     method: 'POST',
     body: JSON.stringify(preferences),
   }),
+  patch: (partial: any) => apiRequest('/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(partial),
+  }),
 };
 
 // Tasks API

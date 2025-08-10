@@ -62,6 +62,10 @@ export interface UserPreferences {
   google_calendar_token_expires?: string;
   google_calendar_email?: string;
   google_calendar_last_sync?: string;
+  // Server whitelist variants (ensure type parity)
+  google_access_token?: string;
+  google_refresh_token?: string;
+  google_token_expires_at?: string;
   
   // Timer & Activity Settings
   autostart: boolean;
@@ -76,6 +80,9 @@ export interface UserPreferences {
   notification_activity_reminders: boolean;
   notification_upcoming_gaps: boolean;
   notification_lead_time: number;
+  // Quiet hours (server whitelist)
+  quiet_hours_start?: string;
+  quiet_hours_end?: string;
   
   // Appearance & Interface
   dark_mode: boolean;
@@ -83,6 +90,7 @@ export interface UserPreferences {
   vibration_enabled: boolean;
   time_format?: '12h' | '24h';
   show_duration_in_planner?: boolean;
+  timezone?: string;
   
   // Advanced Features
   learning_enabled: boolean;
@@ -90,6 +98,10 @@ export interface UserPreferences {
   manual_mode: boolean;
   demo_mode: boolean;
   onboarding_completed: boolean;
+  // Additional server-managed fields
+  calendar_include_weekends?: boolean;
+  calendar_event_status?: string;
+  last_gap_sync?: string;
 }
 
 export interface UserProfile {
