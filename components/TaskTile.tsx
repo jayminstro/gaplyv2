@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { Timer, Check, Trash2, Clock, Calendar } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Timer, Check, Trash2 } from 'lucide-react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { MinimizedTimerOnTask } from './MinimizedTimerOnTask';
 import { Task } from '../types/index';
@@ -17,7 +17,7 @@ interface TaskTileProps {
 export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedule }: TaskTileProps) {
   const [swipeAction, setSwipeAction] = useState<'none' | 'complete' | 'delete'>('none');
   const x = useMotionValue(0);
-  const constraintsRef = useRef(null);
+  const hasDraggedRef = useRef(false);
   
 
   
@@ -30,8 +30,10 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
     
     if (info.offset.x > threshold) {
       setSwipeAction('complete');
+      x.set(80);
     } else if (info.offset.x < -threshold) {
       setSwipeAction('delete');
+      x.set(-80);
     } else {
       setSwipeAction('none');
       x.set(0);
@@ -68,17 +70,39 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
 
   const dateTime = getDateTimeDisplay();
 
+  const closeActions = () => {
+    if (swipeAction !== 'none') {
+      setSwipeAction('none');
+      x.set(0);
+    }
+  };
+
   return (
-    <div className="relative overflow-hidden rounded-2xl" ref={constraintsRef}>
+    <div
+      className="relative overflow-hidden rounded-2xl"
+      onClick={() => {
+        // Clicking anywhere on the container (outside the action buttons)
+        // should close the revealed actions
+        closeActions();
+      }}
+    >
       {/* Background actions */}
       <div className="absolute inset-0 flex">
         {/* Complete action (left side) */}
         <motion.div 
-          className="flex items-center justify-center bg-green-500 w-20"
+          className="flex items-center justify-center bg-green-500 w-[84px] shrink-0"
           style={{ opacity: completeOpacity }}
+          onClick={(e) => {
+            // Clicking the background (not the button) should close actions
+            e.stopPropagation();
+            closeActions();
+          }}
         >
           <button
-            onClick={() => handleActionClick('complete')}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick('complete');
+            }}
             className="p-2"
           >
             <Check className="w-5 h-5 text-white" />
@@ -90,11 +114,19 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
         
         {/* Delete action (right side) */}
         <motion.div 
-          className="flex items-center justify-center bg-red-500 w-20"
+          className="flex items-center justify-center bg-red-500 w-[84px] shrink-0"
           style={{ opacity: deleteOpacity }}
+          onClick={(e) => {
+            // Clicking the background (not the button) should close actions
+            e.stopPropagation();
+            closeActions();
+          }}
         >
           <button
-            onClick={() => handleActionClick('delete')}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleActionClick('delete');
+            }}
             className="p-2"
           >
             <Trash2 className="w-5 h-5 text-white" />
@@ -105,12 +137,28 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
       {/* Main tile */}
       <motion.div
         drag="x"
-        dragConstraints={constraintsRef}
+        dragConstraints={{ left: -80, right: 80 }}
         dragElastic={0.1}
+        onDragStart={() => {
+          hasDraggedRef.current = true;
+        }}
         onDragEnd={handleDragEnd}
         style={{ x }}
-        className="bg-black/20 backdrop-blur-sm relative z-10 cursor-pointer"
-        onClick={() => onEdit(task)}
+        className="bg-black/20 backdrop-blur-sm relative z-10 cursor-pointer w-full"
+        onClick={(e) => {
+          e.stopPropagation();
+          // If actions are revealed, a click should close them instead of opening edit
+          if (swipeAction !== 'none') {
+            closeActions();
+            return;
+          }
+          // If we've been dragging, suppress the click to avoid accidental edit
+          if (hasDraggedRef.current) {
+            hasDraggedRef.current = false;
+            return;
+          }
+          onEdit(task);
+        }}
       >
         <div className="p-4">
           <div className="flex items-start justify-between">
