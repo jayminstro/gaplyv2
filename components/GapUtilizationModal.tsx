@@ -49,6 +49,10 @@ export function GapUtilizationModal({
   const [newTaskStartTime, setNewTaskStartTime] = useState<string>('');
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isLoadingCalendarStatus, setIsLoadingCalendarStatus] = useState(true);
+  
+  // Local state for minute input values (allows empty values temporarily)
+  const [activityMinuteInput, setActivityMinuteInput] = useState<string>('');
+  const [newTaskMinuteInput, setNewTaskMinuteInput] = useState<string>('');
 
   // Validation functions for time constraints
   const validateStartTime = (startTime: string, durationMinutes: number = 0): { isValid: boolean; message: string; constrainedTime: string } => {
@@ -236,6 +240,14 @@ export function GapUtilizationModal({
   const handleActivityMinuteInputChange = (inputValue: string) => {
     if (!gap) return;
     
+    // Update local input value (allows empty)
+    setActivityMinuteInput(inputValue);
+    
+    // Allow empty input temporarily
+    if (inputValue === '') {
+      return;
+    }
+    
     const minute = parseInt(inputValue, 10);
     if (isNaN(minute) || minute < 0 || minute > 59) return;
     
@@ -244,7 +256,15 @@ export function GapUtilizationModal({
 
   // Handle minute input change for new tasks (with validation)
   const handleNewTaskMinuteInputChange = (inputValue: string) => {
-    if (!gap || !newTaskForm.duration) return;
+    if (!gap) return;
+    
+    // Update local input value (allows empty)
+    setNewTaskMinuteInput(inputValue);
+    
+    // Allow empty input temporarily
+    if (inputValue === '') {
+      return;
+    }
     
     const minute = parseInt(inputValue, 10);
     if (isNaN(minute) || minute < 0 || minute > 59) return;
@@ -256,9 +276,16 @@ export function GapUtilizationModal({
   const handleActivityMinuteBlur = (inputValue: string) => {
     if (!gap) return;
     
-    let minute = parseInt(inputValue, 10);
-    if (isNaN(minute)) {
+    let minute: number;
+    
+    if (inputValue === '') {
+      // If input is empty, use the current minute value
       minute = parseTime(activityStartTime).minutes;
+    } else {
+      minute = parseInt(inputValue, 10);
+      if (isNaN(minute)) {
+        minute = parseTime(activityStartTime).minutes;
+      }
     }
     
     // Clamp to valid range
@@ -273,8 +300,10 @@ export function GapUtilizationModal({
     
     if (validation.isValid) {
       setActivityStartTime(newTime);
+      setActivityMinuteInput(minute.toString());
     } else {
       setActivityStartTime(validation.constrainedTime);
+      setActivityMinuteInput(parseTime(validation.constrainedTime).minutes.toString());
       toast.warning('Time adjusted', {
         description: validation.message,
       });
@@ -283,28 +312,41 @@ export function GapUtilizationModal({
 
   // Handle minute input blur for new tasks (final validation)
   const handleNewTaskMinuteBlur = (inputValue: string) => {
-    if (!gap || !newTaskForm.duration) return;
+    if (!gap) return;
     
-    let minute = parseInt(inputValue, 10);
-    if (isNaN(minute)) {
+    let minute: number;
+    
+    if (inputValue === '') {
+      // If input is empty, use the current minute value
       minute = parseTime(newTaskStartTime).minutes;
+    } else {
+      minute = parseInt(inputValue, 10);
+      if (isNaN(minute)) {
+        minute = parseTime(newTaskStartTime).minutes;
+      }
     }
     
     // Clamp to valid range
     minute = Math.max(0, Math.min(59, minute));
     
-    // Validate against gap constraints
+    // Validate against gap constraints (use 0 duration if not set yet)
     const currentHour = parseTime(newTaskStartTime).hours;
     const newTime = `${currentHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
     
-    const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
-    const taskDurationMinutes = (hours * 60) + minutes;
+    let taskDurationMinutes = 0;
+    if (newTaskForm.duration) {
+      const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
+      taskDurationMinutes = (hours * 60) + minutes;
+    }
+    
     const validation = validateStartTime(newTime, taskDurationMinutes);
     
     if (validation.isValid) {
       setNewTaskStartTime(newTime);
+      setNewTaskMinuteInput(minute.toString());
     } else {
       setNewTaskStartTime(validation.constrainedTime);
+      setNewTaskMinuteInput(parseTime(validation.constrainedTime).minutes.toString());
       toast.warning('Time adjusted', {
         description: validation.message,
       });
@@ -317,6 +359,9 @@ export function GapUtilizationModal({
       checkCalendarStatus();
       setActivityStartTime(gap.start_time);
       setNewTaskStartTime(gap.start_time);
+      // Initialize minute input values
+      setActivityMinuteInput(parseTime(gap.start_time).minutes.toString());
+      setNewTaskMinuteInput(parseTime(gap.start_time).minutes.toString());
     }
   }, [isOpen, gap]);
 
@@ -812,7 +857,7 @@ export function GapUtilizationModal({
                            <span className="text-white text-lg">:</span>
                                                        <input
                               type="number"
-                              value={parseTime(activityStartTime).minutes}
+                              value={activityMinuteInput}
                               onChange={(e) => handleActivityMinuteInputChange(e.target.value)}
                               onBlur={(e) => handleActivityMinuteBlur(e.target.value)}
                               min="0"
@@ -1028,30 +1073,28 @@ export function GapUtilizationModal({
                   </div>
 
                   {/* Start time for new task */}
-                  <div>
-                    <label className="text-slate-300 text-sm font-medium mb-1 block">
-                      Start at
-                    </label>
-                                         <div className="flex items-center gap-2">
-                       <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
-                         {parseTime(newTaskStartTime).hours.toString().padStart(2, '0')}
-                       </div>
-                       <span className="text-white text-lg">:</span>
-                                               <input
-                          type="number"
-                          value={parseTime(newTaskStartTime).minutes}
-                          onChange={(e) => handleNewTaskMinuteInputChange(e.target.value)}
-                          onBlur={(e) => handleNewTaskMinuteBlur(e.target.value)}
-                          min="0"
-                          max="59"
-                          step="1"
-                          placeholder="00"
-                          className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
-                        />
-                     </div>
-                     <div className="text-xs text-slate-400 mt-1">
-                       Hour is fixed • Enter any minute (00-59)
-                     </div>
+                  <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
+                    <label className="text-slate-300 text-sm font-medium mb-1 block">Start at</label>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
+                        {parseTime(newTaskStartTime).hours.toString().padStart(2, '0')}
+                      </div>
+                      <span className="text-white text-lg">:</span>
+                      <input
+                        type="number"
+                        value={newTaskMinuteInput}
+                        onChange={(e) => handleNewTaskMinuteInputChange(e.target.value)}
+                        onBlur={(e) => handleNewTaskMinuteBlur(e.target.value)}
+                        min="0"
+                        max="59"
+                        step="1"
+                        placeholder="00"
+                        className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Hour is fixed • Enter any minute (00-59)
+                    </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Available: {gap.start_time} - {gap.end_time}
                     </div>
@@ -1070,7 +1113,7 @@ export function GapUtilizationModal({
                       }
                       return (
                         <div className="text-xs text-green-400 mt-1">
-                          ✓ Task will fit in gap • Latest start: {latestStart}
+                          ✓ Latest start: {latestStart}
                         </div>
                       );
                     })()}
