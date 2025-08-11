@@ -768,7 +768,7 @@ export function GapUtilizationModal({
       />
       
       {/* Modal */}
-      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto">
+      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto safe-area-bottom">
         {/* Handle */}
         <div className="flex justify-center py-3">
           <div className="w-12 h-1 bg-slate-600 rounded-full" />
@@ -791,7 +791,7 @@ export function GapUtilizationModal({
         </div>
         
         {/* Content */}
-        <div className="px-6 pb-8 space-y-4 scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
+        <div className="px-6 pb-24 safe-area-bottom space-y-4 scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
           {/* Gap Info */}
           <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
             <div className="flex items-center gap-3">
