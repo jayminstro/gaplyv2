@@ -477,7 +477,7 @@ function PlannerTimeline({
                                 {gapSourceInfo.label}
                               </span>
                             </div>
-                            <div className="flex items-center gap-3 text-sm text-slate-400">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
                               {(() => {
                                 // Dynamic display range for current hour when inside the gap and viewing today
                                 const isTodaySelected = isSameDay(selectedDate, currentTime);
@@ -496,20 +496,14 @@ function PlannerTimeline({
                                 }
                                 return (
                                   <>
-                                    <span className="truncate font-medium">
+                                    <span className="font-medium">
                                       {formatTimeRange(displayStart, displayEnd)}
                                     </span>
                                     {minutesLeftInHour !== null && (
-                                      <>
-                                        <span>•</span>
-                                        <span>{`${minutesLeftInHour} Minutes Left In Current Hour`}</span>
-                                      </>
+                                      <span className="text-xs text-slate-500 sm:ml-2">{`${minutesLeftInHour} Minutes Left In Current Hour`}</span>
                                     )}
                                     {userPreferences?.show_duration_in_planner && minutesLeftInHour === null && (
-                                      <>
-                                        <span>•</span>
-                                        <span>{item.duration}</span>
-                                      </>
+                                      <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
                                     )}
                                   </>
                                 );
