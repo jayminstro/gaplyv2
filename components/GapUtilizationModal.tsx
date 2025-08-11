@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Clock, Calendar, Plus, ArrowRight, Zap, Sparkles, User } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon, minutesToTime, timeToMinutes, combineDateAndTime, extractTimeFromDateTime } from '../utils/helpers';
@@ -759,7 +760,7 @@ export function GapUtilizationModal({
   const suggestedActivities = suitableActivities.filter(a => a.type === 'suggestion');
   const suitableTasks = suitableActivities.filter(a => a.type === 'task');
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 flex items-end pointer-events-auto">
       {/* Backdrop */}
       <div 
@@ -1314,4 +1315,10 @@ export function GapUtilizationModal({
       </div>
     </div>
   );
+
+  // Always render modal in a portal to avoid iOS fixed-position quirks inside scrollable containers
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 }
