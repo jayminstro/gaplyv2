@@ -375,6 +375,10 @@ export function GapUtilizationModal({
       // Initialize minute input values
       setActivityMinuteInput(parseTime(gap.start_time).minutes.toString());
       setNewTaskMinuteInput(parseTime(gap.start_time).minutes.toString());
+      // Ensure consistent initial state regardless of entry point (Today vs Planner)
+      setSelectedOption(null);
+      setActivitiesTab('suggestions');
+      setShowAllActivities(false);
     }
   }, [isOpen, gap]);
 
@@ -891,7 +895,7 @@ export function GapUtilizationModal({
 
                       {/* Tabs */}
                       <div className="mt-3">
-                        <div className="flex gap-2 bg-slate-800/40 p-1 rounded-xl border border-slate-700/50 w-fit">
+                        <div className="flex gap-2 bg-slate-800/40 p-1 rounded-xl border border-slate-700/50 w-fit mx-auto">
                           <button
                             onClick={() => { setActivitiesTab('suggestions'); setShowAllActivities(false); }}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
