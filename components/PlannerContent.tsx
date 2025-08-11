@@ -359,7 +359,14 @@ function PlannerContent({
           endTime = new Date(`${selectedDateStr}T${gapEnd}`);
         }
         
-        const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+        // If selected day is today and we are inside the gap, subtract elapsed time
+        const isTodaySelected = isSameDay(selectedDate, currentTime);
+        const now = currentTime;
+        let effectiveStart = startTime;
+        if (isTodaySelected && now >= startTime && now < endTime) {
+          effectiveStart = now;
+        }
+        const durationMinutes = Math.round((endTime.getTime() - effectiveStart.getTime()) / (1000 * 60));
         if (durationMinutes > 0 && durationMinutes <= 24 * 60) {
           totalMinutes += durationMinutes;
         }
