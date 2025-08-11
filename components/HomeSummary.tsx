@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Task, TimeGap } from '../types/index';
-import { extractTimeFromDateTime, calculateGapDuration } from '../utils/helpers';
+import { extractTimeFromDateTime } from '../utils/helpers';
 
 interface HomeSummaryProps {
   globalTasks: Task[];
@@ -8,7 +8,7 @@ interface HomeSummaryProps {
   userName?: string;
 }
 
-export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
+export function HomeSummary({ globalTasks, gaps, userName: _userName }: HomeSummaryProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [stats, setStats] = useState({
     freeTime: '--',
@@ -175,7 +175,7 @@ export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
           startTime
         };
       })
-      .filter(gap => gap && !isNaN(gap.startTime.getTime()) && gap.startTime > now)
+      .filter((gap): gap is TimeGap & { startTime: Date } => !!gap && !isNaN(gap.startTime.getTime()) && gap.startTime > now)
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
     if (futureGaps.length > 0) {
@@ -188,18 +188,12 @@ export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
 
   const countScheduledTasks = (tasks: Task[], today: string): number => {
     return tasks.filter(task => {
-      // Count tasks that are due today or overdue from today
       if (!task.dueDate) return false;
-      
-      // Use consistent date format for comparison
-      const taskDate = task.dueDate; // Should already be in YYYY-MM-DD format
-      const isToday = taskDate === today;
-      
-      // Include scheduled and overdue tasks for today that are not completed
-      return isToday && 
-             (task.status === 'scheduled' || task.status === 'overdue') && 
-             !task.isCompleted && 
-             !task.is_completed;
+
+      const isToday = task.dueDate === today;
+
+      // Count activities due today that are not completed
+      return isToday && !task.isCompleted && !task.is_completed;
     }).length;
   };
 
@@ -210,11 +204,11 @@ export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
     const remainingMinutes = minutes % 60;
 
     if (hours === 0) {
-      return `${remainingMinutes} min`;
+      return `${remainingMinutes}m`;
     } else if (remainingMinutes === 0) {
-      return `${hours} h`;
+      return `${hours}h`;
     } else {
-      return `${hours} h ${remainingMinutes} m`;
+      return `${hours}h ${remainingMinutes}m`;
     }
   };
 
@@ -226,17 +220,17 @@ export function HomeSummary({ globalTasks, gaps, userName }: HomeSummaryProps) {
 
   return (
     <div className="grid grid-cols-3 gap-3 mb-8">
-      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation min-h-[80px] flex flex-col justify-center">
-        <div className="text-2xl mb-1 font-mono leading-tight">{stats.freeTime}</div>
-        <div className="text-slate-400 text-sm">free</div>
+      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation h-[84px] flex flex-col justify-center overflow-hidden">
+        <div className="[font-size:clamp(16px,3.8vw,24px)] mb-1 font-mono leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{stats.freeTime}</div>
+        <div className="text-slate-400 text-sm truncate">Free</div>
       </div>
-      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation min-h-[80px] flex flex-col justify-center">
-        <div className="text-2xl mb-1 font-mono leading-tight">{stats.scheduledTasks}</div>
-        <div className="text-slate-400 text-sm">scheduled</div>
+      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation h-[84px] flex flex-col justify-center overflow-hidden">
+        <div className="[font-size:clamp(16px,3.8vw,24px)] mb-1 font-mono leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{stats.scheduledTasks}</div>
+        <div className="text-slate-400 text-sm truncate">Scheduled</div>
       </div>
-      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation min-h-[80px] flex flex-col justify-center">
-        <div className="text-2xl mb-1 font-mono leading-tight">{stats.nextFreeSlot}</div>
-        <div className="text-slate-400 text-sm">Next free slot</div>
+      <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation h-[84px] flex flex-col justify-center overflow-hidden">
+        <div className="[font-size:clamp(16px,3.8vw,24px)] mb-1 font-mono leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{stats.nextFreeSlot}</div>
+        <div className="text-slate-400 text-sm truncate">Next Free Slot</div>
       </div>
     </div>
   );

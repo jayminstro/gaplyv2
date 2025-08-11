@@ -5,7 +5,7 @@ import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
 import { useGaps } from '../hooks/useGaps';
-import { deduplicateGaps, mergeAndDeduplicateGaps } from '../utils/gapLogic';
+import { mergeAndDeduplicateGaps } from '../utils/gapLogic';
 import { normalizeWorkingDays } from '../utils/gapLogic';
 
 interface PlannerContentProps {
@@ -293,14 +293,14 @@ function PlannerContent({
       if (gapStart.includes('T')) {
         startTime = new Date(gapStart);
       } else {
-        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+        const selectedDateStr = selectedDate.toLocaleDateString('en-CA');
         startTime = new Date(`${selectedDateStr}T${gapStart}`);
       }
       
       if (gapEnd.includes('T')) {
         endTime = new Date(gapEnd);
       } else {
-        const selectedDateStr = selectedDate.toISOString().split('T')[0];
+        const selectedDateStr = selectedDate.toLocaleDateString('en-CA');
         endTime = new Date(`${selectedDateStr}T${gapEnd}`);
       }
       
@@ -326,9 +326,6 @@ function PlannerContent({
 
   // Calculate summary stats - only count gaps within working hours
   const workingHoursGaps = selectedDateGaps.filter(isGapWithinWorkingHours);
-  const totalGaps = workingHoursGaps.length;
-  const completedTasks = selectedDateTasks.filter(task => task.status === 'completed').length;
-  const totalTasks = selectedDateTasks.length;
   
   // Calculate total remaining time across all gaps within working hours
   const calculateTotalGapTime = () => {
@@ -348,27 +345,34 @@ function PlannerContent({
         if (gapStart.includes('T')) {
           startTime = new Date(gapStart);
         } else {
-          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+          const selectedDateStr = selectedDate.toLocaleDateString('en-CA');
           startTime = new Date(`${selectedDateStr}T${gapStart}`);
         }
         
         if (gapEnd.includes('T')) {
           endTime = new Date(gapEnd);
         } else {
-          const selectedDateStr = selectedDate.toISOString().split('T')[0];
+          const selectedDateStr = selectedDate.toLocaleDateString('en-CA');
           endTime = new Date(`${selectedDateStr}T${gapEnd}`);
         }
         
-        // If selected day is today and we are inside the gap, subtract elapsed time
         const isTodaySelected = isSameDay(selectedDate, currentTime);
-        const now = currentTime;
-        let effectiveStart = startTime;
-        if (isTodaySelected && now >= startTime && now < endTime) {
-          effectiveStart = now;
-        }
-        const durationMinutes = Math.round((endTime.getTime() - effectiveStart.getTime()) / (1000 * 60));
-        if (durationMinutes > 0 && durationMinutes <= 24 * 60) {
-          totalMinutes += durationMinutes;
+        if (isTodaySelected) {
+          // Only count time from now forward
+          if (endTime <= currentTime) {
+            return; // past gap, contributes 0
+          }
+          const effectiveStart = currentTime > startTime ? currentTime : startTime;
+          const durationMinutes = Math.round((endTime.getTime() - effectiveStart.getTime()) / (1000 * 60));
+          if (durationMinutes > 0 && durationMinutes <= 24 * 60) {
+            totalMinutes += durationMinutes;
+          }
+        } else {
+          // Non-today: count full gap durations
+          const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+          if (durationMinutes > 0 && durationMinutes <= 24 * 60) {
+            totalMinutes += durationMinutes;
+          }
         }
       } catch (error) {
         console.warn('Error calculating gap duration:', error);
@@ -394,16 +398,22 @@ function PlannerContent({
     }
   };
   
-  const getBalanceStatus = () => {
-    if (totalTasks === 0) return 'No tasks';
-    if (completedTasks === totalTasks) return 'Complete';
-    if (totalGaps > totalTasks - completedTasks) return 'Balanced';
-    if (totalGaps === totalTasks - completedTasks) return 'Tight';
-    return 'Overloaded';
-  };
-
-  const balanceStatus = getBalanceStatus();
-  const remainingGaps = Math.max(0, totalGaps - (totalTasks - completedTasks));
+  const scheduledActivitiesCount = useMemo(() => {
+    const selStr = format(selectedDate, 'yyyy-MM-dd');
+    let count = 0;
+    for (const t of globalTasks) {
+      if (!t.dueDate) continue;
+      try {
+        if (t.dueDate === selStr) { count++; continue; }
+        const taskDate = new Date(t.dueDate);
+        if (isSameDay(taskDate, selectedDate)) { count++; continue; }
+      } catch {
+        const d = String(t.dueDate).split('T')[0];
+        if (d === selStr) { count++; }
+      }
+    }
+    return count;
+  }, [globalTasks, selectedDate]);
   const gapTimeText = formatGapTime();
   
   // Ref for timeline container to auto-scroll to current time
@@ -455,7 +465,7 @@ function PlannerContent({
             Planner
           </h1>
           <p className="text-slate-400 text-base">
-            {balanceStatus}
+            {`${scheduledActivitiesCount} ${scheduledActivitiesCount === 1 ? 'activity' : 'activities'}`}
             {gapTimeText && (
               <span> • {gapTimeText} left</span>
             )}
@@ -517,7 +527,7 @@ function PlannerContent({
               }
             }}
           >
-            {dateTabs.map((tab, index) => (
+            {dateTabs.map((tab) => (
               <button
                 key={tab.date.toISOString()}
                 onClick={() => setSelectedDate(tab.date)}
