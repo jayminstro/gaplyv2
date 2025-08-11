@@ -38,7 +38,7 @@ export function GapUtilizationModal({
 }: GapUtilizationModalProps) {
   const [suitableActivities, setSuitableActivities] = useState<SuitableActivity[]>([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
-  const [selectedOption, setSelectedOption] = useState<'activities' | 'new-task' | null>(null);
+  const [selectedOption, setSelectedOption] = useState<'activities' | 'new-task' | 'activity-config' | null>(null);
   const [activityStartTime, setActivityStartTime] = useState<string>('');
   const [newTaskForm, setNewTaskForm] = useState({
     title: '',
@@ -53,6 +53,17 @@ export function GapUtilizationModal({
   // Local state for minute input values (allows empty values temporarily)
   const [activityMinuteInput, setActivityMinuteInput] = useState<string>('');
   const [newTaskMinuteInput, setNewTaskMinuteInput] = useState<string>('');
+  const [selectedActivity, setSelectedActivity] = useState<SuitableActivity | null>(null);
+  const [activityDuration, setActivityDuration] = useState<number>(0);
+
+  const handleSelectActivity = (activity: SuitableActivity) => {
+    setSelectedActivity(activity);
+    setActivityDuration(activity.duration);
+    const defaultStart = gap?.start_time || '00:00';
+    setActivityStartTime(defaultStart);
+    setActivityMinuteInput(parseTime(defaultStart).minutes.toString());
+    setSelectedOption('activity-config');
+  };
 
   // Validation functions for time constraints
   const validateStartTime = (startTime: string, durationMinutes: number = 0): { isValid: boolean; message: string; constrainedTime: string } => {
@@ -847,51 +858,7 @@ export function GapUtilizationModal({
                     </div>
                   ) : (
                     <>
-                      {/* Start time selector for activities */}
-                      <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
-                        <label className="text-slate-300 text-sm font-medium mb-1 block">Start at</label>
-                                                 <div className="flex items-center gap-2">
-                           <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
-                             {parseTime(activityStartTime).hours.toString().padStart(2, '0')}
-                           </div>
-                           <span className="text-white text-lg">:</span>
-                                                       <input
-                              type="number"
-                              value={activityMinuteInput}
-                              onChange={(e) => handleActivityMinuteInputChange(e.target.value)}
-                              onBlur={(e) => handleActivityMinuteBlur(e.target.value)}
-                              min="0"
-                              max="59"
-                              step="1"
-                              placeholder="00"
-                              className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
-                            />
-                         </div>
-                         <div className="text-xs text-slate-400 mt-1">
-                           Hour is fixed • Enter any minute (00-59)
-                         </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          Available: {gap.start_time} - {gap.end_time}
-                        </div>
-                        {(() => {
-                          const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
-                          const validation = validateStartTime(activityStartTime, maxDuration);
-                          const latestStart = getLatestStartTime(maxDuration);
-                          
-                          if (!validation.isValid) {
-                            return (
-                              <div className="text-xs text-orange-400 mt-1">
-                                ⚠️ {validation.message}
-                              </div>
-                            );
-                          }
-                          return (
-                            <div className="text-xs text-green-400 mt-1">
-                              ✓ Latest start: {latestStart}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                      {/* Activity selection only; timing configured after selection */}
                       {/* Calendar Toggle for Activities */}
                       {isCalendarConnected && (
                         <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
@@ -924,7 +891,7 @@ export function GapUtilizationModal({
                           {suggestedActivities.map((activity) => (
                             <button
                               key={`suggestion-${activity.id}`}
-                              onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
+                              onClick={() => handleSelectActivity(activity)}
                               className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
                             >
                               <div className="flex items-center justify-between">
@@ -962,7 +929,7 @@ export function GapUtilizationModal({
                           {suitableTasks.map((activity) => (
                             <button
                               key={`task-${activity.id}`}
-                              onClick={() => scheduleActivityInGap(activity, newTaskForm.addToCalendar)}
+                              onClick={() => handleSelectActivity(activity)}
                               className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
                             >
                               <div className="flex items-center justify-between">
@@ -993,6 +960,137 @@ export function GapUtilizationModal({
                     <div className="text-slate-400 text-xs">Scroll for more activities</div>
                   </div>
                 )}
+              </div>
+            )}
+            {selectedOption === 'activity-config' && (
+              <div className="ml-4 space-y-3">
+                <div className="bg-slate-700/40 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-white font-medium">Configure Activity</h5>
+                    <button
+                      onClick={() => setSelectedOption('activities')}
+                      className="text-slate-400 hover:text-white text-sm"
+                    >
+                      ← Back to activities
+                    </button>
+                  </div>
+
+                  {/* Selected Activity Display */}
+                  {selectedActivity && (
+                    <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-600/30">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 ${selectedActivity.color || 'bg-slate-500/20'} rounded-full flex items-center justify-center`}>
+                          {renderSafeIcon(selectedActivity.icon)}
+                        </div>
+                        <div>
+                          <div className="text-white font-medium">{selectedActivity.title}</div>
+                          <div className="text-slate-400 text-sm">
+                            {selectedActivity.category} • {formatDuration(activityDuration || selectedActivity.duration)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Duration Configuration */}
+                  {selectedActivity && (
+                    <div>
+                      <label className="text-slate-300 text-sm font-medium mb-1 block">
+                        Duration (minutes)
+                      </label>
+                      <input
+                        type="number"
+                        value={activityDuration || selectedActivity.duration}
+                        onChange={(e) => setActivityDuration(Math.max(1, Math.min(gapDurationMinutes, Number(e.target.value) || 0)))}
+                        min={1}
+                        max={gapDurationMinutes}
+                        step={1}
+                        className="w-32 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      />
+                      <div className="text-xs text-slate-500 mt-1">
+                        Max: {formatDuration(gapDurationMinutes)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Start time selector */}
+                  <div>
+                    <label className="text-slate-300 text-sm font-medium mb-1 block">Start at</label>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
+                        {parseTime(activityStartTime).hours.toString().padStart(2, '0')}
+                      </div>
+                      <span className="text-white text-lg">:</span>
+                      <input
+                        type="number"
+                        value={activityMinuteInput}
+                        onChange={(e) => handleActivityMinuteInputChange(e.target.value)}
+                        onBlur={(e) => handleActivityMinuteBlur(e.target.value)}
+                        min="0"
+                        max="59"
+                        step="1"
+                        placeholder="00"
+                        className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Hour is fixed • Enter any minute (00-59)
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Available: {gap.start_time} - {gap.end_time}
+                    </div>
+                    {selectedActivity && (() => {
+                      const duration = activityDuration || selectedActivity.duration;
+                      const validation = validateStartTime(activityStartTime, duration);
+                      const latestStart = getLatestStartTime(duration);
+                      if (!validation.isValid) {
+                        return (
+                          <div className="text-xs text-orange-400 mt-1">⚠️ {validation.message}</div>
+                        );
+                      }
+                      return (
+                        <div className="text-xs text-green-400 mt-1">✓ Latest start: {latestStart}</div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Calendar Toggle */}
+                  {isCalendarConnected && (
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-xl border border-slate-600/30">
+                      <div className="flex items-center gap-3">
+                        <Calendar className="w-4 h-4 text-blue-400" />
+                        <div>
+                          <div className="text-white text-sm font-medium">Add to Google Calendar</div>
+                          <div className="text-slate-400 text-xs">Create a calendar event for this activity</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setNewTaskForm(prev => ({ ...prev, addToCalendar: !prev.addToCalendar }))}
+                        className={`w-11 h-6 rounded-full transition-colors ${newTaskForm.addToCalendar ? 'bg-blue-600' : 'bg-slate-600'}`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${newTaskForm.addToCalendar ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Schedule Button */}
+                  <button
+                    onClick={() => {
+                      if (!selectedActivity) return;
+                      const configured: SuitableActivity = { ...selectedActivity, duration: activityDuration || selectedActivity.duration };
+                      scheduleActivityInGap(configured, newTaskForm.addToCalendar);
+                    }}
+                    disabled={(() => {
+                      if (!selectedActivity) return true;
+                      const duration = activityDuration || selectedActivity.duration;
+                      const validation = validateStartTime(activityStartTime, duration);
+                      return !validation.isValid || duration <= 0 || duration > gapDurationMinutes;
+                    })()}
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-xl py-3 text-sm font-medium transition-colors"
+                  >
+                    Schedule Activity
+                  </button>
+                </div>
               </div>
             )}
             
