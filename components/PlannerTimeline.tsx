@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { format, parseISO, addMinutes, isBefore, isAfter, isSameDay } from 'date-fns';
-import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Zap, Calendar, Settings, Sparkles } from 'lucide-react';
+import { format, parseISO, addMinutes, isSameDay } from 'date-fns';
+import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Calendar, Settings, Sparkles } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { ActivityStackModal } from './ActivityStackModal';
@@ -136,6 +136,12 @@ function PlannerTimeline({
         // Only add gaps within working hours
         if (isGapWithinWorkingHours(startTime, endTime)) {
           const gapSourceInfo = getGapSourceInfo(gap);
+          // Dynamic remaining duration when currently inside gap (only for today)
+          const isTodaySelected = isSameDay(selectedDate, currentTime);
+          const nowInGap = isTodaySelected && currentTime >= startTime && currentTime < endTime;
+          const dynamicMinutesLeft = nowInGap
+            ? Math.max(0, Math.round((endTime.getTime() - currentTime.getTime()) / (1000 * 60)))
+            : gap.duration_minutes;
           
           items.push({
             id: gap.id,
@@ -143,7 +149,7 @@ function PlannerTimeline({
             startTime,
             endTime,
             title: `Gap`,
-            duration: `${gap.duration_minutes} min`,
+            duration: `${dynamicMinutesLeft} min`,
             icon: gapSourceInfo.icon,
             iconColor: gapSourceInfo.color,
             data: gap,
@@ -241,7 +247,7 @@ function PlannerTimeline({
     console.log(`🔍 PlannerTimeline Debug - Final timeline items: ${sortedItems.length} total, ${gapItems.length} gaps`);
     
     return sortedItems;
-  }, [tasks, gaps, selectedDate, userPreferences]);
+  }, [tasks, gaps, selectedDate, userPreferences, currentTime]);
   
   // Generate time slots for the day based on user's working hours
   const generateTimeSlots = () => {
@@ -297,7 +303,7 @@ function PlannerTimeline({
   // Check if current time should be shown (only for today)
   const shouldShowCurrentTime = isSameDay(selectedDate, currentTime);
   const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
+  // const currentMinute = currentTime.getMinutes();
   
   // Auto-scroll to current time when viewing today
   useEffect(() => {
@@ -310,7 +316,6 @@ function PlannerTimeline({
     // Calculate target scroll position to center the current time
     const timelineElement = timelineRef.current;
     const timelineHeight = timelineElement.clientHeight;
-    const totalSlotsHeight = timeSlots.length * 100; // Approximate height per slot
     const targetScrollTop = (currentHourIndex * 100) - (timelineHeight / 2);
     
     // Smooth scroll to the current time
@@ -473,15 +478,42 @@ function PlannerTimeline({
                               </span>
                             </div>
                             <div className="flex items-center gap-3 text-sm text-slate-400">
-                              <span className="truncate font-medium">
-                                {formatTimeRange(item.startTime, item.endTime)}
-                              </span>
-                              {userPreferences?.show_duration_in_planner && (
-                                <>
-                                  <span>•</span>
-                                  <span>{item.duration}</span>
-                                </>
-                              )}
+                              {(() => {
+                                // Dynamic display range for current hour when inside the gap and viewing today
+                                const isTodaySelected = isSameDay(selectedDate, currentTime);
+                                const nowInGap = isTodaySelected && currentTime >= item.startTime && currentTime < item.endTime;
+                                let displayStart = item.startTime;
+                                let displayEnd = item.endTime;
+                                let minutesLeftInHour: number | null = null;
+                                if (nowInGap) {
+                                  const hourStart = new Date(currentTime);
+                                  hourStart.setMinutes(0, 0, 0);
+                                  const hourEnd = new Date(hourStart);
+                                  hourEnd.setHours(hourStart.getHours() + 1);
+                                  displayStart = currentTime > item.startTime ? currentTime : item.startTime;
+                                  displayEnd = item.endTime < hourEnd ? item.endTime : hourEnd;
+                                  minutesLeftInHour = Math.max(0, Math.round((hourEnd.getTime() - currentTime.getTime()) / (1000 * 60)));
+                                }
+                                return (
+                                  <>
+                                    <span className="truncate font-medium">
+                                      {formatTimeRange(displayStart, displayEnd)}
+                                    </span>
+                                    {minutesLeftInHour !== null && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{`${minutesLeftInHour} Minutes Left In Current Hour`}</span>
+                                      </>
+                                    )}
+                                    {userPreferences?.show_duration_in_planner && minutesLeftInHour === null && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{item.duration}</span>
+                                      </>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -633,7 +665,19 @@ function PlannerTimeline({
                         
                         displayStart = displayStart < hourStart ? hourStart : displayStart;
                         displayEnd = displayEnd > hourEnd ? hourEnd : displayEnd;
+
+                        // If this is the current hour and we're within the gap portion, reduce available time by now
+                        const isTodaySelected = isSameDay(selectedDate, currentTime);
+                        if (isTodaySelected && slot.hour24 === currentHour && currentTime >= displayStart && currentTime < displayEnd) {
+                          displayStart = new Date(currentTime);
+                        }
                         
+                        // If we're in the current hour and inside this portion, start from now
+                        const isTodaySelected2 = isSameDay(selectedDate, currentTime);
+                        if (isTodaySelected2 && slot.hour24 === currentHour && currentTime >= displayStart && currentTime < displayEnd) {
+                          displayStart = new Date(currentTime);
+                        }
+
                         const durationMinutes = Math.round((displayEnd.getTime() - displayStart.getTime()) / (1000 * 60));
                         const durationText = durationMinutes >= 60 
                           ? `${Math.floor(durationMinutes / 60)}h${durationMinutes % 60 > 0 ? ` ${durationMinutes % 60}m` : ''}`
