@@ -230,7 +230,7 @@ export function HomeSummary({ globalTasks, gaps, userName: _userName }: HomeSumm
       </div>
       <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 text-center border border-slate-700/50 touch-manipulation h-[84px] flex flex-col justify-center overflow-hidden">
         <div className="[font-size:clamp(16px,3.8vw,24px)] mb-1 font-mono leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{stats.nextFreeSlot}</div>
-        <div className="text-slate-400 text-sm truncate">Next Free Slot</div>
+        <div className="text-slate-400 text-sm truncate">Next Gap</div>
       </div>
     </div>
   );
