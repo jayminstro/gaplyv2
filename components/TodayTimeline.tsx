@@ -54,6 +54,18 @@ export function TodayTimeline({
   const [gapModalOpen, setGapModalOpen] = useState(false);
   const [selectedGap, setSelectedGap] = useState<TimeGap | null>(null);
 
+  // Inform the app about modal visibility so global UI (e.g., bottom nav) can react consistently
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('ui:modalOpen', { detail: { type: 'gap-utilization', open: gapModalOpen } }));
+    } catch {}
+    return () => {
+      try {
+        window.dispatchEvent(new CustomEvent('ui:modalOpen', { detail: { type: 'gap-utilization', open: false } }));
+      } catch {}
+    };
+  }, [gapModalOpen]);
+
   // Handle creating a gap for utilization
   const handleCreateAndUtilizeGap = (item: TimelineItem) => {
     // Create a synthetic gap object for the modal

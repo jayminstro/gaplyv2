@@ -38,6 +38,21 @@ export default function App() {
   // Gap utilization state
   const [selectedGap, setSelectedGap] = useState<TimeGap | null>(null);
   const [isGapModalOpen, setIsGapModalOpen] = useState(false);
+  const [isExternalGapModalOpen, setIsExternalGapModalOpen] = useState(false);
+
+  // Listen for modal open events from nested components (e.g., TodayTimeline)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const ce = e as CustomEvent<{ type: string; open: boolean }>;
+        if (ce.detail?.type === 'gap-utilization') {
+          setIsExternalGapModalOpen(!!ce.detail.open);
+        }
+      } catch {}
+    };
+    window.addEventListener('ui:modalOpen', handler as EventListener);
+    return () => window.removeEventListener('ui:modalOpen', handler as EventListener);
+  }, []);
   
   // Authentication state
   const [isLoading, setIsLoading] = useState(true);
@@ -1772,7 +1787,8 @@ export default function App() {
         )}
 
         {/* Fixed Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
+        <div className={`fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom transition-opacity ${(isGapModalOpen || isExternalGapModalOpen) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+        >
           <div className="flex justify-around items-center py-4 px-6 safe-area-left safe-area-right">
             <button
               onClick={() => setActiveTab('home')}
@@ -1911,7 +1927,8 @@ export default function App() {
       )}
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom">
+      <div className={`fixed bottom-0 left-0 right-0 z-20 bg-slate-900/60 backdrop-blur-md border-t border-slate-700/50 safe-area-bottom transition-opacity ${(isGapModalOpen || isExternalGapModalOpen) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      >
         <div className="flex justify-around items-center py-4 px-6 safe-area-left safe-area-right">
           <button
             onClick={() => setActiveTab('home')}
