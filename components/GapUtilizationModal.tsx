@@ -39,6 +39,8 @@ export function GapUtilizationModal({
   const [suitableActivities, setSuitableActivities] = useState<SuitableActivity[]>([]);
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
   const [selectedOption, setSelectedOption] = useState<'activities' | 'new-task' | 'activity-config' | null>(null);
+  const [activitiesTab, setActivitiesTab] = useState<'suggestions' | 'tasks'>('suggestions');
+  const [showAllActivities, setShowAllActivities] = useState<boolean>(false);
   const [activityStartTime, setActivityStartTime] = useState<string>('');
   const [newTaskForm, setNewTaskForm] = useState({
     title: '',
@@ -762,7 +764,7 @@ export function GapUtilizationModal({
       />
       
       {/* Modal */}
-      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-hidden">
+      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto">
         {/* Handle */}
         <div className="flex justify-center py-3">
           <div className="w-12 h-1 bg-slate-600 rounded-full" />
@@ -785,7 +787,7 @@ export function GapUtilizationModal({
         </div>
         
         {/* Content */}
-        <div className="px-6 pb-8 space-y-4 max-h-[calc(85vh-150px)] overflow-y-auto scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
+        <div className="px-6 pb-8 space-y-4 scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
           {/* Gap Info */}
           <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
             <div className="flex items-center gap-3">
@@ -816,7 +818,15 @@ export function GapUtilizationModal({
             
             {/* Existing Activities Option */}
             <button
-              onClick={() => setSelectedOption(selectedOption === 'activities' ? null : 'activities')}
+              onClick={() => {
+                if (selectedOption === 'activities') {
+                  setSelectedOption(null);
+                } else {
+                  setShowAllActivities(false);
+                  setActivitiesTab('suggestions');
+                  setSelectedOption('activities');
+                }
+              }}
               className={`w-full bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border transition-all ${
                 selectedOption === 'activities' 
                   ? 'border-blue-500/50 bg-blue-500/10' 
@@ -845,7 +855,6 @@ export function GapUtilizationModal({
             {/* Activities List */}
             {selectedOption === 'activities' && (
               <div className="ml-4 space-y-3">
-                <div className="max-h-32 overflow-y-auto">
                   {isLoadingActivities ? (
                     <div className="text-center py-4">
                       <div className="text-slate-400">Loading activities...</div>
@@ -858,10 +867,9 @@ export function GapUtilizationModal({
                     </div>
                   ) : (
                     <>
-                      {/* Activity selection only; timing configured after selection */}
                       {/* Calendar Toggle for Activities */}
                       {isCalendarConnected && (
-                        <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
+                        <div className="bg-slate-700/30 rounded-xl p-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Calendar className="w-4 h-4 text-blue-400" />
@@ -881,85 +889,90 @@ export function GapUtilizationModal({
                         </div>
                       )}
 
-                      {/* Suggestions Section */}
-                      {suggestedActivities.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
+                      {/* Tabs */}
+                      <div className="mt-3">
+                        <div className="flex gap-2 bg-slate-800/40 p-1 rounded-xl border border-slate-700/50 w-fit">
+                          <button
+                            onClick={() => { setActivitiesTab('suggestions'); setShowAllActivities(false); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                              activitiesTab === 'suggestions' ? 'bg-slate-700/60 text-white' : 'text-slate-300 hover:text-white'
+                            }`}
+                          >
                             <Sparkles className="w-4 h-4" />
-                            Suggestions ({suggestedActivities.length})
-                          </div>
-                          {suggestedActivities.map((activity) => (
-                            <button
-                              key={`suggestion-${activity.id}`}
-                              onClick={() => handleSelectActivity(activity)}
-                              className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 ${activity.color} rounded-full flex items-center justify-center`}>
-                                    {renderSafeIcon(activity.icon)}
-                                  </div>
-                                  <div>
-                                    <div className="text-white text-sm font-medium">{activity.title}</div>
-                                    <div className="text-slate-400 text-xs">
-                                      {activity.category} • {formatDuration(activity.duration)}
-                                      {activity.rating && (
-                                        <>
-                                          {' • '}
-                                          <span className="text-yellow-400">★ {activity.rating}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <Zap className="w-4 h-4 text-purple-400" />
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* My Tasks Section */}
-                      {suitableTasks.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm text-slate-300 font-medium">
+                            <span>Suggestions</span>
+                          </button>
+                          <button
+                            onClick={() => { setActivitiesTab('tasks'); setShowAllActivities(false); }}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                              activitiesTab === 'tasks' ? 'bg-slate-700/60 text-white' : 'text-slate-300 hover:text-white'
+                            }`}
+                          >
                             <User className="w-4 h-4" />
-                            My Tasks ({suitableTasks.length})
-                          </div>
-                          {suitableTasks.map((activity) => (
-                            <button
-                              key={`task-${activity.id}`}
-                              onClick={() => handleSelectActivity(activity)}
-                              className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 ${activity.color.replace('text-', 'bg-').replace('-400', '-500/20')} rounded-full flex items-center justify-center`}>
-                                    {renderSafeIcon(activity.icon)}
-                                  </div>
-                                  <div>
-                                    <div className="text-white text-sm font-medium">{activity.title}</div>
-                                    <div className="text-slate-400 text-xs">
-                                      {activity.category} • {formatDuration(activity.duration)}
-                                    </div>
-                                  </div>
-                                </div>
-                                <Zap className="w-4 h-4 text-blue-400" />
-                              </div>
-                            </button>
-                          ))}
+                            <span>My Tasks</span>
+                          </button>
                         </div>
-                      )}
+                      </div>
+
+                      {/* Tab Content */}
+                      <div className="mt-3 space-y-2">
+                        {(() => {
+                          const activitiesForTab = activitiesTab === 'suggestions' ? suggestedActivities : suitableTasks;
+                          if (activitiesForTab.length === 0) {
+                            return (
+                              <div className="text-center py-4">
+                                <div className="text-slate-400 text-sm">
+                                  {activitiesTab === 'suggestions' ? 'No suggestions fit this gap.' : 'No tasks fit this gap.'}
+                                </div>
+                              </div>
+                            );
+                          }
+                          const visibleItems = showAllActivities ? activitiesForTab : activitiesForTab.slice(0, 3);
+                          return (
+                            <>
+                              {visibleItems.map((activity) => (
+                                <button
+                                  key={`${activity.type}-${activity.id}`}
+                                  onClick={() => handleSelectActivity(activity)}
+                                  className="w-full bg-slate-700/40 rounded-xl p-3 text-left hover:bg-slate-600/40 transition-colors border border-slate-600/30"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-8 h-8 ${activity.type === 'task' ? activity.color.replace('text-', 'bg-').replace('-400', '-500/20') : activity.color} rounded-full flex items-center justify-center`}>
+                                        {renderSafeIcon(activity.icon)}
+                                      </div>
+                                      <div>
+                                        <div className="text-white text-sm font-medium">{activity.title}</div>
+                                        <div className="text-slate-400 text-xs">
+                                          {activity.category} • {formatDuration(activity.duration)}
+                                          {activity.rating && (
+                                            <>
+                                              {' '}
+                                              • <span className="text-yellow-400">★ {activity.rating}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <Zap className={`w-4 h-4 ${activity.type === 'task' ? 'text-blue-400' : 'text-purple-400'}`} />
+                                  </div>
+                                </button>
+                              ))}
+                              {activitiesForTab.length > 3 && (
+                                <div className="pt-1">
+                                  <button
+                                    onClick={() => setShowAllActivities(!showAllActivities)}
+                                    className="w-full text-center text-slate-300 hover:text-white text-sm"
+                                  >
+                                    {showAllActivities ? 'Show less' : `Show all ${activitiesForTab.length}`}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </>
                   )}
-                </div>
-                
-                {/* Scroll Indicator */}
-                {suitableActivities.length > 4 && (
-                  <div className="text-center py-2">
-                    <div className="text-slate-400 text-xs">Scroll for more activities</div>
-                  </div>
-                )}
               </div>
             )}
             {selectedOption === 'activity-config' && (
