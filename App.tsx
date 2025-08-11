@@ -1768,7 +1768,7 @@ export default function App() {
         
         {/* Main content - with padding for fixed navigation and enhanced mobile scrolling */}
         <div 
-          className="relative z-10 overflow-y-auto pb-20 safe-area-top scroll-smooth ios-scroll android-scroll no-bounce" 
+          className={`relative z-10 overflow-y-auto safe-area-top scroll-smooth ios-scroll android-scroll no-bounce ${(isGapModalOpen || isExternalGapModalOpen) ? 'pb-4' : 'pb-20'}`}
           style={{ height: 'calc(100vh - 80px)' }}
           data-scrollable="true"
         >
@@ -1908,7 +1908,7 @@ export default function App() {
       
       {/* Main content - with padding for fixed navigation and enhanced mobile scrolling */}
       <div 
-        className="relative z-10 overflow-y-auto pb-20 safe-area-top scroll-smooth ios-scroll android-scroll no-bounce" 
+        className={`relative z-10 overflow-y-auto safe-area-top scroll-smooth ios-scroll android-scroll no-bounce ${(isGapModalOpen || isExternalGapModalOpen) ? 'pb-4' : 'pb-20'}`}
         style={{ height: 'calc(100vh - 80px)' }}
         data-scrollable="true"
       >
