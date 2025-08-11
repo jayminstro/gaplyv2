@@ -760,7 +760,7 @@ export function GapUtilizationModal({
   const suitableTasks = suitableActivities.filter(a => a.type === 'task');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end">
+    <div className="fixed inset-0 z-50 flex items-end pointer-events-auto">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -768,7 +768,7 @@ export function GapUtilizationModal({
       />
       
       {/* Modal */}
-      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto safe-area-bottom">
+      <div className="relative w-full bg-slate-900/95 backdrop-blur-md rounded-t-3xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto">
         {/* Handle */}
         <div className="flex justify-center py-3">
           <div className="w-12 h-1 bg-slate-600 rounded-full" />
@@ -791,7 +791,7 @@ export function GapUtilizationModal({
         </div>
         
         {/* Content */}
-        <div className="px-6 pb-24 safe-area-bottom space-y-4 scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
+        <div className="px-6 pb-8 space-y-4 scroll-smooth ios-scroll android-scroll modal-scrollable" data-scrollable="true">
           {/* Gap Info */}
           <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl p-4 border border-slate-700/50">
             <div className="flex items-center gap-3">
