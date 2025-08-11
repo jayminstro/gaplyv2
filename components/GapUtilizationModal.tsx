@@ -52,6 +52,34 @@ export function GapUtilizationModal({
   const [newTaskStartTime, setNewTaskStartTime] = useState<string>('');
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isLoadingCalendarStatus, setIsLoadingCalendarStatus] = useState(true);
+  // Track current time locally so modal updates every minute
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Compute dynamic window based on current time (only for today and current hour)
+  const getDynamicGapWindow = (g: TimeGap | null): { start: string; end: string; minutes: number } => {
+    if (!g) return { start: '', end: '', minutes: 0 };
+    const startDateTime = new Date(`${g.date}T${extractTimeFromDateTime(g.start_time) || g.start_time}`);
+    const endDateTime = new Date(`${g.date}T${extractTimeFromDateTime(g.end_time) || g.end_time}`);
+    const isToday = new Date(g.date).toDateString() === new Date().toDateString();
+    let displayStart = startDateTime;
+    let displayEnd = endDateTime;
+    if (isToday && currentTime >= startDateTime && currentTime < endDateTime) {
+      // Limit to current hour
+      const hourStart = new Date(currentTime);
+      hourStart.setMinutes(0, 0, 0);
+      const hourEnd = new Date(hourStart);
+      hourEnd.setHours(hourStart.getHours() + 1);
+      displayStart = currentTime > startDateTime ? currentTime : startDateTime;
+      displayEnd = endDateTime < hourEnd ? endDateTime : hourEnd;
+    }
+    const minutes = Math.max(0, Math.round((displayEnd.getTime() - displayStart.getTime()) / (1000 * 60)));
+    return { start: minutesToTime(displayStart.getHours() * 60 + displayStart.getMinutes()), end: minutesToTime(displayEnd.getHours() * 60 + displayEnd.getMinutes()), minutes };
+  };
   
   // Local state for minute input values (allows empty values temporarily)
   const [activityMinuteInput, setActivityMinuteInput] = useState<string>('');
@@ -71,17 +99,21 @@ export function GapUtilizationModal({
   // Validation functions for time constraints
   const validateStartTime = (startTime: string, durationMinutes: number = 0): { isValid: boolean; message: string; constrainedTime: string } => {
     if (!gap) return { isValid: false, message: 'No gap available', constrainedTime: '' };
-    
-    const gapStartMinutes = timeToMinutes(gap.start_time);
-    const gapEndMinutes = timeToMinutes(gap.end_time);
+
+    // Use dynamic window when applicable
+    const dynamic = getDynamicGapWindow(gap);
+    const effectiveStartStr = dynamic.start || gap.start_time;
+    const effectiveEndStr = dynamic.end || gap.end_time;
+    const gapStartMinutes = timeToMinutes(effectiveStartStr);
+    const gapEndMinutes = timeToMinutes(effectiveEndStr);
     const startMinutes = timeToMinutes(startTime);
     
     // Check if start time is before gap start
     if (startMinutes < gapStartMinutes) {
       return { 
         isValid: false, 
-        message: `Start time must be after ${gap.start_time}`, 
-        constrainedTime: gap.start_time 
+        message: `Start time must be after ${effectiveStartStr}`, 
+        constrainedTime: effectiveStartStr 
       };
     }
     
@@ -98,76 +130,20 @@ export function GapUtilizationModal({
     return { isValid: true, message: '', constrainedTime: startTime };
   };
 
-  const handleActivityStartTimeChange = (newTime: string) => {
-    if (!gap) return;
-    
-    // Find the longest activity duration to validate against
-    const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
-    const validation = validateStartTime(newTime, maxDuration);
-    
-    if (validation.isValid) {
-      setActivityStartTime(newTime);
-    } else {
-      // Auto-correct to valid time and show toast
-      setActivityStartTime(validation.constrainedTime);
-      toast.warning('Time adjusted', {
-        description: validation.message,
-      });
-    }
-  };
-
-  const handleNewTaskStartTimeChange = (newTime: string) => {
-    if (!gap || !newTaskForm.duration) return;
-    
-    const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
-    const taskDurationMinutes = (hours * 60) + minutes;
-    const validation = validateStartTime(newTime, taskDurationMinutes);
-    
-    if (validation.isValid) {
-      setNewTaskStartTime(newTime);
-    } else {
-      // Auto-correct to valid time and show toast
-      setNewTaskStartTime(validation.constrainedTime);
-      toast.warning('Time adjusted', {
-        description: validation.message,
-      });
-    }
-  };
+  // Deprecated time input handlers removed (switched to minute-only input UI)
 
   // Generate valid time options for the time inputs
-  const generateTimeOptions = (gapStart: string, gapEnd: string, stepMinutes?: number) => {
-    const startMinutes = timeToMinutes(gapStart);
-    const endMinutes = timeToMinutes(gapEnd);
-    const gapDuration = endMinutes - startMinutes;
-    
-    // Auto-determine step size based on gap duration
-    let step = stepMinutes;
-    if (!step) {
-      if (gapDuration <= 30) step = 5;        // 30 min or less: 5 min steps
-      else if (gapDuration <= 60) step = 10;  // 1 hour or less: 10 min steps
-      else if (gapDuration <= 120) step = 15; // 2 hours or less: 15 min steps
-      else step = 30;                         // 2+ hours: 30 min steps
-    }
-    
-    const options: string[] = [];
-    for (let minutes = startMinutes; minutes <= endMinutes; minutes += step) {
-      options.push(minutesToTime(minutes));
-    }
-    
-    // Always include the end time if it's not already included
-    if (options[options.length - 1] !== gapEnd) {
-      options.push(gapEnd);
-    }
-    
-    return options;
-  };
+  // Unused legacy helpers removed
 
   // Calculate the latest possible start time for a given duration
   const getLatestStartTime = (durationMinutes: number): string => {
     if (!gap) return '';
-    const gapEndMinutes = timeToMinutes(gap.end_time);
+    const dynamic = getDynamicGapWindow(gap);
+    const effectiveStartStr = dynamic.start || gap.start_time;
+    const effectiveEndStr = dynamic.end || gap.end_time;
+    const gapEndMinutes = timeToMinutes(effectiveEndStr);
     const latestStartMinutes = gapEndMinutes - durationMinutes;
-    const gapStartMinutes = timeToMinutes(gap.start_time);
+    const gapStartMinutes = timeToMinutes(effectiveStartStr);
     
     // Ensure we don't go before gap start
     if (latestStartMinutes < gapStartMinutes) {
@@ -184,27 +160,7 @@ export function GapUtilizationModal({
   };
 
   // Generate minute options for a specific hour within the gap
-  const generateMinuteOptions = (hour: number, gapStart: string, gapEnd: string): number[] => {
-    if (!gap) return [];
-    
-    const gapStartMinutes = timeToMinutes(gapStart);
-    const gapEndMinutes = timeToMinutes(gapEnd);
-    
-    const minutes: number[] = [];
-    
-    // If this hour is the gap start hour, start from gap start minutes
-    const startMinute = hour === parseTime(gapStart).hours ? parseTime(gapStart).minutes : 0;
-    
-    // If this hour is the gap end hour, end at gap end minutes
-    const endMinute = hour === parseTime(gapEnd).hours ? parseTime(gapEnd).minutes : 59;
-    
-    // Generate minute options in 1-minute increments
-    for (let minute = startMinute; minute <= endMinute; minute++) {
-      minutes.push(minute);
-    }
-    
-    return minutes;
-  };
+  // Unused legacy minute options helper removed
 
   // Handle minute change for activities
   const handleActivityMinuteChange = (newMinute: number) => {
@@ -371,17 +327,19 @@ export function GapUtilizationModal({
     if (isOpen && gap) {
       loadSuitableActivities();
       checkCalendarStatus();
-      setActivityStartTime(gap.start_time);
-      setNewTaskStartTime(gap.start_time);
+      const dynamic = getDynamicGapWindow(gap);
+      const defaultStart = dynamic.start || gap.start_time;
+      setActivityStartTime(defaultStart);
+      setNewTaskStartTime(defaultStart);
       // Initialize minute input values
-      setActivityMinuteInput(parseTime(gap.start_time).minutes.toString());
-      setNewTaskMinuteInput(parseTime(gap.start_time).minutes.toString());
+      setActivityMinuteInput(parseTime(defaultStart).minutes.toString());
+      setNewTaskMinuteInput(parseTime(defaultStart).minutes.toString());
       // Ensure consistent initial state regardless of entry point (Today vs Planner)
       setSelectedOption(null);
       setActivitiesTab('suggestions');
       setShowAllActivities(false);
     }
-  }, [isOpen, gap]);
+  }, [isOpen, gap, currentTime]);
 
   const checkCalendarStatus = async () => {
     try {
@@ -402,11 +360,12 @@ export function GapUtilizationModal({
     try {
       setIsLoadingActivities(true);
       
-      const gapDurationMinutes = gap.duration_minutes;
+      const dynamic = getDynamicGapWindow(gap);
+      const gapDurationMinutes = dynamic.minutes || gap.duration_minutes;
       console.log('🔍 [GapUtilizationModal] Loading activities for gap:', {
         gapId: gap.id,
         gapDuration: gapDurationMinutes,
-        gapTime: `${gap.start_time} - ${gap.end_time}`
+        gapTime: `${dynamic.start || gap.start_time} - ${dynamic.end || gap.end_time}`
       });
 
       // Load suggestions from explore API
@@ -706,8 +665,9 @@ export function GapUtilizationModal({
   };
 
   const formatGapTime = (gap: TimeGap) => {
-    const startTime = extractTimeFromDateTime(gap.start_time) || gap.start_time;
-    const endTime = extractTimeFromDateTime(gap.end_time) || gap.end_time;
+    const dynamic = getDynamicGapWindow(gap);
+    const startTime = dynamic.start || extractTimeFromDateTime(gap.start_time) || gap.start_time;
+    const endTime = dynamic.end || extractTimeFromDateTime(gap.end_time) || gap.end_time;
     
     if (!gap.date) return `${startTime} - ${endTime}`;
     
@@ -744,8 +704,10 @@ export function GapUtilizationModal({
       duration: '',
       addToCalendar: false
     });
-    setActivityStartTime(gap?.start_time || '');
-    setNewTaskStartTime(gap?.start_time || '');
+    const dynamic = getDynamicGapWindow(gap);
+    const defaultStart = dynamic.start || gap?.start_time || '';
+    setActivityStartTime(defaultStart);
+    setNewTaskStartTime(defaultStart);
     setSelectedOption(null);
   };
 
@@ -756,7 +718,8 @@ export function GapUtilizationModal({
 
   if (!isOpen || !gap) return null;
 
-  const gapDurationMinutes = gap.duration_minutes;
+  const dynamicWindow = getDynamicGapWindow(gap);
+  const gapDurationMinutes = dynamicWindow.minutes || gap.duration_minutes;
   const suggestedActivities = suitableActivities.filter(a => a.type === 'suggestion');
   const suitableTasks = suitableActivities.filter(a => a.type === 'task');
 
@@ -802,7 +765,7 @@ export function GapUtilizationModal({
               <div className="flex-1">
                 <div className="text-white font-medium">Gap</div>
                 <div className="text-slate-400 text-sm">
-                  {formatDuration(gapDurationMinutes)} to accomplish a task
+                  {formatDuration(gapDurationMinutes)} to accomplish an activity
                 </div>
               </div>
               {/* Calendar Status Indicator */}
@@ -1054,9 +1017,9 @@ export function GapUtilizationModal({
                     <div className="text-xs text-slate-400 mt-1">
                       Hour is fixed • Enter any minute (00-59)
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Available: {gap.start_time} - {gap.end_time}
-                    </div>
+                     <div className="text-xs text-slate-500 mt-1">
+                       Available: {dynamicWindow.start || gap.start_time} - {dynamicWindow.end || gap.end_time}
+                     </div>
                     {selectedActivity && (() => {
                       const duration = activityDuration || selectedActivity.duration;
                       const validation = validateStartTime(activityStartTime, duration);
@@ -1211,9 +1174,9 @@ export function GapUtilizationModal({
                     <div className="text-xs text-slate-400 mt-1">
                       Hour is fixed • Enter any minute (00-59)
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Available: {gap.start_time} - {gap.end_time}
-                    </div>
+                     <div className="text-xs text-slate-500 mt-1">
+                       Available: {dynamicWindow.start || gap.start_time} - {dynamicWindow.end || gap.end_time}
+                     </div>
                     {newTaskForm.duration && (() => {
                       const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
                       const taskDurationMinutes = (hours * 60) + minutes;
