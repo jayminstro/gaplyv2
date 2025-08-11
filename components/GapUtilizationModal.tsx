@@ -50,6 +50,267 @@ export function GapUtilizationModal({
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isLoadingCalendarStatus, setIsLoadingCalendarStatus] = useState(true);
 
+  // Validation functions for time constraints
+  const validateStartTime = (startTime: string, durationMinutes: number = 0): { isValid: boolean; message: string; constrainedTime: string } => {
+    if (!gap) return { isValid: false, message: 'No gap available', constrainedTime: '' };
+    
+    const gapStartMinutes = timeToMinutes(gap.start_time);
+    const gapEndMinutes = timeToMinutes(gap.end_time);
+    const startMinutes = timeToMinutes(startTime);
+    
+    // Check if start time is before gap start
+    if (startMinutes < gapStartMinutes) {
+      return { 
+        isValid: false, 
+        message: `Start time must be after ${gap.start_time}`, 
+        constrainedTime: gap.start_time 
+      };
+    }
+    
+    // Check if start time + duration exceeds gap end
+    if (startMinutes + durationMinutes > gapEndMinutes) {
+      const latestStart = getLatestStartTime(durationMinutes);
+      return { 
+        isValid: false, 
+        message: `Start time + duration exceeds gap end. Latest start: ${latestStart}`, 
+        constrainedTime: latestStart 
+      };
+    }
+    
+    return { isValid: true, message: '', constrainedTime: startTime };
+  };
+
+  const handleActivityStartTimeChange = (newTime: string) => {
+    if (!gap) return;
+    
+    // Find the longest activity duration to validate against
+    const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
+    const validation = validateStartTime(newTime, maxDuration);
+    
+    if (validation.isValid) {
+      setActivityStartTime(newTime);
+    } else {
+      // Auto-correct to valid time and show toast
+      setActivityStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
+  const handleNewTaskStartTimeChange = (newTime: string) => {
+    if (!gap || !newTaskForm.duration) return;
+    
+    const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
+    const taskDurationMinutes = (hours * 60) + minutes;
+    const validation = validateStartTime(newTime, taskDurationMinutes);
+    
+    if (validation.isValid) {
+      setNewTaskStartTime(newTime);
+    } else {
+      // Auto-correct to valid time and show toast
+      setNewTaskStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
+  // Generate valid time options for the time inputs
+  const generateTimeOptions = (gapStart: string, gapEnd: string, stepMinutes?: number) => {
+    const startMinutes = timeToMinutes(gapStart);
+    const endMinutes = timeToMinutes(gapEnd);
+    const gapDuration = endMinutes - startMinutes;
+    
+    // Auto-determine step size based on gap duration
+    let step = stepMinutes;
+    if (!step) {
+      if (gapDuration <= 30) step = 5;        // 30 min or less: 5 min steps
+      else if (gapDuration <= 60) step = 10;  // 1 hour or less: 10 min steps
+      else if (gapDuration <= 120) step = 15; // 2 hours or less: 15 min steps
+      else step = 30;                         // 2+ hours: 30 min steps
+    }
+    
+    const options: string[] = [];
+    for (let minutes = startMinutes; minutes <= endMinutes; minutes += step) {
+      options.push(minutesToTime(minutes));
+    }
+    
+    // Always include the end time if it's not already included
+    if (options[options.length - 1] !== gapEnd) {
+      options.push(gapEnd);
+    }
+    
+    return options;
+  };
+
+  // Calculate the latest possible start time for a given duration
+  const getLatestStartTime = (durationMinutes: number): string => {
+    if (!gap) return '';
+    const gapEndMinutes = timeToMinutes(gap.end_time);
+    const latestStartMinutes = gapEndMinutes - durationMinutes;
+    const gapStartMinutes = timeToMinutes(gap.start_time);
+    
+    // Ensure we don't go before gap start
+    if (latestStartMinutes < gapStartMinutes) {
+      return gap.start_time;
+    }
+    
+    return minutesToTime(latestStartMinutes);
+  };
+
+  // Parse time into hours and minutes
+  const parseTime = (timeStr: string): { hours: number; minutes: number } => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return { hours: hours || 0, minutes: minutes || 0 };
+  };
+
+  // Generate minute options for a specific hour within the gap
+  const generateMinuteOptions = (hour: number, gapStart: string, gapEnd: string): number[] => {
+    if (!gap) return [];
+    
+    const gapStartMinutes = timeToMinutes(gapStart);
+    const gapEndMinutes = timeToMinutes(gapEnd);
+    
+    const minutes: number[] = [];
+    
+    // If this hour is the gap start hour, start from gap start minutes
+    const startMinute = hour === parseTime(gapStart).hours ? parseTime(gapStart).minutes : 0;
+    
+    // If this hour is the gap end hour, end at gap end minutes
+    const endMinute = hour === parseTime(gapEnd).hours ? parseTime(gapEnd).minutes : 59;
+    
+    // Generate minute options in 1-minute increments
+    for (let minute = startMinute; minute <= endMinute; minute++) {
+      minutes.push(minute);
+    }
+    
+    return minutes;
+  };
+
+  // Handle minute change for activities
+  const handleActivityMinuteChange = (newMinute: number) => {
+    if (!gap) return;
+    
+    const currentHour = parseTime(activityStartTime).hours;
+    const newTime = `${currentHour.toString().padStart(2, '0')}:${newMinute.toString().padStart(2, '0')}`;
+    
+    // Find the longest activity duration to validate against
+    const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
+    const validation = validateStartTime(newTime, maxDuration);
+    
+    if (validation.isValid) {
+      setActivityStartTime(newTime);
+    } else {
+      // Auto-correct to valid time and show toast
+      setActivityStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
+  // Handle minute change for new tasks
+  const handleNewTaskMinuteChange = (newMinute: number) => {
+    if (!gap || !newTaskForm.duration) return;
+    
+    const currentHour = parseTime(newTaskStartTime).hours;
+    const newTime = `${currentHour.toString().padStart(2, '0')}:${newMinute.toString().padStart(2, '0')}`;
+    
+    const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
+    const taskDurationMinutes = (hours * 60) + minutes;
+    const validation = validateStartTime(newTime, taskDurationMinutes);
+    
+    if (validation.isValid) {
+      setNewTaskStartTime(newTime);
+    } else {
+      // Auto-correct to valid time and show toast
+      setNewTaskStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
+  // Handle minute input change for activities (with validation)
+  const handleActivityMinuteInputChange = (inputValue: string) => {
+    if (!gap) return;
+    
+    const minute = parseInt(inputValue, 10);
+    if (isNaN(minute) || minute < 0 || minute > 59) return;
+    
+    handleActivityMinuteChange(minute);
+  };
+
+  // Handle minute input change for new tasks (with validation)
+  const handleNewTaskMinuteInputChange = (inputValue: string) => {
+    if (!gap || !newTaskForm.duration) return;
+    
+    const minute = parseInt(inputValue, 10);
+    if (isNaN(minute) || minute < 0 || minute > 59) return;
+    
+    handleNewTaskMinuteChange(minute);
+  };
+
+  // Handle minute input blur for activities (final validation)
+  const handleActivityMinuteBlur = (inputValue: string) => {
+    if (!gap) return;
+    
+    let minute = parseInt(inputValue, 10);
+    if (isNaN(minute)) {
+      minute = parseTime(activityStartTime).minutes;
+    }
+    
+    // Clamp to valid range
+    minute = Math.max(0, Math.min(59, minute));
+    
+    // Validate against gap constraints
+    const currentHour = parseTime(activityStartTime).hours;
+    const newTime = `${currentHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    
+    const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
+    const validation = validateStartTime(newTime, maxDuration);
+    
+    if (validation.isValid) {
+      setActivityStartTime(newTime);
+    } else {
+      setActivityStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
+  // Handle minute input blur for new tasks (final validation)
+  const handleNewTaskMinuteBlur = (inputValue: string) => {
+    if (!gap || !newTaskForm.duration) return;
+    
+    let minute = parseInt(inputValue, 10);
+    if (isNaN(minute)) {
+      minute = parseTime(newTaskStartTime).minutes;
+    }
+    
+    // Clamp to valid range
+    minute = Math.max(0, Math.min(59, minute));
+    
+    // Validate against gap constraints
+    const currentHour = parseTime(newTaskStartTime).hours;
+    const newTime = `${currentHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    
+    const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
+    const taskDurationMinutes = (hours * 60) + minutes;
+    const validation = validateStartTime(newTime, taskDurationMinutes);
+    
+    if (validation.isValid) {
+      setNewTaskStartTime(newTime);
+    } else {
+      setNewTaskStartTime(validation.constrainedTime);
+      toast.warning('Time adjusted', {
+        description: validation.message,
+      });
+    }
+  };
+
   useEffect(() => {
     if (isOpen && gap) {
       loadSuitableActivities();
@@ -193,17 +454,19 @@ export function GapUtilizationModal({
 
       let taskToSchedule: Task;
       const chosenStart = activityStartTime || gap.start_time;
-      const startMinutes = timeToMinutes(chosenStart);
-      const endMinutes = startMinutes + activity.duration;
-      const gapStartMinutes = timeToMinutes(gap.start_time);
-      const gapEndMinutes = timeToMinutes(gap.end_time);
-
-      if (startMinutes < gapStartMinutes || endMinutes > gapEndMinutes) {
-        toast.error('Selected time does not fit', {
-          description: `"${activity.title}" (${formatDuration(activity.duration)}) doesn't fit starting at ${chosenStart}. Choose an earlier time.`,
+      
+      // Validate start time using our validation function
+      const validation = validateStartTime(chosenStart, activity.duration);
+      if (!validation.isValid) {
+        toast.error('Invalid start time', {
+          description: validation.message,
         });
         return;
       }
+      
+      // Calculate end time for the task
+      const startMinutes = timeToMinutes(chosenStart);
+      const endMinutes = startMinutes + activity.duration;
 
       let taskStartTime = chosenStart;
       let taskEndTime: string = minutesToTime(endMinutes);
@@ -327,18 +590,20 @@ export function GapUtilizationModal({
 
       // Calculate and validate against gap window
       const taskStartTime = newTaskStartTime || gap.start_time;
-      const startMinutes = timeToMinutes(taskStartTime);
-      const endMinutes = startMinutes + taskDurationMinutes;
-      const taskEndTime = minutesToTime(endMinutes);
-      const gapStartMinutes = timeToMinutes(gap.start_time);
-      const gapEndMinutes = timeToMinutes(gap.end_time);
-
-      if (startMinutes < gapStartMinutes || endMinutes > gapEndMinutes) {
-        toast.error('Selected time does not fit', {
-          description: `Task duration (${formatDuration(taskDurationMinutes)}) doesn't fit starting at ${taskStartTime}. Choose an earlier time.`,
+      
+      // Validate start time using our validation function
+      const validation = validateStartTime(taskStartTime, taskDurationMinutes);
+      if (!validation.isValid) {
+        toast.error('Invalid start time', {
+          description: validation.message,
         });
         return;
       }
+      
+      // Calculate end time for the task
+      const startMinutes = timeToMinutes(taskStartTime);
+      const endMinutes = startMinutes + taskDurationMinutes;
+      const taskEndTime = minutesToTime(endMinutes);
 
       // Create calendar event if requested and calendar is connected
       let googleCalendarEventId = null;
@@ -540,16 +805,47 @@ export function GapUtilizationModal({
                       {/* Start time selector for activities */}
                       <div className="bg-slate-700/30 rounded-xl p-3 mb-3">
                         <label className="text-slate-300 text-sm font-medium mb-1 block">Start at</label>
-                        <input
-                          type="time"
-                          value={activityStartTime}
-                          onChange={(e) => setActivityStartTime(e.target.value)}
-                          min={gap.start_time}
-                          max={gap.end_time}
-                          step={900}
-                          className="w-40 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                        />
-                        <div className="text-xs text-slate-500 mt-1">Within {formatGapTime(gap)}</div>
+                                                 <div className="flex items-center gap-2">
+                           <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
+                             {parseTime(activityStartTime).hours.toString().padStart(2, '0')}
+                           </div>
+                           <span className="text-white text-lg">:</span>
+                                                       <input
+                              type="number"
+                              value={parseTime(activityStartTime).minutes}
+                              onChange={(e) => handleActivityMinuteInputChange(e.target.value)}
+                              onBlur={(e) => handleActivityMinuteBlur(e.target.value)}
+                              min="0"
+                              max="59"
+                              step="1"
+                              placeholder="00"
+                              className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
+                            />
+                         </div>
+                         <div className="text-xs text-slate-400 mt-1">
+                           Hour is fixed • Enter any minute (00-59)
+                         </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Available: {gap.start_time} - {gap.end_time}
+                        </div>
+                        {(() => {
+                          const maxDuration = Math.max(...suitableActivities.map(a => a.duration), 0);
+                          const validation = validateStartTime(activityStartTime, maxDuration);
+                          const latestStart = getLatestStartTime(maxDuration);
+                          
+                          if (!validation.isValid) {
+                            return (
+                              <div className="text-xs text-orange-400 mt-1">
+                                ⚠️ {validation.message}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="text-xs text-green-400 mt-1">
+                              ✓ Latest start: {latestStart}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {/* Calendar Toggle for Activities */}
                       {isCalendarConnected && (
@@ -722,12 +1018,12 @@ export function GapUtilizationModal({
                       <label className="text-slate-300 text-sm font-medium mb-1 block">
                         Duration
                       </label>
-                      <input
-                        type="time"
-                        value={newTaskForm.duration}
-                        onChange={(e) => setNewTaskForm(prev => ({ ...prev, duration: e.target.value }))}
-                        className="w-full bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                      />
+                                              <input
+                          type="time"
+                          value={newTaskForm.duration}
+                          onChange={(e) => setNewTaskForm(prev => ({ ...prev, duration: e.target.value }))}
+                          className="w-full bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                        />
                     </div>
                   </div>
 
@@ -736,18 +1032,48 @@ export function GapUtilizationModal({
                     <label className="text-slate-300 text-sm font-medium mb-1 block">
                       Start at
                     </label>
-                    <input
-                      type="time"
-                      value={newTaskStartTime}
-                      onChange={(e) => setNewTaskStartTime(e.target.value)}
-                      min={gap.start_time}
-                      max={gap.end_time}
-                      step={900}
-                      className="w-40 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                    />
-                    {newTaskForm.duration && (
-                      <div className="text-xs text-slate-500 mt-1">Within {formatGapTime(gap)}</div>
-                    )}
+                                         <div className="flex items-center gap-2">
+                       <div className="w-20 bg-slate-700/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm flex items-center justify-center">
+                         {parseTime(newTaskStartTime).hours.toString().padStart(2, '0')}
+                       </div>
+                       <span className="text-white text-lg">:</span>
+                                               <input
+                          type="number"
+                          value={parseTime(newTaskStartTime).minutes}
+                          onChange={(e) => handleNewTaskMinuteInputChange(e.target.value)}
+                          onBlur={(e) => handleNewTaskMinuteBlur(e.target.value)}
+                          min="0"
+                          max="59"
+                          step="1"
+                          placeholder="00"
+                          className="w-20 bg-slate-800/60 border border-slate-600/50 text-white rounded-xl px-3 py-2 text-sm focus:border-blue-400 focus:outline-none text-center"
+                        />
+                     </div>
+                     <div className="text-xs text-slate-400 mt-1">
+                       Hour is fixed • Enter any minute (00-59)
+                     </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Available: {gap.start_time} - {gap.end_time}
+                    </div>
+                    {newTaskForm.duration && (() => {
+                      const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
+                      const taskDurationMinutes = (hours * 60) + minutes;
+                      const validation = validateStartTime(newTaskStartTime, taskDurationMinutes);
+                      const latestStart = getLatestStartTime(taskDurationMinutes);
+                      
+                      if (!validation.isValid) {
+                        return (
+                          <div className="text-xs text-orange-400 mt-1">
+                            ⚠️ {validation.message}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="text-xs text-green-400 mt-1">
+                          ✓ Task will fit in gap • Latest start: {latestStart}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Calendar Toggle */}
@@ -780,23 +1106,26 @@ export function GapUtilizationModal({
                         const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
                         const taskDurationMinutes = (hours * 60) + minutes;
                         const start = newTaskStartTime || gap.start_time;
-                        const startM = timeToMinutes(start);
-                        const endM = startM + taskDurationMinutes;
-                        const exceedsWindow = endM > timeToMinutes(gap.end_time) || startM < timeToMinutes(gap.start_time);
+                        const validation = validateStartTime(start, taskDurationMinutes);
+                        
                         if (taskDurationMinutes > gapDurationMinutes) {
                           return (
                             <span className="text-red-400">
                               Task duration ({formatDuration(taskDurationMinutes)}) exceeds gap duration ({formatDuration(gapDurationMinutes)})
                             </span>
                           );
-                        } else if (exceedsWindow) {
+                        } else if (!validation.isValid) {
                           return (
-                            <span className="text-red-400">
-                              Selected start ({start}) pushes end past {extractTimeFromDateTime(gap.end_time) || gap.end_time}
+                            <span className="text-orange-400">
+                              ⚠️ {validation.message}
                             </span>
                           );
                         }
-                        return `Task will use ${formatDuration(taskDurationMinutes)} of ${formatDuration(gapDurationMinutes)} available`;
+                        return (
+                          <span className="text-green-400">
+                            ✓ Task will use {formatDuration(taskDurationMinutes)} of {formatDuration(gapDurationMinutes)} available
+                          </span>
+                        );
                       })()}
                     </div>
                   )}
@@ -809,9 +1138,8 @@ export function GapUtilizationModal({
                       const [hours, minutes] = newTaskForm.duration.split(':').map(Number);
                       const taskDurationMinutes = (hours * 60) + minutes;
                       const start = newTaskStartTime || gap.start_time;
-                      const startM = timeToMinutes(start);
-                      const endM = startM + taskDurationMinutes;
-                      return taskDurationMinutes > gapDurationMinutes || startM < timeToMinutes(gap.start_time) || endM > timeToMinutes(gap.end_time);
+                      const validation = validateStartTime(start, taskDurationMinutes);
+                      return taskDurationMinutes > gapDurationMinutes || !validation.isValid;
                     })()}
                     className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-xl py-2 text-sm font-medium transition-colors"
                   >
