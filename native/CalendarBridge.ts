@@ -26,48 +26,62 @@ export interface CalendarBridgePlugin {
   requestAccess(): Promise<{ granted: boolean }>;
   listCalendars(): Promise<{ calendars: BridgeCalendar[] }>;
   listEvents(opts: { startISO: string; endISO: string; calendarIds?: string[] }): Promise<{ events: BridgeEvent[] }>;
-  test(): Promise<{ message: string; timestamp: number }>;
+  test(): Promise<{ message: string; timestamp: number; iosVersion: string }>;
 }
 
-// In Capacitor v7, plugins are automatically discovered
-// We need to access them through the Capacitor.Plugins object
+// Capacitor v7 plugin access - plugins are auto-discovered
 export const CalendarBridge: CalendarBridgePlugin = {
   getPermissionStatus: async () => {
     if (Capacitor.getPlatform() === 'ios') {
-      return (window as any).CalendarBridgePlugin?.getPermissionStatus() || 
-             Promise.reject(new Error('CalendarBridge plugin not available'));
+      const plugin = (window as any).CalendarBridgePlugin;
+      if (!plugin) {
+        throw new Error('CalendarBridge plugin not found. Check if it\'s properly loaded.');
+      }
+      return plugin.getPermissionStatus();
     }
     throw new Error('CalendarBridge only available on iOS');
   },
   
   requestAccess: async () => {
     if (Capacitor.getPlatform() === 'ios') {
-      return (window as any).CalendarBridgePlugin?.requestAccess() || 
-             Promise.reject(new Error('CalendarBridge plugin not available'));
+      const plugin = (window as any).CalendarBridgePlugin;
+      if (!plugin) {
+        throw new Error('CalendarBridge plugin not found. Check if it\'s properly loaded.');
+      }
+      return plugin.requestAccess();
     }
     throw new Error('CalendarBridge only available on iOS');
   },
   
   listCalendars: async () => {
     if (Capacitor.getPlatform() === 'ios') {
-      return (window as any).CalendarBridgePlugin?.listCalendars() || 
-             Promise.reject(new Error('CalendarBridge plugin not available'));
+      const plugin = (window as any).CalendarBridgePlugin;
+      if (!plugin) {
+        throw new Error('CalendarBridge plugin not found. Check if it\'s properly loaded.');
+      }
+      return plugin.listCalendars();
     }
     throw new Error('CalendarBridge only available on iOS');
   },
   
   listEvents: async (opts) => {
     if (Capacitor.getPlatform() === 'ios') {
-      return (window as any).CalendarBridgePlugin?.listEvents(opts) || 
-             Promise.reject(new Error('CalendarBridge plugin not available'));
+      const plugin = (window as any).CalendarBridgePlugin;
+      if (!plugin) {
+        throw new Error('CalendarBridge plugin not found. Check if it\'s properly loaded.');
+      }
+      return plugin.listEvents(opts);
     }
     throw new Error('CalendarBridge only available on iOS');
   },
   
   test: async () => {
     if (Capacitor.getPlatform() === 'ios') {
-      return (window as any).CalendarBridgePlugin?.test() || 
-             Promise.reject(new Error('CalendarBridge plugin not available'));
+      const plugin = (window as any).CalendarBridgePlugin;
+      if (!plugin) {
+        throw new Error('CalendarBridge plugin not found. Check if it\'s properly loaded.');
+      }
+      return plugin.test();
     }
     throw new Error('CalendarBridge only available on iOS');
   }

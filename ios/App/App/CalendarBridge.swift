@@ -1,6 +1,7 @@
 import Foundation
 import EventKit
 import Capacitor
+import UIKit
 
 @objc(CalendarBridgePlugin)
 public class CalendarBridgePlugin: CAPPlugin {
@@ -22,43 +23,28 @@ public class CalendarBridgePlugin: CAPPlugin {
     }
     
     @objc func getPermissionStatus(_ call: CAPPluginCall) {
+        // iOS 18 compatible authorization check
         let status = EKEventStore.authorizationStatus(for: .event)
         
         let statusString: String
-        if #available(iOS 17.0, *) {
-            switch status {
-            case .notDetermined:
-                statusString = "not_determined"
-            case .restricted:
-                statusString = "restricted"
-            case .denied:
-                statusString = "denied"
-            case .authorized:
-                statusString = "granted"
-            case .fullAccess:
-                statusString = "granted"
-            case .writeOnly:
-                statusString = "denied"
-            @unknown default:
-                statusString = "not_determined"
-            }
-        } else {
-            // iOS 15.6 - 16.x compatibility
-            // Cast to older enum type to avoid newer cases
-            let oldStatus = status.rawValue
-            switch oldStatus {
-            case 0: // .notDetermined
-                statusString = "not_determined"
-            case 1: // .restricted
-                statusString = "restricted"
-            case 2: // .denied
-                statusString = "denied"
-            case 3: // .authorized
-                statusString = "granted"
-            default:
-                statusString = "not_determined"
-            }
+        switch status {
+        case .notDetermined:
+            statusString = "not_determined"
+        case .restricted:
+            statusString = "restricted"
+        case .denied:
+            statusString = "denied"
+        case .authorized:
+            statusString = "granted"
+        case .fullAccess:
+            statusString = "granted"
+        case .writeOnly:
+            statusString = "denied"
+        @unknown default:
+            statusString = "not_determined"
         }
+        
+        CAPLog.print("📅 CalendarBridge - Authorization status: \(statusString) (raw: \(status.rawValue))")
         
         call.resolve([
             "status": statusString
@@ -66,13 +52,16 @@ public class CalendarBridgePlugin: CAPPlugin {
     }
     
     @objc func requestAccess(_ call: CAPPluginCall) {
+        // iOS 18 compatible permission request
         eventStore.requestAccess(to: .event) { granted, error in
             DispatchQueue.main.async {
                 if let error = error {
+                    CAPLog.print("📅 CalendarBridge - Permission request failed: \(error.localizedDescription)")
                     call.reject("Failed to request calendar access: \(error.localizedDescription)")
                     return
                 }
                 
+                CAPLog.print("📅 CalendarBridge - Permission request result: \(granted)")
                 call.resolve([
                     "granted": granted
                 ])
@@ -81,22 +70,20 @@ public class CalendarBridgePlugin: CAPPlugin {
     }
     
     @objc func listCalendars(_ call: CAPPluginCall) {
+        // iOS 18 compatible calendar listing
         let status = EKEventStore.authorizationStatus(for: .event)
         
-        // Check permission based on iOS version
-        let hasPermission: Bool
-        if #available(iOS 17.0, *) {
-            hasPermission = status == .authorized || status == .fullAccess
-        } else {
-            hasPermission = status == .authorized
-        }
+        let hasPermission = status == .authorized || status == .fullAccess
         
         guard hasPermission else {
+            CAPLog.print("📅 CalendarBridge - No permission for listing calendars. Status: \(status.rawValue)")
             call.reject("Calendar permission not granted. Current status: \(status.rawValue)")
             return
         }
         
         let calendars = eventStore.calendars(for: .event)
+        CAPLog.print("📅 CalendarBridge - Found \(calendars.count) calendars")
+        
         let calendarData = calendars.map { calendar -> [String: Any] in
             return [
                 "id": calendar.calendarIdentifier,
@@ -113,17 +100,13 @@ public class CalendarBridgePlugin: CAPPlugin {
     }
     
     @objc func listEvents(_ call: CAPPluginCall) {
+        // iOS 18 compatible event listing
         let status = EKEventStore.authorizationStatus(for: .event)
         
-        // Check permission based on iOS version
-        let hasPermission: Bool
-        if #available(iOS 17.0, *) {
-            hasPermission = status == .authorized || status == .fullAccess
-        } else {
-            hasPermission = status == .authorized
-        }
+        let hasPermission = status == .authorized || status == .fullAccess
         
         guard hasPermission else {
+            CAPLog.print("📅 CalendarBridge - No permission for listing events. Status: \(status.rawValue)")
             call.reject("Calendar permission not granted. Current status: \(status.rawValue)")
             return
         }
@@ -134,6 +117,7 @@ public class CalendarBridgePlugin: CAPPlugin {
             return
         }
         
+        // iOS 18 compatible date parsing
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
@@ -145,10 +129,11 @@ public class CalendarBridgePlugin: CAPPlugin {
         
         let calendarIds = call.getArray("calendarIds", String.self) ?? []
         
-        // Create predicate for events
+        // iOS 18 compatible event predicate
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
-        
         let events = eventStore.events(matching: predicate)
+        
+        CAPLog.print("📅 CalendarBridge - Found \(events.count) events between \(startDate) and \(endDate)")
         
         let eventData = events.compactMap { event -> [String: Any]? in
             // Filter by calendar IDs if specified
@@ -156,13 +141,10 @@ public class CalendarBridgePlugin: CAPPlugin {
                 return nil
             }
             
+            // iOS 18 compatible date formatting
             let localDateFormatter = DateFormatter()
             localDateFormatter.dateFormat = "yyyy-MM-dd"
             localDateFormatter.timeZone = TimeZone.current
-            
-            let localTimeFormatter = DateFormatter()
-            localTimeFormatter.dateFormat = "HH:mm"
-            localTimeFormatter.timeZone = TimeZone.current
             
             let localISOFormatter = ISO8601DateFormatter()
             localISOFormatter.formatOptions = [.withInternetDateTime]
@@ -187,8 +169,9 @@ public class CalendarBridgePlugin: CAPPlugin {
     @objc func test(_ call: CAPPluginCall) {
         CAPLog.print("📅 CalendarBridge test method called successfully!")
         call.resolve([
-            "message": "CalendarBridge is working!",
-            "timestamp": Date().timeIntervalSince1970
+            "message": "CalendarBridge is working on iOS 18!",
+            "timestamp": Date().timeIntervalSince1970,
+            "iosVersion": UIDevice.current.systemVersion
         ])
     }
 }
