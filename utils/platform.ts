@@ -25,13 +25,17 @@ export function detectPlatform(): PlatformInfo {
   
   if (isCapacitor) {
     try {
-      // Try to use Capacitor Device plugin for more accurate detection
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNative) {
-        const userAgent = navigator.userAgent.toLowerCase();
-        isIOS = userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ipod');
-        isAndroid = userAgent.includes('android');
+      // Check if we're in a native Capacitor environment
+      const capacitor = (window as any).Capacitor;
+      if (capacitor && typeof capacitor.isNative === 'boolean') {
+        // Use Capacitor's native detection
+        if (capacitor.isNative) {
+          const userAgent = navigator.userAgent.toLowerCase();
+          isIOS = userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ipod');
+          isAndroid = userAgent.includes('android');
+        }
       } else {
-        // Fallback to user agent detection
+        // Fallback to user agent detection for Capacitor apps
         const userAgent = navigator.userAgent.toLowerCase();
         isIOS = userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ipod');
         isAndroid = userAgent.includes('android');

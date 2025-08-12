@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { 
   LogOut, User, Bell, Calendar, Palette, Shield, 
   Clock, Edit3, Check, X, ChevronRight, Save,
@@ -38,6 +37,8 @@ import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
 import { isDeviceCalendarAvailable, requestDeviceCalendarPermission } from '../utils/calendarSource.ios';
 import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
+
+
 
 interface SettingsContentProps {
   user: any;
@@ -226,9 +227,9 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
       // User is turning ON device calendar - check permissions
       try {
         // Debug: Check what plugins are available
-        console.log('🔍 Platform:', Capacitor.getPlatform());
-        console.log('🔍 Available Capacitor plugins:', Object.keys(window.Capacitor?.Plugins || {}));
-        console.log('🔍 CalendarBridge plugin:', window.Capacitor?.Plugins?.CalendarBridge);
+        console.log('🔍 Platform:', detectPlatform());
+        console.log('🔍 Available Capacitor plugins:', Object.keys((window as any).Capacitor?.Plugins || {}));
+        console.log('🔍 CalendarBridge plugin:', (window as any).Capacitor?.Plugins?.CalendarBridge);
         
         // Test if the plugin is working at all
         try {
@@ -569,7 +570,29 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
           <div className="space-y-6">
             <h3 className="text-lg font-medium">Schedule Settings</h3>
             
+            
+            
+
+            
             <div className="space-y-4">
+              {/* Debug Info Section - Always Visible */}
+              <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
+                <div className="text-sm text-slate-300 mb-3">🔍 Debug Info</div>
+                <div className="space-y-2 text-xs">
+                  <div className="text-slate-400">
+                    <span className="font-medium">Platform Detection:</span> {JSON.stringify(detectPlatform())}
+                  </div>
+                  <div className="text-slate-400">
+                    <span className="font-medium">Capacitor Platform:</span> {typeof window !== 'undefined' && (window as any).Capacitor ? (window as any).Capacitor.getPlatform() : 'Not available'}
+                  </div>
+                  <div className="text-slate-400">
+                    <span className="font-medium">Capacitor Plugins:</span> {typeof window !== 'undefined' && (window as any).Capacitor?.Plugins ? Object.keys((window as any).Capacitor.Plugins).join(', ') : 'None'}
+                  </div>
+                </div>
+              </div>
+
+
+
               <div>
                 <Label className="text-sm text-slate-400">Google Calendar</Label>
                 <div className="mt-2">
