@@ -60,6 +60,7 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
   const [showCacheHealth, setShowCacheHealth] = useState(false);
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
+  const [deviceCalendarAuth, setDeviceCalendarAuth] = useState<string>('unknown');
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -138,6 +139,21 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
       console.error('Error loading cache health:', error);
     }
   };
+
+  // Load iOS calendar permission status (guarded for non‑iOS)
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const plat = detectPlatform();
+        if (!plat.isIOS || !(window as any)?.Capacitor) return;
+        const { status } = await getDevicePermissionStatus();
+        setDeviceCalendarAuth(status || 'unknown');
+      } catch {
+        setDeviceCalendarAuth('unknown');
+      }
+    };
+    checkAuth();
+  }, []);
 
   // Update local preferences when props change
   useEffect(() => {
