@@ -8,8 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
-		314BB9802E4B8E930052F995 /* CalendarBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314BB97E2E4B8E930052F995 /* CalendarBridge.swift */; };
-		314BB9812E4B8E930052F995 /* CalendarBridgePlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 314BB97F2E4B8E930052F995 /* CalendarBridgePlugin.m */; };
+		314BB9842E4B987E0052F995 /* CalendarBridgePlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 314BB9832E4B987E0052F995 /* CalendarBridgePlugin.m */; };
+		314BB9862E4B98980052F995 /* CalendarBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314BB9852E4B98980052F995 /* CalendarBridge.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -21,9 +21,9 @@
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
-		314BB9752E4B83A30052F995 /* App-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "App-Bridging-Header.h"; path = "App/App-Bridging-Header.h"; sourceTree = "<group>"; };
-		314BB97E2E4B8E930052F995 /* CalendarBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarBridge.swift; sourceTree = "<group>"; };
-		314BB97F2E4B8E930052F995 /* CalendarBridgePlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CalendarBridgePlugin.m; sourceTree = "<group>"; };
+		314BB9822E4B986A0052F995 /* App-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "App-Bridging-Header.h"; sourceTree = "<group>"; };
+		314BB9832E4B987E0052F995 /* CalendarBridgePlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CalendarBridgePlugin.m; sourceTree = "<group>"; };
+		314BB9852E4B98980052F995 /* CalendarBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarBridge.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -64,7 +64,6 @@
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
-				314BB9752E4B83A30052F995 /* App-Bridging-Header.h */,
 			);
 			sourceTree = "<group>";
 		};
@@ -79,8 +78,9 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
-				314BB97E2E4B8E930052F995 /* CalendarBridge.swift */,
-				314BB97F2E4B8E930052F995 /* CalendarBridgePlugin.m */,
+				314BB9852E4B98980052F995 /* CalendarBridge.swift */,
+				314BB9832E4B987E0052F995 /* CalendarBridgePlugin.m */,
+				314BB9822E4B986A0052F995 /* App-Bridging-Header.h */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -218,8 +218,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
-				314BB9802E4B8E930052F995 /* CalendarBridge.swift in Sources */,
-				314BB9812E4B8E930052F995 /* CalendarBridgePlugin.m in Sources */,
+				314BB9842E4B987E0052F995 /* CalendarBridgePlugin.m in Sources */,
+				314BB9862E4B98980052F995 /* CalendarBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -373,7 +373,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OBJC_BRIDGING_HEADER = "App-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "App/App-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -400,7 +400,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
-				SWIFT_OBJC_BRIDGING_HEADER = "App-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "App/App-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
