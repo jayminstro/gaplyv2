@@ -26,6 +26,7 @@ export interface CalendarBridgePlugin {
   requestAccess(): Promise<{ granted: boolean }>;
   listCalendars(): Promise<{ calendars: BridgeCalendar[] }>;
   listEvents(opts: { startISO: string; endISO: string; calendarIds?: string[] }): Promise<{ events: BridgeEvent[] }>;
+  test(): Promise<{ message: string; timestamp: number }>;
 }
 
 const CalendarBridge = registerPlugin<CalendarBridgePlugin>('CalendarBridge');

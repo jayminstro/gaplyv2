@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { 
   LogOut, User, Bell, Calendar, Palette, Shield, 
   Clock, Edit3, Check, X, ChevronRight, Save,
@@ -224,6 +225,23 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
     if (checked) {
       // User is turning ON device calendar - check permissions
       try {
+        // Debug: Check what plugins are available
+        console.log('🔍 Platform:', Capacitor.getPlatform());
+        console.log('🔍 Available Capacitor plugins:', Object.keys(window.Capacitor?.Plugins || {}));
+        console.log('🔍 CalendarBridge plugin:', window.Capacitor?.Plugins?.CalendarBridge);
+        
+        // Test if the plugin is working at all
+        try {
+          const { CalendarBridge } = await import('../native/CalendarBridge');
+          console.log('🔍 CalendarBridge imported successfully:', CalendarBridge);
+          
+          // Try to call the test method
+          const testResult = await CalendarBridge.test();
+          console.log('🔍 Test method result:', testResult);
+        } catch (importError) {
+          console.error('🔍 Failed to import CalendarBridge:', importError);
+        }
+        
         const hasAccess = await isDeviceCalendarAvailable();
         
         if (!hasAccess) {

@@ -6,6 +6,16 @@ import Capacitor
 public class CalendarBridgePlugin: CAPPlugin {
     private let eventStore = EKEventStore()
     
+    override public func load() {
+        CAPLog.print("📅 CalendarBridge loaded - Plugin is now active!")
+        CAPLog.print("📅 CalendarBridge - Available methods: getPermissionStatus, requestAccess, listCalendars, listEvents")
+    }
+    
+    override public init(bridge: CAPBridgeProtocol, pluginId: String, pluginName: String) {
+        super.init(bridge: bridge, pluginId: pluginId, pluginName: pluginName)
+        CAPLog.print("📅 CalendarBridge initialized with pluginId: \(pluginId), pluginName: \(pluginName)")
+    }
+    
     @objc func getPermissionStatus(_ call: CAPPluginCall) {
         let status = EKEventStore.authorizationStatus(for: .event)
         
@@ -167,6 +177,14 @@ public class CalendarBridgePlugin: CAPPlugin {
         
         call.resolve([
             "events": eventData
+        ])
+    }
+    
+    @objc func test(_ call: CAPPluginCall) {
+        CAPLog.print("📅 CalendarBridge test method called successfully!")
+        call.resolve([
+            "message": "CalendarBridge is working!",
+            "timestamp": Date().timeIntervalSince1970
         ])
     }
 }
