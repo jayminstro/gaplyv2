@@ -260,8 +260,6 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
           } catch {}
         }
         toast.success('Device calendar enabled');
-        // Persist immediately for device calendar toggles
-        setTimeout(() => { void savePreferences(); }, 0);
       } catch (e) {
         toast.error('Calendar permission required', {
           description: 'Enable access in iOS Settings to show busy time.'
