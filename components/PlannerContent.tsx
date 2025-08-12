@@ -5,7 +5,9 @@ import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
 import { useGaps } from '../hooks/useGaps';
-import { mergeAndDeduplicateGaps } from '../utils/gapLogic';
+import { mergeAndDeduplicateGaps, GapLogic } from '../utils/gapLogic';
+import { minutesToTime, timeToMinutes } from '../utils/helpers';
+import { fetchWindow as fetchDeviceWindow, loadCalendars as loadDeviceCalendars } from '../src/utils/calendarSource.ios';
 import { normalizeWorkingDays } from '../utils/gapLogic';
 
 interface PlannerContentProps {
@@ -259,6 +261,73 @@ function PlannerContent({
   // Compute gaps locally for selected date from tasks and preferences
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
+
+  // Phase 2: Device calendar busy → subtract from gaps
+  const [deviceBusy, setDeviceBusy] = useState<{ start: number; end: number; title: string; isAllDay?: boolean }[]>([]);
+
+  useEffect(() => {
+    const shouldUseDeviceCalendar = !!userPreferences?.show_device_calendar_busy && typeof window !== 'undefined' && (window as any).Capacitor;
+    if (!shouldUseDeviceCalendar) {
+      setDeviceBusy([]);
+      return;
+    }
+
+    const fetchBusy = async () => {
+      try {
+        const start = startOfDay(selectedDate);
+        const end = addDays(start, 1);
+        let includeIds = userPreferences?.device_calendar_included_ids || [];
+        if (!includeIds || includeIds.length === 0) {
+          try {
+            const cals = await loadDeviceCalendars();
+            includeIds = cals.filter(c => c.type !== 'Subscribed').map(c => c.id);
+          } catch {}
+        }
+        const events = await fetchDeviceWindow(includeIds, start.toISOString(), end.toISOString());
+        setDeviceBusy(events.map(e => ({ start: e.start, end: e.end, title: e.title || '' , isAllDay: e.isAllDay })));
+      } catch (e) {
+        setDeviceBusy([]);
+      }
+    };
+    fetchBusy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDateStr, userPreferences?.show_device_calendar_busy, JSON.stringify(userPreferences?.device_calendar_included_ids)]);
+
+  const applyDeviceBusyToGaps = (gapsIn: TimeGap[]) => {
+    if (!userPreferences?.show_device_calendar_busy || deviceBusy.length === 0) return gapsIn;
+    let current = [...gapsIn];
+    for (const evt of deviceBusy) {
+      try {
+        const evtStart = new Date(evt.start);
+        const evtEnd = new Date(evt.end);
+        // Coerce to selected date window
+        const dayStart = startOfDay(selectedDate);
+        const dayEnd = addDays(dayStart, 1);
+        const s = new Date(Math.max(evtStart.getTime(), dayStart.getTime()));
+        const e = new Date(Math.min(evtEnd.getTime(), dayEnd.getTime()));
+        if (e <= s) continue;
+        const sStr = minutesToTime(s.getHours() * 60 + s.getMinutes());
+        const eStr = minutesToTime(e.getHours() * 60 + e.getMinutes());
+        const newGaps: TimeGap[] = [];
+        for (const gap of current) {
+          const gapStartMin = timeToMinutes(gap.start_time);
+          const gapEndMin = timeToMinutes(gap.end_time);
+          const busyStartMin = timeToMinutes(sStr);
+          const busyEndMin = timeToMinutes(eStr);
+          if (busyStartMin < gapEndMin && busyEndMin > gapStartMin) {
+            const result = GapLogic.scheduleTaskInGap(gap, sStr, Math.max(0, busyEndMin - busyStartMin), 'calendar_sync');
+            newGaps.push(...result);
+          } else {
+            newGaps.push(gap);
+          }
+        }
+        current = newGaps;
+      } catch {}
+    }
+    return current;
+  };
+
+  const adjustedGaps = useMemo(() => applyDeviceBusyToGaps(selectedDateGaps), [selectedDateGaps, deviceBusy, userPreferences?.show_device_calendar_busy]);
   
   // Debug: Log gap information
   console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${format(selectedDate, 'yyyy-MM-dd')}, Gaps for selected date: ${selectedDateGaps.length}`);
@@ -590,7 +659,7 @@ function PlannerContent({
       >
         <PlannerTimeline
           tasks={selectedDateTasks}
-          gaps={selectedDateGaps}
+          gaps={adjustedGaps}
           selectedDate={selectedDate}
           currentTime={currentTime}
           onTaskOpen={onTaskOpen}

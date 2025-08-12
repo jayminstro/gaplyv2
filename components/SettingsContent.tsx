@@ -34,6 +34,7 @@ import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup } from './ToggleGroup';
 import { WidgetShare } from './WidgetShare';
 import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
+import { ensurePermissionOrThrow, loadCalendars as loadDeviceCalendars, getPermissionStatus as getDevicePermissionStatus, openIOSSettings } from '../src/utils/calendarSource.ios';
 import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
 
@@ -220,18 +221,44 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
     setLocalPreferences(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleDeviceCalendarToggle = (checked: boolean) => {
+  const handleDeviceCalendarToggle = async (checked: boolean) => {
     if (checked) {
-      // User is turning ON device calendar - placeholder for future integration
-      updatePreference('show_device_calendar_busy', true);
-      toast.info('Device calendar integration coming soon', {
-        description: 'This feature will be available in a future update.'
-      });
+      try {
+        // If status is not granted, request it
+        const { status } = await getDevicePermissionStatus();
+        const isGranted = status === 'fullAccess' || status === 'authorized' || status === 'granted';
+        if (!isGranted) {
+          await ensurePermissionOrThrow();
+        }
+
+        // Permission granted → enable toggle
+        updatePreference('show_device_calendar_busy', true);
+
+        // If no calendars selected yet, default to non‑subscribed
+        const existing = localPreferences.device_calendar_included_ids || [];
+        if (!existing || existing.length === 0) {
+          try {
+            const cals = await loadDeviceCalendars();
+            const defaults = cals.filter(c => c.type !== 'Subscribed').map(c => c.id);
+            updatePreference('device_calendar_included_ids', defaults);
+          } catch {}
+        }
+        toast.success('Device calendar enabled');
+        // Persist immediately for device calendar toggles
+        setTimeout(() => { void savePreferences(); }, 0);
+      } catch (e) {
+        toast.error('Calendar permission required', {
+          description: 'Enable access in iOS Settings to show busy time.'
+        });
+        // Revert toggle in UI
+        updatePreference('show_device_calendar_busy', false);
+      }
     } else {
-      // User is turning OFF device calendar - just update preference
+      // Turning OFF: disable titles too
       updatePreference('show_device_calendar_busy', false);
-      // Also disable event titles when master toggle is off
       updatePreference('show_device_calendar_titles', false);
+      // Persist immediately
+      setTimeout(() => { void savePreferences(); }, 0);
     }
   };
 
@@ -581,6 +608,68 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
                       className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
                     >
                       Choose calendars…
+                    </Button>
+                  </div>
+
+                  {/* Manage calendar access */}
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Manage calendar access</div>
+                        <div className="text-slate-400 text-xs">Status: {deviceCalendarAuth}</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const { status } = await getDevicePermissionStatus();
+                          const granted = ['fullAccess', 'authorized', 'granted', 'writeOnly'].includes(status);
+                          if (!granted || status === 'notDetermined') {
+                            try {
+                              await ensurePermissionOrThrow();
+                              setDeviceCalendarAuth('granted');
+                              toast.success('Calendar access granted');
+                            } catch {
+                              await openIOSSettings();
+                            }
+                          } else {
+                            await openIOSSettings();
+                          }
+                        } catch {
+                          await openIOSSettings();
+                        }
+                      }}
+                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
+                    >
+                      {['fullAccess','authorized','granted','writeOnly'].includes(deviceCalendarAuth) ? 'Open Settings' : 'Request Access'}
+                    </Button>
+                  </div>
+
+                  {/* Disconnect device calendar */}
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Disconnect device calendar</div>
+                        <div className="text-slate-400 text-xs">Turn off overlay, clear selection, and open iOS Settings</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        updatePreference('show_device_calendar_busy', false);
+                        updatePreference('show_device_calendar_titles', false);
+                        updatePreference('device_calendar_included_ids', []);
+                        try { await openIOSSettings(); } catch {}
+                        toast.success('Device calendar disconnected');
+                      }}
+                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
+                    >
+                      Disconnect
                     </Button>
                   </div>
 
