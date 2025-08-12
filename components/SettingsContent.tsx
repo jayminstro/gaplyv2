@@ -34,7 +34,6 @@ import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup } from './ToggleGroup';
 import { WidgetShare } from './WidgetShare';
 import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
-import { isDeviceCalendarAvailable, requestDeviceCalendarPermission } from '../utils/calendarSource.ios';
 import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
 
@@ -60,7 +59,6 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
   const [showCacheHealth, setShowCacheHealth] = useState(false);
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
-  const [deviceCalendars, setDeviceCalendars] = useState<any[]>([]);
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -222,65 +220,13 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
     setLocalPreferences(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleDeviceCalendarToggle = async (checked: boolean) => {
+  const handleDeviceCalendarToggle = (checked: boolean) => {
     if (checked) {
-      // User is turning ON device calendar - check permissions
-      try {
-        // Debug: Check what plugins are available
-        console.log('🔍 Platform:', detectPlatform());
-        console.log('🔍 Available Capacitor plugins:', Object.keys((window as any).Capacitor?.Plugins || {}));
-        console.log('🔍 CalendarBridge plugin:', (window as any).Capacitor?.Plugins?.CalendarBridge);
-        
-        // Test if the plugin is working at all
-        try {
-          const { CalendarBridge } = await import('../native/CalendarBridge');
-          console.log('🔍 CalendarBridge imported successfully:', CalendarBridge);
-          
-          // Try to call the test method
-          const testResult = await CalendarBridge.test();
-          console.log('🔍 Test method result:', testResult);
-        } catch (importError) {
-          console.error('🔍 Failed to import CalendarBridge:', importError);
-        }
-        
-        const hasAccess = await isDeviceCalendarAvailable();
-        
-        if (!hasAccess) {
-          // Request permission
-          const granted = await requestDeviceCalendarPermission();
-          
-          if (!granted) {
-            toast.error('Calendar permission required', {
-              description: 'Gaply needs Calendar access to show busy time. You can allow it later in iOS Settings.'
-            });
-            return; // Don't update preference
-          }
-        }
-        
-        // Permission granted, now fetch calendars
-        try {
-          const { getDeviceCalendars } = await import('../utils/calendarSource.ios');
-          const calendars = await getDeviceCalendars();
-          setDeviceCalendars(calendars);
-        } catch (error) {
-          console.error('Failed to fetch device calendars:', error);
-          toast.error('Failed to load calendars', {
-            description: 'Could not load your device calendars. Please try again.'
-          });
-          return;
-        }
-        
-        // Success - update preference
-        updatePreference('show_device_calendar_busy', true);
-        toast.success('Device calendar enabled');
-        
-      } catch (error) {
-        console.error('Error enabling device calendar:', error);
-        toast.error('Failed to enable device calendar', {
-          description: 'Please check your calendar permissions and try again.'
-        });
-        return;
-      }
+      // User is turning ON device calendar - placeholder for future integration
+      updatePreference('show_device_calendar_busy', true);
+      toast.info('Device calendar integration coming soon', {
+        description: 'This feature will be available in a future update.'
+      });
     } else {
       // User is turning OFF device calendar - just update preference
       updatePreference('show_device_calendar_busy', false);
@@ -575,21 +521,7 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
 
             
             <div className="space-y-4">
-              {/* Debug Info Section - Always Visible */}
-              <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
-                <div className="text-sm text-slate-300 mb-3">🔍 Debug Info</div>
-                <div className="space-y-2 text-xs">
-                  <div className="text-slate-400">
-                    <span className="font-medium">Platform Detection:</span> {JSON.stringify(detectPlatform())}
-                  </div>
-                  <div className="text-slate-400">
-                    <span className="font-medium">Capacitor Platform:</span> {typeof window !== 'undefined' && (window as any).Capacitor ? (window as any).Capacitor.getPlatform() : 'Not available'}
-                  </div>
-                  <div className="text-slate-400">
-                    <span className="font-medium">Capacitor Plugins:</span> {typeof window !== 'undefined' && (window as any).Capacitor?.Plugins ? Object.keys((window as any).Capacitor.Plugins).join(', ') : 'None'}
-                  </div>
-                </div>
-              </div>
+              
 
 
 
