@@ -3,7 +3,7 @@
 
 // Define the plugin using the CAP_PLUGIN macro, which
 // automatically creates the register function.
-CAP_PLUGIN(CalendarBridgePlugin, "CalendarBridge",
+CAP_PLUGIN(CalendarBridgePlugin, "CalendarBridgePlugin",
     CAP_PLUGIN_METHOD(getPermissionStatus, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(requestAccess, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(listCalendars, CAPPluginReturnPromise);

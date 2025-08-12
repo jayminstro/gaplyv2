@@ -9,11 +9,16 @@ public class CalendarBridgePlugin: CAPPlugin {
     override public func load() {
         CAPLog.print("📅 CalendarBridge loaded - Plugin is now active!")
         CAPLog.print("📅 CalendarBridge - Available methods: getPermissionStatus, requestAccess, listCalendars, listEvents")
+        
+        // Test if we can access EventKit
+        let status = EKEventStore.authorizationStatus(for: .event)
+        CAPLog.print("📅 CalendarBridge - Current EventKit authorization status: \(status.rawValue)")
     }
     
     override public init(bridge: CAPBridgeProtocol, pluginId: String, pluginName: String) {
         super.init(bridge: bridge, pluginId: pluginId, pluginName: pluginName)
         CAPLog.print("📅 CalendarBridge initialized with pluginId: \(pluginId), pluginName: \(pluginName)")
+        CAPLog.print("📅 CalendarBridge - Bridge object: \(bridge)")
     }
     
     @objc func getPermissionStatus(_ call: CAPPluginCall) {

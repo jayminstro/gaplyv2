@@ -29,6 +29,6 @@ export interface CalendarBridgePlugin {
   test(): Promise<{ message: string; timestamp: number }>;
 }
 
-const CalendarBridge = registerPlugin<CalendarBridgePlugin>('CalendarBridge');
+const CalendarBridge = registerPlugin<CalendarBridgePlugin>('CalendarBridgePlugin');
 
 export { CalendarBridge };
