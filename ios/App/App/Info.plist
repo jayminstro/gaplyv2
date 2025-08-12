@@ -45,5 +45,7 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Gaply uses your calendars to show busy time and avoid conflicts. Data stays on-device.</string>
 </dict>
 </plist>
