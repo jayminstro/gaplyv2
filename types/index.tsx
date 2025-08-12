@@ -67,6 +67,11 @@ export interface UserPreferences {
   google_refresh_token?: string;
   google_token_expires_at?: string;
   
+  // Device Calendar Integration (iOS)
+  show_device_calendar_busy?: boolean;           // default false
+  show_device_calendar_titles?: boolean;         // default false
+  device_calendar_included_ids?: string[];       // default []
+  
   // Timer & Activity Settings
   autostart: boolean;
   show_timer: boolean;
@@ -146,6 +151,22 @@ export interface ActivityCompletion {
   mood_after?: string;
   notes?: string;
   completed_at: string;
+}
+
+export interface CalendarSource {
+  listEvents(startISO: string, endISO: string, opts?: { includeCalendarIds?: string[] }): Promise<BusyBlock[]>;
+}
+
+export interface BusyBlock {
+  id: string;
+  calendarId: string;
+  calendarLabel?: string;
+  date: string;         // YYYY-MM-DD (local)
+  start_time: string;   // HH:MM (local)
+  end_time: string;     // HH:MM (local)
+  isAllDay?: boolean;
+  source: 'device_calendar';
+  external_id?: string; // icalUID or id
 }
 
 export interface UnsavedChanges {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { 
   LogOut, User, Bell, Calendar, Palette, Shield, 
   Clock, Edit3, Check, X, ChevronRight, Save,
@@ -33,6 +34,9 @@ import { DebugPanel } from './DebugPanel';
 import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup } from './ToggleGroup';
 import { WidgetShare } from './WidgetShare';
+import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
+import { isDeviceCalendarAvailable, requestDeviceCalendarPermission } from '../utils/calendarSource.ios';
+import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
 
 interface SettingsContentProps {
@@ -54,6 +58,8 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
   const [cacheHealthData, setCacheHealthData] = useState<any>(null);
   const [showCacheHealth, setShowCacheHealth] = useState(false);
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
+  const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
+  const [deviceCalendars, setDeviceCalendars] = useState<any[]>([]);
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -213,6 +219,73 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
 
   const updatePreference = (key: string, value: any) => {
     setLocalPreferences(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleDeviceCalendarToggle = async (checked: boolean) => {
+    if (checked) {
+      // User is turning ON device calendar - check permissions
+      try {
+        // Debug: Check what plugins are available
+        console.log('🔍 Platform:', Capacitor.getPlatform());
+        console.log('🔍 Available Capacitor plugins:', Object.keys(window.Capacitor?.Plugins || {}));
+        console.log('🔍 CalendarBridge plugin:', window.Capacitor?.Plugins?.CalendarBridge);
+        
+        // Test if the plugin is working at all
+        try {
+          const { CalendarBridge } = await import('../native/CalendarBridge');
+          console.log('🔍 CalendarBridge imported successfully:', CalendarBridge);
+          
+          // Try to call the test method
+          const testResult = await CalendarBridge.test();
+          console.log('🔍 Test method result:', testResult);
+        } catch (importError) {
+          console.error('🔍 Failed to import CalendarBridge:', importError);
+        }
+        
+        const hasAccess = await isDeviceCalendarAvailable();
+        
+        if (!hasAccess) {
+          // Request permission
+          const granted = await requestDeviceCalendarPermission();
+          
+          if (!granted) {
+            toast.error('Calendar permission required', {
+              description: 'Gaply needs Calendar access to show busy time. You can allow it later in iOS Settings.'
+            });
+            return; // Don't update preference
+          }
+        }
+        
+        // Permission granted, now fetch calendars
+        try {
+          const { getDeviceCalendars } = await import('../utils/calendarSource.ios');
+          const calendars = await getDeviceCalendars();
+          setDeviceCalendars(calendars);
+        } catch (error) {
+          console.error('Failed to fetch device calendars:', error);
+          toast.error('Failed to load calendars', {
+            description: 'Could not load your device calendars. Please try again.'
+          });
+          return;
+        }
+        
+        // Success - update preference
+        updatePreference('show_device_calendar_busy', true);
+        toast.success('Device calendar enabled');
+        
+      } catch (error) {
+        console.error('Error enabling device calendar:', error);
+        toast.error('Failed to enable device calendar', {
+          description: 'Please check your calendar permissions and try again.'
+        });
+        return;
+      }
+    } else {
+      // User is turning OFF device calendar - just update preference
+      updatePreference('show_device_calendar_busy', false);
+      // Also disable event titles when master toggle is off
+      updatePreference('show_device_calendar_titles', false);
+    }
   };
 
   const normalizeDays = (val: any): string[] => Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : []);
@@ -503,6 +576,65 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
                   <CalendarSync onStatusChange={() => {}} />
                 </div>
               </div>
+
+              {detectPlatform().isIOS && (
+                <div>
+                  <Label className="text-sm text-slate-400">Device Calendar (iOS)</Label>
+                  <div className="mt-2 space-y-3">
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Show device calendar as busy (read‑only)</div>
+                        <div className="text-slate-400 text-xs">Overlays your iOS calendar as busy time</div>
+                      </div>
+                    </div>
+                    <Switch 
+                      checked={localPreferences.show_device_calendar_busy || false} 
+                      onCheckedChange={handleDeviceCalendarToggle} 
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Show event titles</div>
+                        <div className="text-slate-400 text-xs">If off, events appear as 'Busy'</div>
+                      </div>
+                    </div>
+                    <Switch 
+                      checked={localPreferences.show_device_calendar_titles || false} 
+                      onCheckedChange={(checked) => updatePreference('show_device_calendar_titles', checked)}
+                      disabled={!localPreferences.show_device_calendar_busy}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Choose calendars</div>
+                        <div className="text-slate-400 text-xs">Select which calendars to include</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsDeviceCalendarModalOpen(true)}
+                      disabled={!localPreferences.show_device_calendar_busy}
+                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
+                    >
+                      Choose calendars…
+                    </Button>
+                  </div>
+
+                  <div className="text-xs text-slate-500 mt-2">
+                    No data leaves your device. Read‑only overlay in Planner.
+                  </div>
+                </div>
+              </div>
+              )}
 
               <div>
                 <Label className="text-sm text-slate-400">Work Hours</Label>
@@ -912,6 +1044,16 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
             {renderSectionContent()}
           </div>
         </div>
+
+        {/* Device Calendar Picker Modal */}
+        <DeviceCalendarPickerModal
+          isOpen={isDeviceCalendarModalOpen}
+          onClose={() => setIsDeviceCalendarModalOpen(false)}
+          selectedCalendarIds={localPreferences.device_calendar_included_ids || []}
+          onSave={(calendarIds) => {
+            updatePreference('device_calendar_included_ids', calendarIds);
+          }}
+        />
       </div>
     );
   }
@@ -986,6 +1128,16 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
           </AlertDialog>
         </div>
       </div>
+
+      {/* Device Calendar Picker Modal */}
+      <DeviceCalendarPickerModal
+        isOpen={isDeviceCalendarModalOpen}
+        onClose={() => setIsDeviceCalendarModalOpen(false)}
+        selectedCalendarIds={localPreferences.device_calendar_included_ids || []}
+        onSave={(calendarIds) => {
+          updatePreference('device_calendar_included_ids', calendarIds);
+        }}
+      />
     </div>
   );
 }

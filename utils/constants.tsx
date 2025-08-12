@@ -9,6 +9,11 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   calendar_min_gap: 15,
   gap_sync_frequency: 30,
   
+  // Device Calendar Integration (iOS)
+  show_device_calendar_busy: false,
+  show_device_calendar_titles: false,
+  device_calendar_included_ids: [],
+  
   // Timer & Activity Settings
   autostart: true,
   show_timer: true,
