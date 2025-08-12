@@ -64,6 +64,8 @@ export class PreferenceChangeDetector {
         fields: [
           'calendar_min_gap',
           'calendar_buffer_time',
+          'show_device_calendar_busy',
+          'device_calendar_included_ids',
         ],
         impact: 'medium',
         requiresGapRecalculation: true,
@@ -77,7 +79,8 @@ export class PreferenceChangeDetector {
           'default_energy_level',
           'preferred_categories',
           'autostart',
-          'show_timer'
+          'show_timer',
+          'show_device_calendar_titles'
         ],
         impact: 'low',
         requiresGapRecalculation: false,
