@@ -134,49 +134,48 @@ public class CalendarBridgePlugin: CAPPlugin {
             return
         }
         
-        let calendarIds = call.getArray("calendarIds", String.self) ?? []
-        
-        // Parse ISO dates
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         
         guard let startDate = dateFormatter.date(from: startISO),
               let endDate = dateFormatter.date(from: endISO) else {
-            call.reject("Invalid date format. Expected ISO8601 format.")
+            call.reject("Invalid date format. Use ISO8601 format")
             return
         }
         
-        // Create predicate
-        var predicate: NSPredicate
-        if calendarIds.isEmpty {
-            predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
-        } else {
-            let calendars = calendarIds.compactMap { eventStore.calendar(withIdentifier: $0) }
-            predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
-        }
+        let calendarIds = call.getArray("calendarIds", String.self) ?? []
         
-        // Fetch events
+        // Create predicate for events
+        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
+        
         let events = eventStore.events(matching: predicate)
         
-        // Convert to bridge format
-        let eventData = events.map { event -> [String: Any] in
-            let localFormatter = DateFormatter()
-            localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-            localFormatter.timeZone = TimeZone.current
+        let eventData = events.compactMap { event -> [String: Any]? in
+            // Filter by calendar IDs if specified
+            if !calendarIds.isEmpty && !calendarIds.contains(event.calendar.calendarIdentifier) {
+                return nil
+            }
             
-            let dateOnlyFormatter = DateFormatter()
-            dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-            dateOnlyFormatter.timeZone = TimeZone.current
+            let localDateFormatter = DateFormatter()
+            localDateFormatter.dateFormat = "yyyy-MM-dd"
+            localDateFormatter.timeZone = TimeZone.current
+            
+            let localTimeFormatter = DateFormatter()
+            localTimeFormatter.dateFormat = "HH:mm"
+            localTimeFormatter.timeZone = TimeZone.current
+            
+            let localISOFormatter = ISO8601DateFormatter()
+            localISOFormatter.formatOptions = [.withInternetDateTime]
             
             return [
-                "id": event.eventIdentifier as Any,
+                "id": event.eventIdentifier,
                 "calendarId": event.calendar.calendarIdentifier,
                 "calendarTitle": event.calendar.title,
-                "icalUID": (event.calendarItemExternalIdentifier ?? event.eventIdentifier) as Any,
+                "icalUID": event.calendarItemExternalIdentifier ?? event.eventIdentifier,
                 "allDay": event.isAllDay,
-                "startLocalISO": localFormatter.string(from: event.startDate),
-                "endLocalISO": localFormatter.string(from: event.endDate),
-                "dateLocal": dateOnlyFormatter.string(from: event.startDate)
+                "startLocalISO": localISOFormatter.string(from: event.startDate),
+                "endLocalISO": localISOFormatter.string(from: event.endDate),
+                "dateLocal": localDateFormatter.string(from: event.startDate)
             ]
         }
         

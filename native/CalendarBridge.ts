@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 
 export type PermissionStatus = 'granted' | 'denied' | 'restricted' | 'not_determined';
 
@@ -29,6 +29,46 @@ export interface CalendarBridgePlugin {
   test(): Promise<{ message: string; timestamp: number }>;
 }
 
-const CalendarBridge = registerPlugin<CalendarBridgePlugin>('CalendarBridgePlugin');
-
-export { CalendarBridge };
+// In Capacitor v7, plugins are automatically discovered
+// We need to access them through the Capacitor.Plugins object
+export const CalendarBridge: CalendarBridgePlugin = {
+  getPermissionStatus: async () => {
+    if (Capacitor.getPlatform() === 'ios') {
+      return (window as any).CalendarBridgePlugin?.getPermissionStatus() || 
+             Promise.reject(new Error('CalendarBridge plugin not available'));
+    }
+    throw new Error('CalendarBridge only available on iOS');
+  },
+  
+  requestAccess: async () => {
+    if (Capacitor.getPlatform() === 'ios') {
+      return (window as any).CalendarBridgePlugin?.requestAccess() || 
+             Promise.reject(new Error('CalendarBridge plugin not available'));
+    }
+    throw new Error('CalendarBridge only available on iOS');
+  },
+  
+  listCalendars: async () => {
+    if (Capacitor.getPlatform() === 'ios') {
+      return (window as any).CalendarBridgePlugin?.listCalendars() || 
+             Promise.reject(new Error('CalendarBridge plugin not available'));
+    }
+    throw new Error('CalendarBridge only available on iOS');
+  },
+  
+  listEvents: async (opts) => {
+    if (Capacitor.getPlatform() === 'ios') {
+      return (window as any).CalendarBridgePlugin?.listEvents(opts) || 
+             Promise.reject(new Error('CalendarBridge plugin not available'));
+    }
+    throw new Error('CalendarBridge only available on iOS');
+  },
+  
+  test: async () => {
+    if (Capacitor.getPlatform() === 'ios') {
+      return (window as any).CalendarBridgePlugin?.test() || 
+             Promise.reject(new Error('CalendarBridge plugin not available'));
+    }
+    throw new Error('CalendarBridge only available on iOS');
+  }
+};
