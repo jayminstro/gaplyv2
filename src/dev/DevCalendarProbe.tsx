@@ -1,11 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { startOfDay, endOfDay } from 'date-fns';
+import { App } from '@capacitor/app';
 import { ensurePermissionOrThrow, loadCalendars, fetchWindow, openIOSSettings } from '../utils/calendarSource.ios';
+import { getPermissionStatus } from '../utils/calendarSource.ios';
 
 export default function DevCalendarProbe() {
   const [status, setStatus] = useState<string>('idle');
   const [calendars, setCalendars] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const { status } = await getPermissionStatus();
+        setStatus(status);
+      } catch {}
+    };
+    refresh();
+    const sub = App.addListener('appStateChange', ({ isActive }) => { if (isActive) refresh(); });
+    return () => { sub.then(s => s.remove()); };
+  }, []);
 
   const handlePermission = async () => {
     setStatus('requesting…');

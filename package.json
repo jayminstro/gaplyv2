@@ -21,6 +21,7 @@
     "install-deps": "npm install --force"
   },
   "dependencies": {
+    "@capacitor/app": "^7.0.2",
     "@capacitor/cli": "^7.4.2",
     "@capacitor/core": "^7.4.2",
     "@capacitor/ios": "^7.4.2",

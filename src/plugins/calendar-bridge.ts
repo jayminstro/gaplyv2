@@ -19,6 +19,7 @@ export type NativeEvent = {
 
 export interface CalendarBridgePlugin {
   requestPermission(): Promise<{ status: 'granted' | 'denied' }>;
+  getAuthorizationStatus(): Promise<{ status: string }>;
   getCalendars(): Promise<{ calendars: CalendarInfo[] }>;
   getEvents(opts: { start: string; end: string; calendarIds: string[] }): Promise<{ events: NativeEvent[] }>;
   openSettings(): Promise<void>;

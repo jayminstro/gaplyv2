@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Calendar, CheckCircle, XCircle, Clock, Settings } from 'lucide-react';
 import { CalendarBridge, CalendarInfo, NativeEvent } from '../src/plugins/calendar-bridge';
-import { ensurePermissionOrThrow, loadCalendars, fetchWindow, openIOSSettings } from '../src/utils/calendarSource.ios';
+import { ensurePermissionOrThrow, loadCalendars as loadCalendarsHelper, fetchWindow, openIOSSettings, getPermissionStatus } from '../src/utils/calendarSource.ios';
+import { App } from '@capacitor/app';
 import { toast } from 'sonner';
 
 export function CalendarDevScreen() {
@@ -15,8 +16,36 @@ export function CalendarDevScreen() {
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
 
   useEffect(() => {
-    checkPermissionStatus();
+    const refresh = async () => {
+      try {
+        const { status } = await getPermissionStatus();
+        if (status === 'fullAccess' || status === 'authorized') {
+          setPermissionStatus('granted');
+          // Auto-load calendars when permission is available
+          if (calendars.length === 0) {
+            await loadCalendarsData();
+          }
+        }
+        else if (status === 'denied' || status === 'restricted') setPermissionStatus('denied');
+        else setPermissionStatus('unknown');
+      } catch {
+        setPermissionStatus('unknown');
+      }
+    };
+    refresh();
+    const sub = App.addListener('appStateChange', ({ isActive }) => { if (isActive) refresh(); });
+    return () => { sub.then(s => s.remove()); };
   }, []);
+
+  // Listen for native event store changes and refresh calendars
+  useEffect(() => {
+    const removePromise = CalendarBridge?.addListener('eventStoreChanged', async () => {
+      if (permissionStatus === 'granted') {
+        await loadCalendarsData();
+      }
+    });
+    return () => { removePromise?.then(l => l.remove()); };
+  }, [permissionStatus]);
 
   const checkPermissionStatus = async () => {
     if (!CalendarBridge) {
@@ -54,11 +83,11 @@ export function CalendarDevScreen() {
     }
   };
 
-  const loadCalendarsData = async () => {
+   const loadCalendarsData = async () => {
     if (!CalendarBridge) return;
 
     try {
-      const calendarsData = await loadCalendars();
+       const calendarsData = await loadCalendarsHelper();
       setCalendars(calendarsData);
       
       // Auto-select non-subscribed calendars on first load

@@ -18,3 +18,7 @@ export async function fetchWindow(calIds: string[], startISO: string, endISO: st
 export async function openIOSSettings() {
   try { await CalendarBridge.openSettings(); } catch {}
 }
+
+export async function getPermissionStatus() {
+  return CalendarBridge.getAuthorizationStatus();
+}
