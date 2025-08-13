@@ -525,7 +525,19 @@ export class PreferenceManager {
       const { preferencesAPI } = await import('../api');
       const diff = this.preferences ? this.computePreferenceDiff(this.preferences, preferences) : preferences;
       if (Object.keys(diff).length === 0) return;
-      await preferencesAPI.patch(diff);
+
+      // Apply server-eligible filter and rate limiting
+      const { filterServerEligiblePrefs } = await import('./filterServerEligiblePrefs');
+      const { consumePatchToken } = await import('./patchRateLimiter');
+      const filtered = filterServerEligiblePrefs(diff as Partial<UserPreferences>);
+      if (Object.keys(filtered).length === 0) return;
+
+      if (!consumePatchToken()) {
+        console.warn('Rate limit: skipping background preference PATCH');
+        return;
+      }
+
+      await preferencesAPI.patch(filtered);
     } catch (error) {
       console.warn('⚠️ Background server sync failed:', error);
     }
