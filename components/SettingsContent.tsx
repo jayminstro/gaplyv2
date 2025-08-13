@@ -309,6 +309,16 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       // Immediately propagate local-only changes to parent and persist locally
       onPreferencesUpdate?.(next);
       try { (async () => { if (localFirstService && (localFirstService as any)?.savePreferences) { await localFirstService.savePreferences(next); } })(); } catch {}
+      // Also persist a lightweight fallback in localStorage to survive early restarts
+      try {
+        const userId = session?.user?.id || 'local-user';
+        const devicePrefs = {
+          show_device_calendar_busy: next.show_device_calendar_busy ?? false,
+          show_device_calendar_titles: next.show_device_calendar_titles ?? false,
+          device_calendar_included_ids: next.device_calendar_included_ids ?? []
+        };
+        localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+      } catch {}
       return; // Avoid triggering autosave debounce for local-only keys
     }
     if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
@@ -358,6 +368,15 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         const next = { ...localPreferences, show_device_calendar_busy: false } as UserPreferences;
         setLocalPreferences(next);
         onPreferencesUpdate?.(next);
+        try {
+          const userId = session?.user?.id || 'local-user';
+          const devicePrefs = {
+            show_device_calendar_busy: next.show_device_calendar_busy ?? false,
+            show_device_calendar_titles: next.show_device_calendar_titles ?? false,
+            device_calendar_included_ids: next.device_calendar_included_ids ?? []
+          };
+          localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+        } catch {}
         suppressAutosaveRef.current = false;
       }
     } else {

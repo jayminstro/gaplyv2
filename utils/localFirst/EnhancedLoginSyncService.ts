@@ -374,12 +374,30 @@ export class EnhancedLoginSyncService {
 
       console.log(`✅ Synced ${result.gapsSynced} gaps across ${gapsByDate.size} dates`);
 
-      // Merge preferences (remote takes precedence)
+      // Merge preferences (remote takes precedence for server fields),
+      // but PRESERVE local-only device calendar fields
       if (remoteData.preferences) {
         console.log('⚙️ Saving remote preferences...');
         const mapped = this.mapRemotePreferencesToLocal(remoteData.preferences);
-        await this.storage.savePreferences(mapped);
-        console.log('✅ Synced preferences');
+        const mergedWithLocalOnly: UserPreferences = {
+          ...mapped,
+          show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false) as any,
+          show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false) as any,
+          device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? []) as any,
+        } as UserPreferences;
+        await this.storage.savePreferences(mergedWithLocalOnly);
+        try {
+          const userId = this.userId || 'local-user';
+          localStorage.setItem(
+            `gaply_device_calendar_${userId}`,
+            JSON.stringify({
+              show_device_calendar_busy: mergedWithLocalOnly.show_device_calendar_busy ?? false,
+              show_device_calendar_titles: mergedWithLocalOnly.show_device_calendar_titles ?? false,
+              device_calendar_included_ids: mergedWithLocalOnly.device_calendar_included_ids ?? [],
+            })
+          );
+        } catch {}
+        console.log('✅ Synced preferences (preserved device calendar local-only fields)');
       }
 
       console.log('✅ Data merge and store completed successfully');

@@ -498,7 +498,20 @@ export class PreferenceManager {
   private async loadFromServer(): Promise<UserPreferences | null> {
     try {
       const { preferencesAPI } = await import('../api');
-      return await preferencesAPI.get();
+      const remote = await preferencesAPI.get();
+      // Merge with any locally stored device-calendar prefs to preserve local-only fields
+      try {
+        const localStored = await this.loadFromStorage();
+        if (localStored) {
+          return {
+            ...remote,
+            show_device_calendar_busy: (localStored as any).show_device_calendar_busy ?? false,
+            show_device_calendar_titles: (localStored as any).show_device_calendar_titles ?? false,
+            device_calendar_included_ids: (localStored as any).device_calendar_included_ids ?? [],
+          } as UserPreferences;
+        }
+      } catch {}
+      return remote;
     } catch (error) {
       console.warn('⚠️ Failed to load preferences from server:', error);
       return null;

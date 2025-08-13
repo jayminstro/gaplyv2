@@ -869,10 +869,20 @@ export default function App() {
           // Load preferences first as they're more important
           // Read locally stored preferences first (to preserve local-only fields on merge)
           let localStoredPrefs: UserPreferences | null = null;
+          // Also read a small device-calendar fallback blob from localStorage for early app lifecycle
+          let deviceLocalFallback: Partial<UserPreferences> | null = null;
           try {
             if (localFirstService) {
               localStoredPrefs = await localFirstService.getPreferences();
             }
+            try {
+              const userId = user?.id || 'local-user';
+              const raw = localStorage.getItem(`gaply_device_calendar_${userId}`);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') deviceLocalFallback = parsed;
+              }
+            } catch {}
           } catch {}
 
           const prefsData = await loadWithRetry(() => preferencesAPI.get(), 'preferences');
@@ -901,11 +911,20 @@ export default function App() {
             // Preserve local-only device calendar settings (not stored on server)
             const mergedPrefs = {
               ...normalizedPrefs,
-              show_device_calendar_busy: (localStoredPrefs?.show_device_calendar_busy ?? preferencesRef.current?.show_device_calendar_busy) ?? false,
-              show_device_calendar_titles: (localStoredPrefs?.show_device_calendar_titles ?? preferencesRef.current?.show_device_calendar_titles) ?? false,
-              device_calendar_included_ids: (localStoredPrefs?.device_calendar_included_ids ?? preferencesRef.current?.device_calendar_included_ids) ?? []
+              show_device_calendar_busy: (deviceLocalFallback?.show_device_calendar_busy ?? localStoredPrefs?.show_device_calendar_busy ?? preferencesRef.current?.show_device_calendar_busy) ?? false,
+              show_device_calendar_titles: (deviceLocalFallback?.show_device_calendar_titles ?? localStoredPrefs?.show_device_calendar_titles ?? preferencesRef.current?.show_device_calendar_titles) ?? false,
+              device_calendar_included_ids: (deviceLocalFallback?.device_calendar_included_ids ?? localStoredPrefs?.device_calendar_included_ids ?? preferencesRef.current?.device_calendar_included_ids) ?? []
             } as UserPreferences;
             setPreferences(mergedPrefs);
+            // Refresh fallback blob for next cold start
+            try {
+              const userId = user?.id || 'local-user';
+              localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
+                show_device_calendar_busy: mergedPrefs.show_device_calendar_busy ?? false,
+                show_device_calendar_titles: mergedPrefs.show_device_calendar_titles ?? false,
+                device_calendar_included_ids: mergedPrefs.device_calendar_included_ids ?? []
+              }));
+            } catch {}
           }
 
           // Load profile data after preferences
