@@ -141,7 +141,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
-  const [deviceCalendarAuth, setDeviceCalendarAuth] = useState<string>('unknown');
+  
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -221,20 +221,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
     }
   };
 
-  // Load iOS calendar permission status (guarded for non‑iOS)
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const plat = detectPlatform();
-        if (!plat.isIOS || !(window as any)?.Capacitor) return;
-        const { status } = await getDevicePermissionStatus();
-        setDeviceCalendarAuth(status || 'unknown');
-      } catch {
-        setDeviceCalendarAuth('unknown');
-      }
-    };
-    checkAuth();
-  }, []);
+  
 
   // Update local preferences when props change
   useEffect(() => {
@@ -944,42 +931,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                     </Button>
                   </div>
 
-                  {/* Manage calendar access */}
-                  <div className="flex items-center justify-between py-3">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      <div className="flex-1">
-                        <div className="text-white text-sm font-medium">Manage calendar access</div>
-                        <div className="text-slate-400 text-xs">Status: {deviceCalendarAuth}</div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const { status } = await getDevicePermissionStatus();
-                          const granted = ['fullAccess', 'authorized', 'granted', 'writeOnly'].includes(status);
-                          if (!granted || status === 'notDetermined') {
-                            try {
-                              await ensurePermissionOrThrow();
-                              setDeviceCalendarAuth('granted');
-                              toast.success('Calendar access granted');
-                            } catch {
-                              await openIOSSettings();
-                            }
-                          } else {
-                            await openIOSSettings();
-                          }
-                        } catch {
-                          await openIOSSettings();
-                        }
-                      }}
-                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
-                    >
-                      {['fullAccess','authorized','granted','writeOnly'].includes(deviceCalendarAuth) ? 'Open Settings' : 'Request Access'}
-                    </Button>
-                  </div>
+                  
 
                   {/* Disconnect device calendar */}
                   <div className="flex items-center justify-between py-3">
