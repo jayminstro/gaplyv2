@@ -1320,7 +1320,10 @@ export default function App() {
       // Then sync to remote API
       try {
         console.log(`🌐 Syncing ${section} preferences to remote API...`);
-        await preferencesAPI.save(preferences);
+        {
+          const { filterServerEligiblePrefs } = await import('./utils/storage/filterServerEligiblePrefs');
+          await preferencesAPI.save(filterServerEligiblePrefs(preferences));
+        }
         console.log(`✅ ${section} preferences synced to remote API`);
       } catch (apiError) {
         console.error(`⚠️ Failed to sync ${section} to remote API, but local save succeeded:`, apiError);

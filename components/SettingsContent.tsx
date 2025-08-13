@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { 
-  LogOut, User, Bell, Calendar, Palette, Shield, 
-  Clock, Edit3, Check, X, ChevronRight, Save,
-  Phone, Globe, Timer, Volume2, Vibrate,
+  LogOut, User, Bell, Calendar,
+  Clock, Edit3, Check, X, ChevronRight,
+  Timer, Volume2, Vibrate,
   Moon, Sun, Zap, BookOpen, Target, Settings as SettingsIcon,
   ArrowLeft
 } from 'lucide-react';
@@ -48,7 +48,7 @@ interface SettingsContentProps {
   localFirstService?: EnhancedStorageManager | null;
 }
 
-export function SettingsContent({ user, session, preferences, onSignOut, onPreferencesUpdate, localFirstService }: SettingsContentProps) {
+export function SettingsContent({ session, preferences, onSignOut, onPreferencesUpdate, localFirstService }: SettingsContentProps) {
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [localPreferences, setLocalPreferences] = useState<UserPreferences>(preferences);
@@ -56,7 +56,7 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
   const [isSaving, setIsSaving] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [cacheHealthData, setCacheHealthData] = useState<any>(null);
-  const [showCacheHealth, setShowCacheHealth] = useState(false);
+  
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
   const [deviceCalendars, setDeviceCalendars] = useState<any[]>([]);
@@ -331,7 +331,9 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
       try {
         console.log('🌐 Syncing preferences to remote API (PATCH)...');
         const expected = preferences?.updated_at;
-        const payload = expected ? { ...diff, expected_updated_at: expected } : diff;
+        const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
+        const payloadBase = filterServerEligiblePrefs(diff);
+        const payload = expected ? { ...payloadBase, expected_updated_at: expected } : payloadBase;
         let canonical = await preferencesAPI.patch(payload);
         console.log('✅ Preferences synced to remote API');
 
@@ -380,7 +382,8 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
         // Fallback 1: try legacy POST + then GET canonical
         try {
           console.warn('⚠️ PATCH failed, attempting POST fallback...');
-          await preferencesAPI.save(localPreferences);
+          const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
+          await preferencesAPI.save(filterServerEligiblePrefs(localPreferences));
           const canonical = await preferencesAPI.get();
           onPreferencesUpdate?.(canonical);
           setLocalPreferences(canonical);
@@ -401,7 +404,9 @@ export function SettingsContent({ user, session, preferences, onSignOut, onPrefe
               const serverPrefs = await preferencesAPI.get();
               const retryDiff = computePreferenceDiff(serverPrefs, localPreferences);
               if (Object.keys(retryDiff).length > 0) {
-                const retryPayload = { ...retryDiff, expected_updated_at: serverPrefs?.updated_at };
+                const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
+                const retryPayloadBase = filterServerEligiblePrefs(retryDiff);
+                const retryPayload = { ...retryPayloadBase, expected_updated_at: serverPrefs?.updated_at };
                 const canonical = await preferencesAPI.patch(retryPayload);
                 onPreferencesUpdate?.(canonical);
                 setLocalPreferences(canonical);
