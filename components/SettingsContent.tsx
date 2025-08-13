@@ -141,7 +141,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
-  const [deviceCalendarAuth, setDeviceCalendarAuth] = useState<string>('unknown');
+  
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -221,20 +221,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
     }
   };
 
-  // Load iOS calendar permission status (guarded for non‑iOS)
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const plat = detectPlatform();
-        if (!plat.isIOS || !(window as any)?.Capacitor) return;
-        const { status } = await getDevicePermissionStatus();
-        setDeviceCalendarAuth(status || 'unknown');
-      } catch {
-        setDeviceCalendarAuth('unknown');
-      }
-    };
-    checkAuth();
-  }, []);
+  
 
   // Update local preferences when props change
   useEffect(() => {
@@ -315,10 +302,93 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   ];
 
   const updatePreference = (key: string, value: any) => {
-    setLocalPreferences(prev => ({ ...prev, [key]: value }));
+    const next = { ...localPreferences, [key]: value } as UserPreferences;
+    setLocalPreferences(next);
+    const isLocalOnly = key === 'show_device_calendar_busy' || key === 'show_device_calendar_titles' || key === 'device_calendar_included_ids';
+    if (isLocalOnly) {
+      // Immediately propagate local-only changes to parent and persist locally
+      onPreferencesUpdate?.(next);
+      try { (async () => { if (localFirstService && (localFirstService as any)?.savePreferences) { await localFirstService.savePreferences(next); } })(); } catch {}
+      // Also persist a lightweight fallback in localStorage to survive early restarts
+      try {
+        const userId = session?.user?.id || 'local-user';
+        const devicePrefs = {
+          show_device_calendar_busy: next.show_device_calendar_busy ?? false,
+          show_device_calendar_titles: next.show_device_calendar_titles ?? false,
+          device_calendar_included_ids: next.device_calendar_included_ids ?? []
+        };
+        localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+      } catch {}
+      return; // Avoid triggering autosave debounce for local-only keys
+    }
     if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
       requestAutosave();
     }
+  };
+
+  // Merge server canonical with local-only fields that are not stored remotely
+  const mergeWithLocalOnlyFields = (base: UserPreferences): UserPreferences => {
+    const toHHMM = (t: any): string => {
+      if (!t || typeof t !== 'string') return '';
+      const parts = t.split(':');
+      if (parts.length >= 2) return `${parts[0].padStart(2,'0')}:${parts[1].padStart(2,'0')}`;
+      return t;
+    };
+    // Normalize working days to array if server returned object
+    const normalizedWorkingDays = Array.isArray((base as any).calendar_working_days)
+      ? (base as any).calendar_working_days
+      : ((base as any).calendar_working_days && typeof (base as any).calendar_working_days === 'object')
+        ? Object.keys((base as any).calendar_working_days).filter(k => (base as any).calendar_working_days[k])
+        : (localPreferences?.calendar_working_days || []);
+
+    return {
+      ...base,
+      calendar_work_start: toHHMM((base as any).calendar_work_start),
+      calendar_work_end: toHHMM((base as any).calendar_work_end),
+      calendar_working_days: normalizedWorkingDays,
+      show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false),
+      show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false),
+      device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? [])
+    } as UserPreferences;
+  };
+
+  // Merge helper that also preserves in-progress local edits for working days
+  const mergeCanonicalPreservingInProgress = (
+    canonical: UserPreferences,
+    rawDiff: Partial<UserPreferences> | null,
+    filteredPayload: Partial<UserPreferences> | null
+  ): UserPreferences => {
+    let merged = mergeWithLocalOnlyFields(canonical);
+    const hadWorkingDaysChange = !!rawDiff && Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_working_days');
+    const sentWorkingDays = !!filteredPayload && Object.prototype.hasOwnProperty.call(filteredPayload, 'calendar_working_days');
+    const hadWorkTimeChange = !!rawDiff && (
+      Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_work_start') ||
+      Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_work_end')
+    );
+    if (hadWorkingDaysChange && !sentWorkingDays) {
+      // We intentionally did not send empty working days; keep local UI selection instead of reverting
+      merged = {
+        ...merged,
+        calendar_working_days: Array.isArray(localPreferences.calendar_working_days)
+          ? localPreferences.calendar_working_days
+          : []
+      } as UserPreferences;
+    }
+    if (hadWorkTimeChange) {
+      // Preserve in-progress local work hours to prevent UI flicker/revert
+      const toHHMM = (t: any): string => {
+        if (!t || typeof t !== 'string') return '';
+        const parts = t.split(':');
+        if (parts.length >= 2) return `${parts[0].padStart(2,'0')}:${parts[1].padStart(2,'0')}`;
+        return t;
+      };
+      merged = {
+        ...merged,
+        calendar_work_start: toHHMM(localPreferences.calendar_work_start),
+        calendar_work_end: toHHMM(localPreferences.calendar_work_end),
+      } as UserPreferences;
+    }
+    return merged;
   };
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
@@ -350,7 +420,18 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         });
         // Revert toggle in UI without autosave
         suppressAutosaveRef.current = true;
-        setLocalPreferences(prev => ({ ...prev, show_device_calendar_busy: false }));
+        const next = { ...localPreferences, show_device_calendar_busy: false } as UserPreferences;
+        setLocalPreferences(next);
+        onPreferencesUpdate?.(next);
+        try {
+          const userId = session?.user?.id || 'local-user';
+          const devicePrefs = {
+            show_device_calendar_busy: next.show_device_calendar_busy ?? false,
+            show_device_calendar_titles: next.show_device_calendar_titles ?? false,
+            device_calendar_included_ids: next.device_calendar_included_ids ?? []
+          };
+          localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+        } catch {}
         suppressAutosaveRef.current = false;
       }
     } else {
@@ -408,7 +489,20 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         console.log('🌐 Syncing preferences to remote API (PATCH)...');
         const expected = preferences?.updated_at;
         const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-        const payloadBase = filterServerEligiblePrefs(diff);
+        let payloadBase = filterServerEligiblePrefs(diff);
+        // Ensure interdependent fields are sent together to avoid server validation edge-cases
+        if ('calendar_work_start' in payloadBase || 'calendar_work_end' in payloadBase) {
+          payloadBase = {
+            ...payloadBase,
+            calendar_work_start: localPreferences.calendar_work_start,
+            calendar_work_end: localPreferences.calendar_work_end,
+          } as any;
+        }
+        // Avoid sending empty working days to server; keep it local-only until non-empty
+        if (Array.isArray((payloadBase as any).calendar_working_days) && (payloadBase as any).calendar_working_days.length === 0) {
+          const { calendar_working_days, ...rest } = payloadBase as any;
+          payloadBase = rest;
+        }
         const payload = expected ? { ...payloadBase, expected_updated_at: expected } : payloadBase;
         let canonical = await preferencesAPI.patch(payload);
         console.log('✅ Preferences synced to remote API');
@@ -420,9 +514,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           // no-op
         }
 
-        // Replace local state with canonical server response
-        onPreferencesUpdate?.(canonical);
-        setLocalPreferences(canonical);
+        // Replace local state with canonical server response, preserving local-only fields
+        const merged = mergeCanonicalPreservingInProgress(canonical, diff, payloadBase);
+        onPreferencesUpdate?.(merged);
+        setLocalPreferences(merged);
 
         // Update gaps if working time changed (based on canonical vs previous)
         const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
@@ -459,10 +554,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         try {
           console.warn('⚠️ PATCH failed, attempting POST fallback...');
           const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-          await preferencesAPI.save(filterServerEligiblePrefs(localPreferences));
+           await preferencesAPI.save(filterServerEligiblePrefs(localPreferences));
           const canonical = await preferencesAPI.get();
-          onPreferencesUpdate?.(canonical);
-          setLocalPreferences(canonical);
+          const merged = mergeWithLocalOnlyFields(canonical);
+          onPreferencesUpdate?.(merged);
+          setLocalPreferences(merged);
 
           const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
           if (workingTimeChanged && session?.access_token) {
@@ -484,8 +580,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                 const retryPayloadBase = filterServerEligiblePrefs(retryDiff);
                 const retryPayload = { ...retryPayloadBase, expected_updated_at: serverPrefs?.updated_at };
                 const canonical = await preferencesAPI.patch(retryPayload);
-                onPreferencesUpdate?.(canonical);
-                setLocalPreferences(canonical);
+                const merged = mergeWithLocalOnlyFields(canonical);
+                onPreferencesUpdate?.(merged);
+                setLocalPreferences(merged);
 
                 const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
                 if (workingTimeChanged && session?.access_token) {
@@ -495,8 +592,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                 }
                 toast.success('Settings saved');
               } else {
-                onPreferencesUpdate?.(serverPrefs);
-                setLocalPreferences(serverPrefs);
+                const merged = mergeWithLocalOnlyFields(serverPrefs);
+                onPreferencesUpdate?.(merged);
+                setLocalPreferences(merged);
                 toast.success('Settings saved');
               }
             } catch (retryError) {
@@ -579,7 +677,20 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
       // Server patch (filtered), only if online and diff has server-eligible keys
       const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-      const serverDiff = filterServerEligiblePrefs(rawDiff);
+      let serverDiff = filterServerEligiblePrefs(rawDiff);
+      // Ensure interdependent fields are sent together to avoid server validation edge-cases
+      if ('calendar_work_start' in serverDiff || 'calendar_work_end' in serverDiff) {
+        serverDiff = {
+          ...serverDiff,
+          calendar_work_start: localPreferences.calendar_work_start,
+          calendar_work_end: localPreferences.calendar_work_end,
+        } as any;
+      }
+      // Avoid sending empty working days to server; keep it local-only until non-empty
+      if (Array.isArray((serverDiff as any).calendar_working_days) && (serverDiff as any).calendar_working_days.length === 0) {
+        const { calendar_working_days, ...rest } = serverDiff as any;
+        serverDiff = rest;
+      }
 
       if (!isOnline || Object.keys(serverDiff).length === 0) {
         // Offline or nothing to patch remotely
@@ -591,6 +702,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         }
         // Update canonical even if offline? Keep canonical as local snapshot to avoid repeated diffs
         lastSavedPreferencesRef.current = { ...localPreferences } as UserPreferences;
+        // Propagate local-only changes upward so navigation preserves UI state
+        onPreferencesUpdate?.(lastSavedPreferencesRef.current);
         inFlightRef.current = false;
         if (pendingDiff) {
           setPendingDiff(null);
@@ -623,9 +736,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
         // Success: update canonical snapshot and emit recompute if relevant
         const workingTimeChanged = isWorkingTimeChanged(lastSavedPreferencesRef.current, canonical);
-        lastSavedPreferencesRef.current = canonical;
-        onPreferencesUpdate?.(canonical);
-        setLocalPreferences(canonical);
+        const merged = mergeWithLocalOnlyFields(canonical);
+        lastSavedPreferencesRef.current = merged;
+        onPreferencesUpdate?.(merged);
+        setLocalPreferences(merged);
 
         if (workingTimeChanged && session?.access_token) {
           try {
@@ -651,14 +765,26 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
             const curNorm = normalizeForCompare(localPreferences);
             const srvNorm = normalizeForCompare(serverPrefs);
             const replayRaw = computePreferenceDiff(srvNorm, curNorm);
-            const replayFiltered = filterServerEligiblePrefs(replayRaw);
+            let replayFiltered = filterServerEligiblePrefs(replayRaw);
+            if ('calendar_work_start' in replayFiltered || 'calendar_work_end' in replayFiltered) {
+              replayFiltered = {
+                ...replayFiltered,
+                calendar_work_start: localPreferences.calendar_work_start,
+                calendar_work_end: localPreferences.calendar_work_end,
+              } as any;
+            }
+            if (Array.isArray((replayFiltered as any).calendar_working_days) && (replayFiltered as any).calendar_working_days.length === 0) {
+              const { calendar_working_days, ...rest } = replayFiltered as any;
+              replayFiltered = rest;
+            }
             if (Object.keys(replayFiltered).length > 0) {
               const retryPayload = { ...replayFiltered, expected_updated_at: serverPrefs?.updated_at };
-              const canonical = await preferencesAPI.patch(retryPayload);
-              const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
-              lastSavedPreferencesRef.current = canonical;
-              onPreferencesUpdate?.(canonical);
-              setLocalPreferences(canonical);
+                const canonical = await preferencesAPI.patch(retryPayload);
+                const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
+                const merged = mergeCanonicalPreservingInProgress(canonical, replayRaw, replayFiltered);
+              lastSavedPreferencesRef.current = merged;
+              onPreferencesUpdate?.(merged);
+              setLocalPreferences(merged);
               if (workingTimeChanged && session?.access_token) {
                 try { await GapsAPI.updateGapsForWorkingTimeChange(serverPrefs, canonical, session.access_token); } catch {}
               }
@@ -667,9 +793,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
             } else {
               // Nothing to replay, just adopt server
-              lastSavedPreferencesRef.current = serverPrefs;
-              onPreferencesUpdate?.(serverPrefs);
-              setLocalPreferences(serverPrefs);
+                const merged = mergeCanonicalPreservingInProgress(serverPrefs, null, null);
+              lastSavedPreferencesRef.current = merged;
+              onPreferencesUpdate?.(merged);
+              setLocalPreferences(merged);
               setSaveState('done');
               updateStatus('Saved');
               try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
@@ -915,42 +1042,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                     </Button>
                   </div>
 
-                  {/* Manage calendar access */}
-                  <div className="flex items-center justify-between py-3">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      <div className="flex-1">
-                        <div className="text-white text-sm font-medium">Manage calendar access</div>
-                        <div className="text-slate-400 text-xs">Status: {deviceCalendarAuth}</div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const { status } = await getDevicePermissionStatus();
-                          const granted = ['fullAccess', 'authorized', 'granted', 'writeOnly'].includes(status);
-                          if (!granted || status === 'notDetermined') {
-                            try {
-                              await ensurePermissionOrThrow();
-                              setDeviceCalendarAuth('granted');
-                              toast.success('Calendar access granted');
-                            } catch {
-                              await openIOSSettings();
-                            }
-                          } else {
-                            await openIOSSettings();
-                          }
-                        } catch {
-                          await openIOSSettings();
-                        }
-                      }}
-                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
-                    >
-                      {['fullAccess','authorized','granted','writeOnly'].includes(deviceCalendarAuth) ? 'Open Settings' : 'Request Access'}
-                    </Button>
-                  </div>
+                  
 
                   {/* Disconnect device calendar */}
                   <div className="flex items-center justify-between py-3">

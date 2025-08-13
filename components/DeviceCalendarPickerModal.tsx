@@ -3,7 +3,7 @@ import { X, Calendar, Check, Settings } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { loadCalendars as loadDeviceCalendars, ensurePermissionOrThrow, openIOSSettings, getPermissionStatus } from '../src/utils/calendarSource.ios';
+import { loadCalendars as loadDeviceCalendars, openIOSSettings, getPermissionStatus } from '../src/utils/calendarSource.ios';
 
 interface DeviceCalendarPickerModalProps {
   isOpen: boolean;
@@ -39,8 +39,6 @@ export function DeviceCalendarPickerModal({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
@@ -69,6 +67,8 @@ export function DeviceCalendarPickerModal({
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+  
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -117,26 +117,34 @@ export function DeviceCalendarPickerModal({
             <div className="text-center py-8 text-slate-400 text-sm">No calendars found</div>
           ) : (
             <div className="space-y-3 max-h-64 overflow-y-auto">
-              {calendars.map((calendar: any) => (
-                <div key={calendar.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: calendar.color || '#007AFF' }}
-                    />
-                    <div>
-                      <Label className="text-sm font-medium text-slate-300">{calendar.title}</Label>
-                      <p className="text-xs text-slate-500">
-                        {calendar.type} • {calendar.allowsModifications ? 'Editable' : 'Read‑only'}
-                      </p>
+              {(() => {
+                try {
+                  const list = Array.isArray(calendars) ? calendars : [];
+                  return list.map((calendar: any, index: number) => (
+                    <div key={calendar?.id ?? String(index)} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-700/30">
+                      <div className="flex items-center gap-3">
+                        <div 
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: calendar?.color || '#007AFF' }}
+                        />
+                        <div>
+                          <Label className="text-sm font-medium text-slate-300">{String(calendar?.title || 'Untitled')}</Label>
+                          <p className="text-xs text-slate-500">
+                            {String(calendar?.type || 'Local')} • {calendar?.allowsModifications ? 'Editable' : 'Read‑only'}
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={Array.isArray(localSelectedIds) ? localSelectedIds.includes(String(calendar?.id || '')) : false}
+                        onCheckedChange={(checked) => handleCalendarToggle(String(calendar?.id || ''), checked)}
+                      />
                     </div>
-                  </div>
-                  <Switch
-                    checked={Array.isArray(localSelectedIds) ? localSelectedIds.includes(calendar.id) : false}
-                    onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked)}
-                  />
-                </div>
-              ))}
+                  ));
+                } catch (err) {
+                  try { console.error('Failed to render calendars list', err, calendars); } catch {}
+                  return <div className="text-center py-8 text-slate-400 text-sm">Failed to render calendars</div>;
+                }
+              })()}
             </div>
           )}
         </div>

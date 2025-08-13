@@ -68,6 +68,8 @@ export default function App() {
   // Settings state - moved here to avoid conditional hook calls
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const [profile, setProfile] = useState<any>(null);
+  const preferencesRef = useRef<UserPreferences>(DEFAULT_PREFERENCES);
+  useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
 
   const [_editingProfile, setEditingProfile] = useState(false);
 
@@ -850,6 +852,30 @@ export default function App() {
         try {
           console.log('Loading user data for user:', user.id);
           
+          // Load preferences ONLY via local-first service to avoid overwriting in-progress edits
+          try {
+            let loadedPrefs: UserPreferences | null = null;
+            if (localFirstService) {
+              loadedPrefs = await localFirstService.getPreferences();
+              if (loadedPrefs) {
+                setPreferences(loadedPrefs);
+              }
+            }
+            // Also refresh device-calendar fallback for early cold starts
+            try {
+              const userId = user?.id || 'local-user';
+              const current = loadedPrefs || preferencesRef.current;
+              if (current) {
+                localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
+                  show_device_calendar_busy: current.show_device_calendar_busy ?? false,
+                  show_device_calendar_titles: current.show_device_calendar_titles ?? false,
+                  device_calendar_included_ids: current.device_calendar_included_ids ?? []
+                }));
+              }
+            } catch {}
+          } catch {}
+
+          // Load profile data after preferences
           const loadWithRetry = async (apiCall: () => Promise<any>, name: string) => {
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
@@ -858,40 +884,11 @@ export default function App() {
                 return result;
               } catch (error) {
                 console.error(`Error loading ${name} (attempt ${attempt + 1}):`, error);
-                if (attempt === 2) return null; // Last attempt failed
+                if (attempt === 2) return null;
                 await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
               }
             }
           };
-          
-          // Load preferences first as they're more important
-          const prefsData = await loadWithRetry(() => preferencesAPI.get(), 'preferences');
-          if (prefsData) {
-            // Normalize preferences to ensure proper data types
-            const normalizedPrefs = {
-              ...prefsData,
-              calendar_working_days: (() => {
-                if (Array.isArray(prefsData.calendar_working_days)) {
-                  return prefsData.calendar_working_days.length > 0 
-                    ? prefsData.calendar_working_days 
-                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-                }
-                if (prefsData.calendar_working_days && typeof prefsData.calendar_working_days === 'object' && Object.keys(prefsData.calendar_working_days).length > 0) {
-                  const filtered = Object.keys(prefsData.calendar_working_days).filter(key => prefsData.calendar_working_days[key]);
-                  return filtered.length > 0 
-                    ? filtered 
-                    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-                }
-                return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-              })(),
-              preferred_categories: Array.isArray(prefsData.preferred_categories) 
-                ? prefsData.preferred_categories 
-                : []
-            };
-            setPreferences(normalizedPrefs);
-          }
-
-          // Load profile data after preferences
           const profileData = await loadWithRetry(() => profileAPI.get(), 'profile');
           if (profileData) {
             setProfile(profileData);
