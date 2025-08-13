@@ -1,0 +1,2 @@
+class t{static instance;counters={autosave_attempts:0,autosave_success:0,autosave_failures:0,conflicts_409:0,prevented_writes:0,offline_saves:0,rate_limited_skips:0,pending_sync_flushes:0};static getInstance(){return t.instance||(t.instance=new t),t.instance}increment(s){this.counters[s]=(this.counters[s]||0)+1}getReport(){return{...this.counters}}}function e(n){t.getInstance().increment(n)}export{e as telemetryIncrement};
+//# sourceMappingURL=PreferenceTelemetry-CLXlfIBX.js.map

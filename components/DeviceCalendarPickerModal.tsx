@@ -18,8 +18,10 @@ export function DeviceCalendarPickerModal({
   selectedCalendarIds,
   onSave
 }: DeviceCalendarPickerModalProps) {
-  const [localSelectedIds, setLocalSelectedIds] = useState<string[]>(selectedCalendarIds);
-  useEffect(() => { setLocalSelectedIds(selectedCalendarIds || []); }, [selectedCalendarIds]);
+  const [localSelectedIds, setLocalSelectedIds] = useState<string[]>(
+    Array.isArray(selectedCalendarIds) ? selectedCalendarIds : []
+  );
+  useEffect(() => { setLocalSelectedIds(Array.isArray(selectedCalendarIds) ? selectedCalendarIds : []); }, [selectedCalendarIds]);
   const [calendars, setCalendars] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<string>('unknown');
@@ -33,7 +35,7 @@ export function DeviceCalendarPickerModal({
   };
 
   const handleSave = () => {
-    onSave(localSelectedIds);
+    onSave(Array.isArray(localSelectedIds) ? localSelectedIds : []);
     onClose();
   };
 
@@ -130,7 +132,7 @@ export function DeviceCalendarPickerModal({
                     </div>
                   </div>
                   <Switch
-                    checked={localSelectedIds.includes(calendar.id)}
+                    checked={Array.isArray(localSelectedIds) ? localSelectedIds.includes(calendar.id) : false}
                     onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked)}
                   />
                 </div>
