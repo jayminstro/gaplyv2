@@ -867,6 +867,14 @@ export default function App() {
           };
           
           // Load preferences first as they're more important
+          // Read locally stored preferences first (to preserve local-only fields on merge)
+          let localStoredPrefs: UserPreferences | null = null;
+          try {
+            if (localFirstService) {
+              localStoredPrefs = await localFirstService.getPreferences();
+            }
+          } catch {}
+
           const prefsData = await loadWithRetry(() => preferencesAPI.get(), 'preferences');
           if (prefsData) {
             // Normalize preferences to ensure proper data types
@@ -893,9 +901,9 @@ export default function App() {
             // Preserve local-only device calendar settings (not stored on server)
             const mergedPrefs = {
               ...normalizedPrefs,
-              show_device_calendar_busy: preferencesRef.current?.show_device_calendar_busy ?? false,
-              show_device_calendar_titles: preferencesRef.current?.show_device_calendar_titles ?? false,
-              device_calendar_included_ids: preferencesRef.current?.device_calendar_included_ids ?? []
+              show_device_calendar_busy: (localStoredPrefs?.show_device_calendar_busy ?? preferencesRef.current?.show_device_calendar_busy) ?? false,
+              show_device_calendar_titles: (localStoredPrefs?.show_device_calendar_titles ?? preferencesRef.current?.show_device_calendar_titles) ?? false,
+              device_calendar_included_ids: (localStoredPrefs?.device_calendar_included_ids ?? preferencesRef.current?.device_calendar_included_ids) ?? []
             } as UserPreferences;
             setPreferences(mergedPrefs);
           }
