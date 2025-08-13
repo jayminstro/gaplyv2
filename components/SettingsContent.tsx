@@ -328,12 +328,67 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   // Merge server canonical with local-only fields that are not stored remotely
   const mergeWithLocalOnlyFields = (base: UserPreferences): UserPreferences => {
+    const toHHMM = (t: any): string => {
+      if (!t || typeof t !== 'string') return '';
+      const parts = t.split(':');
+      if (parts.length >= 2) return `${parts[0].padStart(2,'0')}:${parts[1].padStart(2,'0')}`;
+      return t;
+    };
+    // Normalize working days to array if server returned object
+    const normalizedWorkingDays = Array.isArray((base as any).calendar_working_days)
+      ? (base as any).calendar_working_days
+      : ((base as any).calendar_working_days && typeof (base as any).calendar_working_days === 'object')
+        ? Object.keys((base as any).calendar_working_days).filter(k => (base as any).calendar_working_days[k])
+        : (localPreferences?.calendar_working_days || []);
+
     return {
       ...base,
+      calendar_work_start: toHHMM((base as any).calendar_work_start),
+      calendar_work_end: toHHMM((base as any).calendar_work_end),
+      calendar_working_days: normalizedWorkingDays,
       show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false),
       show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false),
       device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? [])
     } as UserPreferences;
+  };
+
+  // Merge helper that also preserves in-progress local edits for working days
+  const mergeCanonicalPreservingInProgress = (
+    canonical: UserPreferences,
+    rawDiff: Partial<UserPreferences> | null,
+    filteredPayload: Partial<UserPreferences> | null
+  ): UserPreferences => {
+    let merged = mergeWithLocalOnlyFields(canonical);
+    const hadWorkingDaysChange = !!rawDiff && Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_working_days');
+    const sentWorkingDays = !!filteredPayload && Object.prototype.hasOwnProperty.call(filteredPayload, 'calendar_working_days');
+    const hadWorkTimeChange = !!rawDiff && (
+      Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_work_start') ||
+      Object.prototype.hasOwnProperty.call(rawDiff, 'calendar_work_end')
+    );
+    if (hadWorkingDaysChange && !sentWorkingDays) {
+      // We intentionally did not send empty working days; keep local UI selection instead of reverting
+      merged = {
+        ...merged,
+        calendar_working_days: Array.isArray(localPreferences.calendar_working_days)
+          ? localPreferences.calendar_working_days
+          : []
+      } as UserPreferences;
+    }
+    if (hadWorkTimeChange) {
+      // Preserve in-progress local work hours to prevent UI flicker/revert
+      const toHHMM = (t: any): string => {
+        if (!t || typeof t !== 'string') return '';
+        const parts = t.split(':');
+        if (parts.length >= 2) return `${parts[0].padStart(2,'0')}:${parts[1].padStart(2,'0')}`;
+        return t;
+      };
+      merged = {
+        ...merged,
+        calendar_work_start: toHHMM(localPreferences.calendar_work_start),
+        calendar_work_end: toHHMM(localPreferences.calendar_work_end),
+      } as UserPreferences;
+    }
+    return merged;
   };
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
@@ -434,7 +489,20 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         console.log('🌐 Syncing preferences to remote API (PATCH)...');
         const expected = preferences?.updated_at;
         const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-        const payloadBase = filterServerEligiblePrefs(diff);
+        let payloadBase = filterServerEligiblePrefs(diff);
+        // Ensure interdependent fields are sent together to avoid server validation edge-cases
+        if ('calendar_work_start' in payloadBase || 'calendar_work_end' in payloadBase) {
+          payloadBase = {
+            ...payloadBase,
+            calendar_work_start: localPreferences.calendar_work_start,
+            calendar_work_end: localPreferences.calendar_work_end,
+          } as any;
+        }
+        // Avoid sending empty working days to server; keep it local-only until non-empty
+        if (Array.isArray((payloadBase as any).calendar_working_days) && (payloadBase as any).calendar_working_days.length === 0) {
+          const { calendar_working_days, ...rest } = payloadBase as any;
+          payloadBase = rest;
+        }
         const payload = expected ? { ...payloadBase, expected_updated_at: expected } : payloadBase;
         let canonical = await preferencesAPI.patch(payload);
         console.log('✅ Preferences synced to remote API');
@@ -447,7 +515,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         }
 
         // Replace local state with canonical server response, preserving local-only fields
-        const merged = mergeWithLocalOnlyFields(canonical);
+        const merged = mergeCanonicalPreservingInProgress(canonical, diff, payloadBase);
         onPreferencesUpdate?.(merged);
         setLocalPreferences(merged);
 
@@ -609,7 +677,20 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
       // Server patch (filtered), only if online and diff has server-eligible keys
       const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-      const serverDiff = filterServerEligiblePrefs(rawDiff);
+      let serverDiff = filterServerEligiblePrefs(rawDiff);
+      // Ensure interdependent fields are sent together to avoid server validation edge-cases
+      if ('calendar_work_start' in serverDiff || 'calendar_work_end' in serverDiff) {
+        serverDiff = {
+          ...serverDiff,
+          calendar_work_start: localPreferences.calendar_work_start,
+          calendar_work_end: localPreferences.calendar_work_end,
+        } as any;
+      }
+      // Avoid sending empty working days to server; keep it local-only until non-empty
+      if (Array.isArray((serverDiff as any).calendar_working_days) && (serverDiff as any).calendar_working_days.length === 0) {
+        const { calendar_working_days, ...rest } = serverDiff as any;
+        serverDiff = rest;
+      }
 
       if (!isOnline || Object.keys(serverDiff).length === 0) {
         // Offline or nothing to patch remotely
@@ -684,12 +765,23 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
             const curNorm = normalizeForCompare(localPreferences);
             const srvNorm = normalizeForCompare(serverPrefs);
             const replayRaw = computePreferenceDiff(srvNorm, curNorm);
-            const replayFiltered = filterServerEligiblePrefs(replayRaw);
+            let replayFiltered = filterServerEligiblePrefs(replayRaw);
+            if ('calendar_work_start' in replayFiltered || 'calendar_work_end' in replayFiltered) {
+              replayFiltered = {
+                ...replayFiltered,
+                calendar_work_start: localPreferences.calendar_work_start,
+                calendar_work_end: localPreferences.calendar_work_end,
+              } as any;
+            }
+            if (Array.isArray((replayFiltered as any).calendar_working_days) && (replayFiltered as any).calendar_working_days.length === 0) {
+              const { calendar_working_days, ...rest } = replayFiltered as any;
+              replayFiltered = rest;
+            }
             if (Object.keys(replayFiltered).length > 0) {
               const retryPayload = { ...replayFiltered, expected_updated_at: serverPrefs?.updated_at };
-              const canonical = await preferencesAPI.patch(retryPayload);
-              const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
-              const merged = mergeWithLocalOnlyFields(canonical);
+                const canonical = await preferencesAPI.patch(retryPayload);
+                const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
+                const merged = mergeCanonicalPreservingInProgress(canonical, replayRaw, replayFiltered);
               lastSavedPreferencesRef.current = merged;
               onPreferencesUpdate?.(merged);
               setLocalPreferences(merged);
@@ -701,7 +793,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
             } else {
               // Nothing to replay, just adopt server
-              const merged = mergeWithLocalOnlyFields(serverPrefs);
+                const merged = mergeCanonicalPreservingInProgress(serverPrefs, null, null);
               lastSavedPreferencesRef.current = merged;
               onPreferencesUpdate?.(merged);
               setLocalPreferences(merged);
