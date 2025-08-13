@@ -315,10 +315,28 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   ];
 
   const updatePreference = (key: string, value: any) => {
-    setLocalPreferences(prev => ({ ...prev, [key]: value }));
+    const next = { ...localPreferences, [key]: value } as UserPreferences;
+    setLocalPreferences(next);
+    const isLocalOnly = key === 'show_device_calendar_busy' || key === 'show_device_calendar_titles' || key === 'device_calendar_included_ids';
+    if (isLocalOnly) {
+      // Immediately propagate local-only changes to parent and persist locally
+      onPreferencesUpdate?.(next);
+      try { (async () => { if (localFirstService && (localFirstService as any)?.savePreferences) { await localFirstService.savePreferences(next); } })(); } catch {}
+      return; // Avoid triggering autosave debounce for local-only keys
+    }
     if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
       requestAutosave();
     }
+  };
+
+  // Merge server canonical with local-only fields that are not stored remotely
+  const mergeWithLocalOnlyFields = (base: UserPreferences): UserPreferences => {
+    return {
+      ...base,
+      show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false),
+      show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false),
+      device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? [])
+    } as UserPreferences;
   };
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
@@ -350,7 +368,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         });
         // Revert toggle in UI without autosave
         suppressAutosaveRef.current = true;
-        setLocalPreferences(prev => ({ ...prev, show_device_calendar_busy: false }));
+        const next = { ...localPreferences, show_device_calendar_busy: false } as UserPreferences;
+        setLocalPreferences(next);
+        onPreferencesUpdate?.(next);
         suppressAutosaveRef.current = false;
       }
     } else {
@@ -420,9 +440,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           // no-op
         }
 
-        // Replace local state with canonical server response
-        onPreferencesUpdate?.(canonical);
-        setLocalPreferences(canonical);
+        // Replace local state with canonical server response, preserving local-only fields
+        const merged = mergeWithLocalOnlyFields(canonical);
+        onPreferencesUpdate?.(merged);
+        setLocalPreferences(merged);
 
         // Update gaps if working time changed (based on canonical vs previous)
         const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
@@ -459,10 +480,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         try {
           console.warn('⚠️ PATCH failed, attempting POST fallback...');
           const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
-          await preferencesAPI.save(filterServerEligiblePrefs(localPreferences));
+           await preferencesAPI.save(filterServerEligiblePrefs(localPreferences));
           const canonical = await preferencesAPI.get();
-          onPreferencesUpdate?.(canonical);
-          setLocalPreferences(canonical);
+          const merged = mergeWithLocalOnlyFields(canonical);
+          onPreferencesUpdate?.(merged);
+          setLocalPreferences(merged);
 
           const workingTimeChanged = isWorkingTimeChanged(preferences, canonical);
           if (workingTimeChanged && session?.access_token) {
@@ -484,8 +506,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                 const retryPayloadBase = filterServerEligiblePrefs(retryDiff);
                 const retryPayload = { ...retryPayloadBase, expected_updated_at: serverPrefs?.updated_at };
                 const canonical = await preferencesAPI.patch(retryPayload);
-                onPreferencesUpdate?.(canonical);
-                setLocalPreferences(canonical);
+                const merged = mergeWithLocalOnlyFields(canonical);
+                onPreferencesUpdate?.(merged);
+                setLocalPreferences(merged);
 
                 const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
                 if (workingTimeChanged && session?.access_token) {
@@ -495,8 +518,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                 }
                 toast.success('Settings saved');
               } else {
-                onPreferencesUpdate?.(serverPrefs);
-                setLocalPreferences(serverPrefs);
+                const merged = mergeWithLocalOnlyFields(serverPrefs);
+                onPreferencesUpdate?.(merged);
+                setLocalPreferences(merged);
                 toast.success('Settings saved');
               }
             } catch (retryError) {
@@ -591,6 +615,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         }
         // Update canonical even if offline? Keep canonical as local snapshot to avoid repeated diffs
         lastSavedPreferencesRef.current = { ...localPreferences } as UserPreferences;
+        // Propagate local-only changes upward so navigation preserves UI state
+        onPreferencesUpdate?.(lastSavedPreferencesRef.current);
         inFlightRef.current = false;
         if (pendingDiff) {
           setPendingDiff(null);
@@ -623,9 +649,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
         // Success: update canonical snapshot and emit recompute if relevant
         const workingTimeChanged = isWorkingTimeChanged(lastSavedPreferencesRef.current, canonical);
-        lastSavedPreferencesRef.current = canonical;
-        onPreferencesUpdate?.(canonical);
-        setLocalPreferences(canonical);
+        const merged = mergeWithLocalOnlyFields(canonical);
+        lastSavedPreferencesRef.current = merged;
+        onPreferencesUpdate?.(merged);
+        setLocalPreferences(merged);
 
         if (workingTimeChanged && session?.access_token) {
           try {
@@ -656,9 +683,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               const retryPayload = { ...replayFiltered, expected_updated_at: serverPrefs?.updated_at };
               const canonical = await preferencesAPI.patch(retryPayload);
               const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
-              lastSavedPreferencesRef.current = canonical;
-              onPreferencesUpdate?.(canonical);
-              setLocalPreferences(canonical);
+              const merged = mergeWithLocalOnlyFields(canonical);
+              lastSavedPreferencesRef.current = merged;
+              onPreferencesUpdate?.(merged);
+              setLocalPreferences(merged);
               if (workingTimeChanged && session?.access_token) {
                 try { await GapsAPI.updateGapsForWorkingTimeChange(serverPrefs, canonical, session.access_token); } catch {}
               }
@@ -667,9 +695,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
             } else {
               // Nothing to replay, just adopt server
-              lastSavedPreferencesRef.current = serverPrefs;
-              onPreferencesUpdate?.(serverPrefs);
-              setLocalPreferences(serverPrefs);
+              const merged = mergeWithLocalOnlyFields(serverPrefs);
+              lastSavedPreferencesRef.current = merged;
+              onPreferencesUpdate?.(merged);
+              setLocalPreferences(merged);
               setSaveState('done');
               updateStatus('Saved');
               try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}

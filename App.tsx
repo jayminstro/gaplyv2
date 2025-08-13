@@ -68,6 +68,8 @@ export default function App() {
   // Settings state - moved here to avoid conditional hook calls
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const [profile, setProfile] = useState<any>(null);
+  const preferencesRef = useRef<UserPreferences>(DEFAULT_PREFERENCES);
+  useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
 
   const [_editingProfile, setEditingProfile] = useState(false);
 
@@ -888,7 +890,14 @@ export default function App() {
                 ? prefsData.preferred_categories 
                 : []
             };
-            setPreferences(normalizedPrefs);
+            // Preserve local-only device calendar settings (not stored on server)
+            const mergedPrefs = {
+              ...normalizedPrefs,
+              show_device_calendar_busy: preferencesRef.current?.show_device_calendar_busy ?? false,
+              show_device_calendar_titles: preferencesRef.current?.show_device_calendar_titles ?? false,
+              device_calendar_included_ids: preferencesRef.current?.device_calendar_included_ids ?? []
+            } as UserPreferences;
+            setPreferences(mergedPrefs);
           }
 
           // Load profile data after preferences
