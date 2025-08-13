@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   LogOut, User, Bell, Calendar,
   Clock, Edit3, Check, X, ChevronRight,
@@ -58,6 +58,87 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [cacheHealthData, setCacheHealthData] = useState<any>(null);
   
+  // Autosave state machine (PR2 - behind flag)
+  // Autosave enabled by default; set VITE_PREF_AUTOSAVE="false" to disable at runtime
+  const PREF_AUTOSAVE = (() => {
+    try {
+      const envVal = (import.meta as any)?.env?.VITE_PREF_AUTOSAVE;
+      if (envVal === undefined) return true;
+      return envVal === 'true' || envVal === true;
+    } catch {
+      return true;
+    }
+  })();
+  const [saveState, setSaveState] = useState<'idle' | 'saving_local' | 'saving_remote' | 'done' | 'error'>('idle');
+  const lastSavedPreferencesRef = useRef<UserPreferences>(preferences);
+  const [pendingDiff, setPendingDiff] = useState<Partial<UserPreferences> | null>(null);
+  const [pendingServerPatch, setPendingServerPatch] = useState<Partial<UserPreferences> | null>(null);
+  const inFlightRef = useRef(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const debounceTimerRef = useRef<number | null>(null);
+  const [statusText, setStatusText] = useState<string>('');
+  const statusHideTimerRef = useRef<number | null>(null);
+  const suppressAutosaveRef = useRef(false);
+
+  useEffect(() => {
+    // Initialize canonical snapshot from local-first manager if available
+    const init = async () => {
+      try {
+        let canonical = preferences;
+        if (localFirstService && (localFirstService as any)?.getPreferences) {
+          const p = await localFirstService.getPreferences();
+          if (p) canonical = p;
+        }
+        lastSavedPreferencesRef.current = canonical;
+      } catch {
+        lastSavedPreferencesRef.current = preferences;
+      }
+    };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Network awareness
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushPendingImmediately();
+      }
+    };
+    const handlePageHide = () => { void flushPendingImmediately(); };
+    const handlePop = () => { void flushPendingImmediately(); };
+    const handleHash = () => { void flushPendingImmediately(); };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('popstate', handlePop);
+    window.addEventListener('hashchange', handleHash);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('popstate', handlePop);
+      window.removeEventListener('hashchange', handleHash);
+    };
+  }, []);
+
+  const updateStatus = (text: string, autoHideMs = 1500) => {
+    setStatusText(text);
+    if (statusHideTimerRef.current) {
+      clearTimeout(statusHideTimerRef.current);
+      statusHideTimerRef.current = null;
+    }
+    if (text && (text === 'Saved' || text.startsWith('Saved locally'))) {
+      statusHideTimerRef.current = window.setTimeout(() => {
+        setStatusText('');
+      }, autoHideMs) as unknown as number;
+    }
+  };
+
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
   const [deviceCalendarAuth, setDeviceCalendarAuth] = useState<string>('unknown');
@@ -235,6 +316,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   const updatePreference = (key: string, value: any) => {
     setLocalPreferences(prev => ({ ...prev, [key]: value }));
+    if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
+      requestAutosave();
+    }
   };
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
@@ -247,7 +331,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           await ensurePermissionOrThrow();
         }
 
-        // Permission granted → enable toggle
+        // Permission granted → enable toggle (autosave allowed)
         updatePreference('show_device_calendar_busy', true);
 
         // If no calendars selected yet, default to non‑subscribed
@@ -264,15 +348,19 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         toast.error('Calendar permission required', {
           description: 'Enable access in iOS Settings to show busy time.'
         });
-        // Revert toggle in UI
-        updatePreference('show_device_calendar_busy', false);
+        // Revert toggle in UI without autosave
+        suppressAutosaveRef.current = true;
+        setLocalPreferences(prev => ({ ...prev, show_device_calendar_busy: false }));
+        suppressAutosaveRef.current = false;
       }
     } else {
       // Turning OFF: disable titles too
       updatePreference('show_device_calendar_busy', false);
       updatePreference('show_device_calendar_titles', false);
-      // Persist immediately
-      setTimeout(() => { void savePreferences(); }, 0);
+      // Persist immediately when manual mode; autosave handles otherwise
+      if (!PREF_AUTOSAVE) {
+        setTimeout(() => { void savePreferences(); }, 0);
+      }
     }
   };
 
@@ -428,6 +516,203 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Debounced autosave trigger
+  const requestAutosave = () => {
+    if (!PREF_AUTOSAVE) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    debounceTimerRef.current = window.setTimeout(() => {
+      void performAutosave();
+    }, 700) as unknown as number; // 600–800ms range; use 700ms
+  };
+
+  const performAutosave = async () => {
+    if (!PREF_AUTOSAVE) return;
+    if (inFlightRef.current) {
+      // Coalesce: mark pending and bail
+      setPendingDiff(computePreferenceDiff(lastSavedPreferencesRef.current, localPreferences));
+      return;
+    }
+
+    inFlightRef.current = true;
+    setSaveState('saving_local');
+    updateStatus('Saving…', 0);
+    try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_attempts'); } catch {}
+
+    try {
+      // Normalize and diff against canonical snapshot
+      const { normalizeForCompare } = await import('../utils/storage/normalizePreferences');
+      const prevNorm = normalizeForCompare(lastSavedPreferencesRef.current);
+      const nextNorm = normalizeForCompare(localPreferences);
+      const rawDiff = computePreferenceDiff(prevNorm, nextNorm);
+
+      // No-op diff
+      if (Object.keys(rawDiff).length === 0) {
+        setSaveState('done');
+        updateStatus('Saved');
+        try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('prevented_writes'); } catch {}
+        inFlightRef.current = false;
+        // If trailing diff queued, run again
+        if (pendingDiff) {
+          setPendingDiff(null);
+          void performAutosave();
+        }
+        return;
+      }
+
+      // Save locally first
+      try {
+        if (localFirstService && (localFirstService as any)?.savePreferences) {
+          await localFirstService.savePreferences(localPreferences);
+        }
+      } catch (localErr) {
+        setSaveState('error');
+        updateStatus('Error');
+        try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_failures'); } catch {}
+        inFlightRef.current = false;
+        return;
+      }
+
+      // Server patch (filtered), only if online and diff has server-eligible keys
+      const { filterServerEligiblePrefs } = await import('../utils/storage/filterServerEligiblePrefs');
+      const serverDiff = filterServerEligiblePrefs(rawDiff);
+
+      if (!isOnline || Object.keys(serverDiff).length === 0) {
+        // Offline or nothing to patch remotely
+        setPendingServerPatch(Object.keys(serverDiff).length === 0 ? null : serverDiff);
+        setSaveState('done');
+        updateStatus(Object.keys(serverDiff).length === 0 ? 'Saved' : 'Saved locally • Sync pending');
+        if (!isOnline && Object.keys(serverDiff).length > 0) {
+          try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('offline_saves'); } catch {}
+        }
+        // Update canonical even if offline? Keep canonical as local snapshot to avoid repeated diffs
+        lastSavedPreferencesRef.current = { ...localPreferences } as UserPreferences;
+        inFlightRef.current = false;
+        if (pendingDiff) {
+          setPendingDiff(null);
+          void performAutosave();
+        }
+        return;
+      }
+
+      // Rate limiting
+      const { consumePatchToken } = await import('../utils/storage/patchRateLimiter');
+      if (!consumePatchToken()) {
+        setPendingServerPatch(serverDiff);
+        setSaveState('done');
+        updateStatus('Saved locally • Sync pending');
+        try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('rate_limited_skips'); } catch {}
+        lastSavedPreferencesRef.current = { ...localPreferences } as UserPreferences;
+        inFlightRef.current = false;
+        if (pendingDiff) {
+          setPendingDiff(null);
+          void performAutosave();
+        }
+        return;
+      }
+
+      setSaveState('saving_remote');
+      try {
+        const expected = lastSavedPreferencesRef.current?.updated_at;
+        const payload = expected ? { ...serverDiff, expected_updated_at: expected } : serverDiff;
+        let canonical = await preferencesAPI.patch(payload);
+
+        // Success: update canonical snapshot and emit recompute if relevant
+        const workingTimeChanged = isWorkingTimeChanged(lastSavedPreferencesRef.current, canonical);
+        lastSavedPreferencesRef.current = canonical;
+        onPreferencesUpdate?.(canonical);
+        setLocalPreferences(canonical);
+
+        if (workingTimeChanged && session?.access_token) {
+          try {
+            await GapsAPI.updateGapsForWorkingTimeChange(
+              preferences,
+              canonical,
+              session.access_token
+            );
+          } catch {}
+        }
+
+        setSaveState('done');
+        updateStatus('Saved');
+        try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
+      } catch (apiError: any) {
+        // 409 conflict path
+        const message = (apiError instanceof Error ? apiError.message : '') || '';
+        if ((message.includes('409') || message.toLowerCase().includes('conflict')) && preferencesAPI.get) {
+          try {
+            try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('conflicts_409'); } catch {}
+            const serverPrefs = await preferencesAPI.get();
+            const { normalizeForCompare } = await import('../utils/storage/normalizePreferences');
+            const curNorm = normalizeForCompare(localPreferences);
+            const srvNorm = normalizeForCompare(serverPrefs);
+            const replayRaw = computePreferenceDiff(srvNorm, curNorm);
+            const replayFiltered = filterServerEligiblePrefs(replayRaw);
+            if (Object.keys(replayFiltered).length > 0) {
+              const retryPayload = { ...replayFiltered, expected_updated_at: serverPrefs?.updated_at };
+              const canonical = await preferencesAPI.patch(retryPayload);
+              const workingTimeChanged = isWorkingTimeChanged(serverPrefs, canonical);
+              lastSavedPreferencesRef.current = canonical;
+              onPreferencesUpdate?.(canonical);
+              setLocalPreferences(canonical);
+              if (workingTimeChanged && session?.access_token) {
+                try { await GapsAPI.updateGapsForWorkingTimeChange(serverPrefs, canonical, session.access_token); } catch {}
+              }
+              setSaveState('done');
+              updateStatus('Saved');
+              try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
+            } else {
+              // Nothing to replay, just adopt server
+              lastSavedPreferencesRef.current = serverPrefs;
+              onPreferencesUpdate?.(serverPrefs);
+              setLocalPreferences(serverPrefs);
+              setSaveState('done');
+              updateStatus('Saved');
+              try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_success'); } catch {}
+            }
+          } catch {
+            setSaveState('error');
+            updateStatus('Saved locally • Sync pending');
+            setPendingServerPatch(serverDiff);
+            try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_failures'); } catch {}
+          }
+        } else {
+          // Remote error; keep local saved and mark pending
+          setSaveState('error');
+          updateStatus('Saved locally • Sync pending');
+          setPendingServerPatch(serverDiff);
+           try { (await import('../utils/storage/PreferenceTelemetry')).telemetryIncrement('autosave_failures'); } catch {}
+        }
+      }
+    } finally {
+      inFlightRef.current = false;
+      if (pendingDiff) {
+        setPendingDiff(null);
+        void performAutosave();
+      }
+    }
+  };
+
+  // Immediate flush of any pending changes (no debounce)
+  const flushPendingImmediately = async () => {
+    if (!PREF_AUTOSAVE) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (inFlightRef.current) return;
+    try {
+      const { normalizeForCompare } = await import('../utils/storage/normalizePreferences');
+      const prevNorm = normalizeForCompare(lastSavedPreferencesRef.current);
+      const nextNorm = normalizeForCompare(localPreferences);
+      const rawDiff = computePreferenceDiff(prevNorm, nextNorm);
+      if (Object.keys(rawDiff).length === 0) return;
+      await performAutosave();
+    } catch {}
   };
 
   const saveProfile = async () => {
@@ -725,9 +1010,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               </div>
             </div>
 
-            <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
+            {!PREF_AUTOSAVE && (
+              <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
           </div>
         );
 
@@ -787,9 +1074,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               </div>
             </div>
 
-            <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
+            {!PREF_AUTOSAVE && (
+              <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
           </div>
         );
 
@@ -842,9 +1131,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               </div>
             </div>
 
-            <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
+            {!PREF_AUTOSAVE && (
+              <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
           </div>
         );
 
@@ -917,9 +1208,11 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               </div>
             </div>
 
-            <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
+            {!PREF_AUTOSAVE && (
+              <Button onClick={savePreferences} disabled={isSaving} className="w-full bg-blue-600 hover:bg-blue-700">
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
           </div>
         );
 
@@ -1104,6 +1397,12 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2">
           <div className="max-w-md mx-auto">
+            {/* Status chip: aria-live for autosave feedback (non-blocking) */}
+            {PREF_AUTOSAVE && (
+              <div aria-live="polite" className="sr-only">
+                {statusText}
+              </div>
+            )}
             {renderSectionContent()}
           </div>
         </div>
