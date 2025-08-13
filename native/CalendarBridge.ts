@@ -1,34 +1,34 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 
-export type PermissionStatus = 'granted' | 'denied' | 'restricted' | 'not_determined';
+export interface CalendarPermissionStatus {
+  status: 'granted' | 'denied';
+}
 
-export interface BridgeCalendar {
+export interface Calendar {
   id: string;
   title: string;
-  colorHex?: string;
-  isSubscribed?: boolean;
-  allowsModifications?: boolean;
+  color: string;
+  type: 'Local' | 'CalDAV' | 'Exchange' | 'Subscribed' | 'Birthday' | 'Other';
+  allowsModifications: boolean;
 }
 
-export interface BridgeEvent {
+export interface CalendarEvent {
   id: string;
   calendarId: string;
-  calendarTitle?: string;
-  icalUID?: string;
-  allDay?: boolean;
-  startLocalISO: string; // e.g. 2025-08-12T09:00:00+01:00
-  endLocalISO: string;
-  dateLocal: string;     // YYYY-MM-DD
+  title: string;
+  start: number; // timestamp in milliseconds
+  end: number;   // timestamp in milliseconds
+  isAllDay: boolean;
 }
 
-export interface CalendarBridgePlugin {
-  getPermissionStatus(): Promise<{ status: PermissionStatus }>;
-  requestAccess(): Promise<{ granted: boolean }>;
-  listCalendars(): Promise<{ calendars: BridgeCalendar[] }>;
-  listEvents(opts: { startISO: string; endISO: string; calendarIds?: string[] }): Promise<{ events: BridgeEvent[] }>;
-  test(): Promise<{ message: string; timestamp: number }>;
+export interface CalendarBridgeInterface {
+  requestPermission(): Promise<CalendarPermissionStatus>;
+  getCalendars(): Promise<{ calendars: Calendar[] }>;
+  getEvents(opts: { start: string; end: string; calendarIds?: string[] }): Promise<{ events: CalendarEvent[] }>;
+  openSettings(): Promise<void>;
 }
 
-const CalendarBridge = registerPlugin<CalendarBridgePlugin>('CalendarBridge');
-
-export { CalendarBridge };
+// Access the native plugin
+export const CalendarBridge = Capacitor.isNativePlatform() 
+  ? (window as any).CalendarBridge as CalendarBridgeInterface
+  : null;

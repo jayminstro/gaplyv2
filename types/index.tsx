@@ -153,21 +153,7 @@ export interface ActivityCompletion {
   completed_at: string;
 }
 
-export interface CalendarSource {
-  listEvents(startISO: string, endISO: string, opts?: { includeCalendarIds?: string[] }): Promise<BusyBlock[]>;
-}
 
-export interface BusyBlock {
-  id: string;
-  calendarId: string;
-  calendarLabel?: string;
-  date: string;         // YYYY-MM-DD (local)
-  start_time: string;   // HH:MM (local)
-  end_time: string;     // HH:MM (local)
-  isAllDay?: boolean;
-  source: 'device_calendar';
-  external_id?: string; // icalUID or id
-}
 
 export interface UnsavedChanges {
   profile: boolean;

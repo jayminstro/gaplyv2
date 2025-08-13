@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { 
   LogOut, User, Bell, Calendar,
   Clock, Edit3, Check, X, ChevronRight,
@@ -35,9 +34,11 @@ import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup } from './ToggleGroup';
 import { WidgetShare } from './WidgetShare';
 import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
-import { isDeviceCalendarAvailable, requestDeviceCalendarPermission } from '../utils/calendarSource.ios';
+import { ensurePermissionOrThrow, loadCalendars as loadDeviceCalendars, getPermissionStatus as getDevicePermissionStatus, openIOSSettings } from '../src/utils/calendarSource.ios';
 import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
+
+
 
 interface SettingsContentProps {
   user: any;
@@ -59,7 +60,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   
   const [energyMetrics, setEnergyMetrics] = useState<any>(null);
   const [isDeviceCalendarModalOpen, setIsDeviceCalendarModalOpen] = useState(false);
-  const [deviceCalendars, setDeviceCalendars] = useState<any[]>([]);
+  const [deviceCalendarAuth, setDeviceCalendarAuth] = useState<string>('unknown');
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [profileEdits, setProfileEdits] = useState({
@@ -138,6 +139,21 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       console.error('Error loading cache health:', error);
     }
   };
+
+  // Load iOS calendar permission status (guarded for non‑iOS)
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const plat = detectPlatform();
+        if (!plat.isIOS || !(window as any)?.Capacitor) return;
+        const { status } = await getDevicePermissionStatus();
+        setDeviceCalendarAuth(status || 'unknown');
+      } catch {
+        setDeviceCalendarAuth('unknown');
+      }
+    };
+    checkAuth();
+  }, []);
 
   // Update local preferences when props change
   useEffect(() => {
@@ -223,68 +239,40 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
     if (checked) {
-      // User is turning ON device calendar - check permissions
       try {
-        // Debug: Check what plugins are available
-        console.log('🔍 Platform:', Capacitor.getPlatform());
-        console.log('🔍 Available Capacitor plugins:', Object.keys(window.Capacitor?.Plugins || {}));
-        console.log('🔍 CalendarBridge plugin:', window.Capacitor?.Plugins?.CalendarBridge);
-        
-        // Test if the plugin is working at all
-        try {
-          const { CalendarBridge } = await import('../native/CalendarBridge');
-          console.log('🔍 CalendarBridge imported successfully:', CalendarBridge);
-          
-          // Try to call the test method
-          const testResult = await CalendarBridge.test();
-          console.log('🔍 Test method result:', testResult);
-        } catch (importError) {
-          console.error('🔍 Failed to import CalendarBridge:', importError);
+        // If status is not granted, request it
+        const { status } = await getDevicePermissionStatus();
+        const isGranted = status === 'fullAccess' || status === 'authorized' || status === 'granted';
+        if (!isGranted) {
+          await ensurePermissionOrThrow();
         }
-        
-        const hasAccess = await isDeviceCalendarAvailable();
-        
-        if (!hasAccess) {
-          // Request permission
-          const granted = await requestDeviceCalendarPermission();
-          
-          if (!granted) {
-            toast.error('Calendar permission required', {
-              description: 'Gaply needs Calendar access to show busy time. You can allow it later in iOS Settings.'
-            });
-            return; // Don't update preference
-          }
-        }
-        
-        // Permission granted, now fetch calendars
-        try {
-          const { getDeviceCalendars } = await import('../utils/calendarSource.ios');
-          const calendars = await getDeviceCalendars();
-          setDeviceCalendars(calendars);
-        } catch (error) {
-          console.error('Failed to fetch device calendars:', error);
-          toast.error('Failed to load calendars', {
-            description: 'Could not load your device calendars. Please try again.'
-          });
-          return;
-        }
-        
-        // Success - update preference
+
+        // Permission granted → enable toggle
         updatePreference('show_device_calendar_busy', true);
+
+        // If no calendars selected yet, default to non‑subscribed
+        const existing = localPreferences.device_calendar_included_ids || [];
+        if (!existing || existing.length === 0) {
+          try {
+            const cals = await loadDeviceCalendars();
+            const defaults = cals.filter(c => c.type !== 'Subscribed').map(c => c.id);
+            updatePreference('device_calendar_included_ids', defaults);
+          } catch {}
+        }
         toast.success('Device calendar enabled');
-        
-      } catch (error) {
-        console.error('Error enabling device calendar:', error);
-        toast.error('Failed to enable device calendar', {
-          description: 'Please check your calendar permissions and try again.'
+      } catch (e) {
+        toast.error('Calendar permission required', {
+          description: 'Enable access in iOS Settings to show busy time.'
         });
-        return;
+        // Revert toggle in UI
+        updatePreference('show_device_calendar_busy', false);
       }
     } else {
-      // User is turning OFF device calendar - just update preference
+      // Turning OFF: disable titles too
       updatePreference('show_device_calendar_busy', false);
-      // Also disable event titles when master toggle is off
       updatePreference('show_device_calendar_titles', false);
+      // Persist immediately
+      setTimeout(() => { void savePreferences(); }, 0);
     }
   };
 
@@ -574,7 +562,15 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           <div className="space-y-6">
             <h3 className="text-lg font-medium">Schedule Settings</h3>
             
+            
+            
+
+            
             <div className="space-y-4">
+              
+
+
+
               <div>
                 <Label className="text-sm text-slate-400">Google Calendar</Label>
                 <div className="mt-2">
@@ -631,6 +627,68 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                       className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
                     >
                       Choose calendars…
+                    </Button>
+                  </div>
+
+                  {/* Manage calendar access */}
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Manage calendar access</div>
+                        <div className="text-slate-400 text-xs">Status: {deviceCalendarAuth}</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const { status } = await getDevicePermissionStatus();
+                          const granted = ['fullAccess', 'authorized', 'granted', 'writeOnly'].includes(status);
+                          if (!granted || status === 'notDetermined') {
+                            try {
+                              await ensurePermissionOrThrow();
+                              setDeviceCalendarAuth('granted');
+                              toast.success('Calendar access granted');
+                            } catch {
+                              await openIOSSettings();
+                            }
+                          } else {
+                            await openIOSSettings();
+                          }
+                        } catch {
+                          await openIOSSettings();
+                        }
+                      }}
+                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
+                    >
+                      {['fullAccess','authorized','granted','writeOnly'].includes(deviceCalendarAuth) ? 'Open Settings' : 'Request Access'}
+                    </Button>
+                  </div>
+
+                  {/* Disconnect device calendar */}
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Disconnect device calendar</div>
+                        <div className="text-slate-400 text-xs">Turn off overlay, clear selection, and open iOS Settings</div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        updatePreference('show_device_calendar_busy', false);
+                        updatePreference('show_device_calendar_titles', false);
+                        updatePreference('device_calendar_included_ids', []);
+                        try { await openIOSSettings(); } catch {}
+                        toast.success('Device calendar disconnected');
+                      }}
+                      className="bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 text-sm"
+                    >
+                      Disconnect
                     </Button>
                   </div>
 

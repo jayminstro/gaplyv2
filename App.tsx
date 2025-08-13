@@ -13,6 +13,7 @@ import { PlannerContent } from './components/PlannerContent';
 import { SettingsContent } from './components/SettingsContent';
 import { MobileOptimizations } from './components/MobileOptimizations';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { CalendarDevScreen } from './components/CalendarDevScreen';
 import { Toaster } from './components/ui/sonner';
 import { Home as HomeIcon, Activity, Settings, Calendar } from 'lucide-react';
 import { TimerModal } from "./components/TimerModal";
@@ -1676,6 +1677,8 @@ export default function App() {
             />
           </div>
         );
+      case 'calendar-dev':
+        return <CalendarDevScreen />;
       default:
         return (
           <HomeContent 
@@ -1824,6 +1827,17 @@ export default function App() {
             >
               <Calendar className="w-6 h-6" />
               <span className="text-xs">Planner</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('calendar-dev')}
+              className={`flex flex-col items-center gap-1 transition-colors min-h-[44px] min-w-[44px] p-2 rounded-lg ${
+                activeTab === 'calendar-dev' ? 'text-white' : 'text-slate-400'
+              }`}
+              type="button"
+            >
+              <Calendar className="w-6 h-6" />
+              <span className="text-xs">Dev</span>
             </button>
             
             <button
