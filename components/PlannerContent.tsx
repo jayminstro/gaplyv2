@@ -277,6 +277,19 @@ function PlannerContent({
         const start = startOfDay(selectedDate);
         const end = addDays(start, 1);
         let includeIds = userPreferences?.device_calendar_included_ids || [];
+        // If not set yet in preferences, try lightweight localStorage fallback to persist across cold starts
+        if (!includeIds || includeIds.length === 0) {
+          try {
+            const userId = session?.user?.id || 'local-user';
+            const raw = localStorage.getItem(`gaply_device_calendar_${userId}`);
+            if (raw) {
+              const fb = JSON.parse(raw || '{}') || {};
+              if (Array.isArray(fb.device_calendar_included_ids)) {
+                includeIds = fb.device_calendar_included_ids;
+              }
+            }
+          } catch {}
+        }
         if (!includeIds || includeIds.length === 0) {
           try {
             const cals = await loadDeviceCalendars();

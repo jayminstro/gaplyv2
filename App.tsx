@@ -71,6 +71,28 @@ export default function App() {
   const preferencesRef = useRef<UserPreferences>(DEFAULT_PREFERENCES);
   useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
 
+  // Merge device-calendar selection/toggles from a lightweight localStorage fallback
+  const mergeDeviceCalendarFallback = (base: UserPreferences | null): UserPreferences => {
+    const pref = base || DEFAULT_PREFERENCES;
+    try {
+      const userId = user?.id || 'local-user';
+      const raw = localStorage.getItem(`gaply_device_calendar_${userId}`);
+      if (!raw) return pref;
+      const fallback = JSON.parse(raw || '{}') || {};
+      const includedIds = Array.isArray(fallback.device_calendar_included_ids)
+        ? fallback.device_calendar_included_ids
+        : (pref.device_calendar_included_ids ?? []);
+      return {
+        ...pref,
+        show_device_calendar_busy: (fallback.show_device_calendar_busy ?? pref.show_device_calendar_busy ?? false),
+        show_device_calendar_titles: (fallback.show_device_calendar_titles ?? pref.show_device_calendar_titles ?? false),
+        device_calendar_included_ids: includedIds,
+      } as UserPreferences;
+    } catch {
+      return pref;
+    }
+  };
+
   const [_editingProfile, setEditingProfile] = useState(false);
 
   // Track unsaved changes per section
@@ -617,13 +639,20 @@ export default function App() {
               work_end: loadedPrefs.calendar_work_end,
               working_days: loadedPrefs.calendar_working_days
             });
-            userPrefs = loadedPrefs;
-            setPreferences(loadedPrefs); // Update state immediately
+            const mergedPrefs = mergeDeviceCalendarFallback(loadedPrefs);
+            userPrefs = mergedPrefs;
+            setPreferences(mergedPrefs); // Update state immediately (with device-calendar fallback)
           } else {
             console.warn('⚠️ No user preferences found, using defaults for gap creation');
+            const mergedDefaults = mergeDeviceCalendarFallback(null);
+            userPrefs = mergedDefaults;
+            setPreferences(mergedDefaults);
           }
         } catch (prefsError) {
           console.warn('⚠️ Error loading preferences for gap creation:', prefsError);
+          const mergedDefaults = mergeDeviceCalendarFallback(null);
+          userPrefs = mergedDefaults;
+          setPreferences(mergedDefaults);
         }
         
         try {
@@ -788,9 +817,11 @@ export default function App() {
         console.log('📱 Loading critical data...');
         
         // Load preferences first to ensure they're available for gap creation
-        const preferences = await localFirstService.getPreferences();
-        if (preferences) {
-          setPreferences(preferences);
+        const loadedPref = await localFirstService.getPreferences();
+        if (loadedPref) {
+          // Merge device-calendar fallback to ensure local-only fields are present immediately on cold start
+          const mergedPref = mergeDeviceCalendarFallback(loadedPref);
+          setPreferences(mergedPref);
           console.log('✅ Preferences loaded for critical data');
         }
         
@@ -854,25 +885,16 @@ export default function App() {
           
           // Load preferences ONLY via local-first service to avoid overwriting in-progress edits
           try {
-            let loadedPrefs: UserPreferences | null = null;
+            let mergedForFallback: UserPreferences | null = null;
             if (localFirstService) {
-              loadedPrefs = await localFirstService.getPreferences();
+              const loadedPrefs = await localFirstService.getPreferences();
               if (loadedPrefs) {
-                setPreferences(loadedPrefs);
+                const merged = mergeDeviceCalendarFallback(loadedPrefs);
+                setPreferences(merged);
+                mergedForFallback = merged;
               }
             }
-            // Also refresh device-calendar fallback for early cold starts
-            try {
-              const userId = user?.id || 'local-user';
-              const current = loadedPrefs || preferencesRef.current;
-              if (current) {
-                localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
-                  show_device_calendar_busy: current.show_device_calendar_busy ?? false,
-                  show_device_calendar_titles: current.show_device_calendar_titles ?? false,
-                  device_calendar_included_ids: current.device_calendar_included_ids ?? []
-                }));
-              }
-            } catch {}
+            // Do not refresh device-calendar fallback here; only user actions should write it
           } catch {}
 
           // Load profile data after preferences

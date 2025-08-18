@@ -375,28 +375,42 @@ export class EnhancedLoginSyncService {
       console.log(`✅ Synced ${result.gapsSynced} gaps across ${gapsByDate.size} dates`);
 
       // Merge preferences (remote takes precedence for server fields),
-      // but PRESERVE local-only device calendar fields
+      // but PRESERVE local-only device calendar fields (prefer IndexedDB -> localStorage fallback)
       if (remoteData.preferences) {
         console.log('⚙️ Saving remote preferences...');
         const mapped = this.mapRemotePreferencesToLocal(remoteData.preferences);
+
+        // Read lightweight fallback in case localPreferences are not yet available
+        let fallbackBusy = false;
+        let fallbackTitles = false;
+        let fallbackIds: string[] = [];
+        try {
+          const raw = localStorage.getItem(`gaply_device_calendar_${this.userId || 'local-user'}`);
+          if (raw) {
+            const fb = JSON.parse(raw || '{}') || {};
+            fallbackBusy = !!fb.show_device_calendar_busy;
+            fallbackTitles = !!fb.show_device_calendar_titles;
+            fallbackIds = Array.isArray(fb.device_calendar_included_ids) ? fb.device_calendar_included_ids : [];
+          }
+        } catch {}
+
         const mergedWithLocalOnly: UserPreferences = {
           ...mapped,
-          show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false) as any,
-          show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false) as any,
-          device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? []) as any,
+          show_device_calendar_busy: (
+            (localPreferences?.show_device_calendar_busy as any) ?? (fallbackBusy as any) ?? false
+          ) as any,
+          show_device_calendar_titles: (
+            (localPreferences?.show_device_calendar_titles as any) ?? (fallbackTitles as any) ?? false
+          ) as any,
+          device_calendar_included_ids: (
+            Array.isArray(localPreferences?.device_calendar_included_ids)
+              ? (localPreferences!.device_calendar_included_ids as any)
+              : (fallbackIds as any)
+          ) as any,
         } as UserPreferences;
+
         await this.storage.savePreferences(mergedWithLocalOnly);
-        try {
-          const userId = this.userId || 'local-user';
-          localStorage.setItem(
-            `gaply_device_calendar_${userId}`,
-            JSON.stringify({
-              show_device_calendar_busy: mergedWithLocalOnly.show_device_calendar_busy ?? false,
-              show_device_calendar_titles: mergedWithLocalOnly.show_device_calendar_titles ?? false,
-              device_calendar_included_ids: mergedWithLocalOnly.device_calendar_included_ids ?? [],
-            })
-          );
-        } catch {}
+        // Do not overwrite the lightweight fallback here; only explicit user actions should persist it
         console.log('✅ Synced preferences (preserved device calendar local-only fields)');
       }
 
