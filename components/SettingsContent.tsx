@@ -80,6 +80,31 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   const statusHideTimerRef = useRef<number | null>(null);
   const suppressAutosaveRef = useRef(false);
 
+  // Hydrate device calendar selections from lightweight fallback on mount/auth
+  useEffect(() => {
+    try {
+      const userId = (session?.user?.id) || 'local-user';
+      const raw = localStorage.getItem(`gaply_device_calendar_${userId}`);
+      if (!raw) return;
+      const fallback = JSON.parse(raw || '{}') || {};
+      const nextBusy = !!fallback.show_device_calendar_busy;
+      const nextTitles = !!fallback.show_device_calendar_titles;
+      const nextIds = Array.isArray(fallback.device_calendar_included_ids) ? fallback.device_calendar_included_ids : [];
+      const hasDiff = (
+        (localPreferences.show_device_calendar_busy ?? false) !== nextBusy ||
+        (localPreferences.show_device_calendar_titles ?? false) !== nextTitles ||
+        JSON.stringify(localPreferences.device_calendar_included_ids || []) !== JSON.stringify(nextIds)
+      );
+      if (hasDiff) {
+        // Apply without triggering server autosave; local-only path handles persistence
+        updatePreference('show_device_calendar_busy', nextBusy);
+        updatePreference('show_device_calendar_titles', nextTitles);
+        updatePreference('device_calendar_included_ids', nextIds);
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
+
   useEffect(() => {
     // Initialize canonical snapshot from local-first manager if available
     const init = async () => {
