@@ -817,9 +817,20 @@ export default function App() {
         console.log('📱 Loading critical data...');
         
         // Load preferences first to ensure they're available for gap creation
-        const preferences = await localFirstService.getPreferences();
-        if (preferences) {
-          setPreferences(preferences);
+        const loadedPref = await localFirstService.getPreferences();
+        if (loadedPref) {
+          // Merge device-calendar fallback to ensure local-only fields are present immediately on cold start
+          const mergedPref = mergeDeviceCalendarFallback(loadedPref);
+          setPreferences(mergedPref);
+          // Refresh lightweight fallback blob for early lifecycle consumers
+          try {
+            const userId = user?.id || 'local-user';
+            localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
+              show_device_calendar_busy: mergedPref.show_device_calendar_busy ?? false,
+              show_device_calendar_titles: mergedPref.show_device_calendar_titles ?? false,
+              device_calendar_included_ids: mergedPref.device_calendar_included_ids ?? []
+            }));
+          } catch {}
           console.log('✅ Preferences loaded for critical data');
         }
         
