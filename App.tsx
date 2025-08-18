@@ -822,15 +822,6 @@ export default function App() {
           // Merge device-calendar fallback to ensure local-only fields are present immediately on cold start
           const mergedPref = mergeDeviceCalendarFallback(loadedPref);
           setPreferences(mergedPref);
-          // Refresh lightweight fallback blob for early lifecycle consumers
-          try {
-            const userId = user?.id || 'local-user';
-            localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
-              show_device_calendar_busy: mergedPref.show_device_calendar_busy ?? false,
-              show_device_calendar_titles: mergedPref.show_device_calendar_titles ?? false,
-              device_calendar_included_ids: mergedPref.device_calendar_included_ids ?? []
-            }));
-          } catch {}
           console.log('✅ Preferences loaded for critical data');
         }
         
@@ -894,26 +885,16 @@ export default function App() {
           
           // Load preferences ONLY via local-first service to avoid overwriting in-progress edits
           try {
-            let loadedPrefs: UserPreferences | null = null;
+            let mergedForFallback: UserPreferences | null = null;
             if (localFirstService) {
-              loadedPrefs = await localFirstService.getPreferences();
+              const loadedPrefs = await localFirstService.getPreferences();
               if (loadedPrefs) {
                 const merged = mergeDeviceCalendarFallback(loadedPrefs);
                 setPreferences(merged);
+                mergedForFallback = merged;
               }
             }
-            // Also refresh device-calendar fallback for early cold starts
-            try {
-              const userId = user?.id || 'local-user';
-              const current = loadedPrefs || preferencesRef.current;
-              if (current) {
-                localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify({
-                  show_device_calendar_busy: current.show_device_calendar_busy ?? false,
-                  show_device_calendar_titles: current.show_device_calendar_titles ?? false,
-                  device_calendar_included_ids: current.device_calendar_included_ids ?? []
-                }));
-              }
-            } catch {}
+            // Do not refresh device-calendar fallback here; only user actions should write it
           } catch {}
 
           // Load profile data after preferences

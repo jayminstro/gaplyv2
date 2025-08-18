@@ -682,8 +682,29 @@ export class EnhancedStorageManager {
         defaultFallback: true
       });
 
-      const prefs = await preferenceManager.getPreferences();
-      
+      let prefs = await preferenceManager.getPreferences();
+
+      // Merge device calendar local-only fields from lightweight fallback to ensure persistence across cold starts
+      try {
+        const raw = localStorage.getItem(`gaply_device_calendar_${this.userId || 'local-user'}`);
+        const fb = raw ? (JSON.parse(raw || '{}') || {}) : {};
+        const merged: UserPreferences = {
+          ...prefs,
+          show_device_calendar_busy: (fb.show_device_calendar_busy ?? prefs.show_device_calendar_busy ?? false) as any,
+          show_device_calendar_titles: (fb.show_device_calendar_titles ?? prefs.show_device_calendar_titles ?? false) as any,
+          device_calendar_included_ids: (Array.isArray(fb.device_calendar_included_ids)
+            ? fb.device_calendar_included_ids
+            : (prefs.device_calendar_included_ids ?? [])) as any,
+        } as UserPreferences;
+        // Persist merged locally if anything changed
+        if (JSON.stringify(merged) !== JSON.stringify(prefs)) {
+          try {
+            await preferenceManager.savePreferences(merged);
+          } catch {}
+          prefs = merged;
+        }
+      } catch {}
+
       // Track operation for analytics
       await this.trackOperation('getPreferences', 'preferences', 'preferences', 1, performance.now() - startTime);
       

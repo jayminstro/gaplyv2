@@ -410,17 +410,7 @@ export class EnhancedLoginSyncService {
         } as UserPreferences;
 
         await this.storage.savePreferences(mergedWithLocalOnly);
-        try {
-          const userId = this.userId || 'local-user';
-          localStorage.setItem(
-            `gaply_device_calendar_${userId}`,
-            JSON.stringify({
-              show_device_calendar_busy: mergedWithLocalOnly.show_device_calendar_busy ?? false,
-              show_device_calendar_titles: mergedWithLocalOnly.show_device_calendar_titles ?? false,
-              device_calendar_included_ids: mergedWithLocalOnly.device_calendar_included_ids ?? [],
-            })
-          );
-        } catch {}
+        // Do not overwrite the lightweight fallback here; only explicit user actions should persist it
         console.log('✅ Synced preferences (preserved device calendar local-only fields)');
       }
 
