@@ -7,6 +7,7 @@ import { CalendarBridge, CalendarInfo, NativeEvent } from '../src/plugins/calend
 import { ensurePermissionOrThrow, loadCalendars as loadCalendarsHelper, fetchWindow, openIOSSettings, getPermissionStatus } from '../src/utils/calendarSource.ios';
 import { App } from '@capacitor/app';
 import { toast } from 'sonner';
+import { DebugPanel } from './DebugPanel';
 
 export function CalendarDevScreen() {
   const [permissionStatus, setPermissionStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
@@ -326,6 +327,16 @@ export function CalendarDevScreen() {
               <span className="font-medium">Selected Calendars:</span> {selectedCalendarIds.length}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Embedded Debug Panel */}
+      <Card className="bg-slate-800/50 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white">Gaply Debug Tools</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DebugPanel isVisible embedded />
         </CardContent>
       </Card>
     </div>

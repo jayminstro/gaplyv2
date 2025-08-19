@@ -15,6 +15,8 @@ export type NativeEvent = {
   start: number; // ms
   end: number;   // ms
   isAllDay: boolean;
+  transparency?: 'busy' | 'free' | 'oof' | 'tentative';
+  status?: 'confirmed' | 'tentative' | 'cancelled';
 };
 
 export interface CalendarBridgePlugin {

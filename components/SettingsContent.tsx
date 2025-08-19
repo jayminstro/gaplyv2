@@ -37,6 +37,7 @@ import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
 import { ensurePermissionOrThrow, loadCalendars as loadDeviceCalendars, getPermissionStatus as getDevicePermissionStatus, openIOSSettings } from '../src/utils/calendarSource.ios';
 import { detectPlatform } from '../utils/platform';
 import { toast } from 'sonner';
+import { calendarService } from '../utils/calendar/index';
 
 
 
@@ -327,10 +328,17 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   ];
 
   const updatePreference = (key: string, value: any) => {
+    console.log('🔧 updatePreference called with:', key, value);
+    console.log('🔧 Before update, localPreferences[key]:', localPreferences[key as keyof UserPreferences]);
+    
     const next = { ...localPreferences, [key]: value } as UserPreferences;
+    console.log('🔧 Next preferences object:', next);
+    
     setLocalPreferences(next);
+    
     const isLocalOnly = key === 'show_device_calendar_busy' || key === 'show_device_calendar_titles' || key === 'device_calendar_included_ids';
     if (isLocalOnly) {
+      console.log('🔧 This is a local-only preference, updating immediately...');
       // Immediately propagate local-only changes to parent and persist locally
       onPreferencesUpdate?.(next);
       try { (async () => { if (localFirstService && (localFirstService as any)?.savePreferences) { await localFirstService.savePreferences(next); } })(); } catch {}
@@ -343,7 +351,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           device_calendar_included_ids: next.device_calendar_included_ids ?? []
         };
         localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+        console.log('🔧 Saved to localStorage:', devicePrefs);
       } catch {}
+      console.log('🔧 Local-only preference updated, returning early');
       return; // Avoid triggering autosave debounce for local-only keys
     }
     if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
@@ -417,6 +427,9 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   };
 
   const handleDeviceCalendarToggle = async (checked: boolean) => {
+    console.log('🔧 handleDeviceCalendarToggle called with:', checked);
+    console.log('🔧 Current localPreferences.show_device_calendar_busy:', localPreferences.show_device_calendar_busy);
+    
     if (checked) {
       try {
         // If status is not granted, request it
@@ -427,6 +440,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         }
 
         // Permission granted → enable toggle (autosave allowed)
+        console.log('🔧 Enabling device calendar busy...');
         updatePreference('show_device_calendar_busy', true);
 
         // If no calendars selected yet, default to non‑subscribed
@@ -440,12 +454,14 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         }
         toast.success('Device calendar enabled');
       } catch (e) {
+        console.error('🔧 Error enabling device calendar:', e);
         toast.error('Calendar permission required', {
           description: 'Enable access in iOS Settings to show busy time.'
         });
         // Revert toggle in UI without autosave
         suppressAutosaveRef.current = true;
         const next = { ...localPreferences, show_device_calendar_busy: false } as UserPreferences;
+        console.log('🔧 Reverting to:', next.show_device_calendar_busy);
         setLocalPreferences(next);
         onPreferencesUpdate?.(next);
         try {
@@ -461,6 +477,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       }
     } else {
       // Turning OFF: disable titles too
+      console.log('🔧 Disabling device calendar busy...');
       updatePreference('show_device_calendar_busy', false);
       updatePreference('show_device_calendar_titles', false);
       // Persist immediately when manual mode; autosave handles otherwise
@@ -468,6 +485,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
         setTimeout(() => { void savePreferences(); }, 0);
       }
     }
+    
+    console.log('🔧 After toggle, localPreferences.show_device_calendar_busy:', localPreferences.show_device_calendar_busy);
   };
 
   const normalizeDays = (val: any): string[] => Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : []);
@@ -1096,6 +1115,22 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
                   <div className="text-xs text-slate-500 mt-2">
                     No data leaves your device. Read‑only overlay in Planner.
+                    {localPreferences.show_device_calendar_busy && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const dateStr = new Date().toLocaleDateString('en-CA');
+                            await calendarService.getBusyBlocks({ start: dateStr, end: dateStr }, localPreferences);
+                            toast.success('Busy blocks refreshed');
+                          } catch {
+                            toast.error('Failed to refresh');
+                          }
+                        }}
+                        className="ml-2 underline text-slate-400 hover:text-white"
+                      >
+                        Refresh busy blocks
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

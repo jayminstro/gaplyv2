@@ -1,5 +1,6 @@
 import { TimeGap, UserPreferences } from '../types/index';
 import { GapLogic, normalizeWorkingDays } from './gapLogic';
+import { calendarService } from './calendar/index';
 import { supabase } from './supabase/client';
 import { timeToMinutes } from './helpers';
 import { format } from 'date-fns';
@@ -58,7 +59,12 @@ export class GapsAPI {
       const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' });
       if (!normalizedWorkingDays.includes(dayOfWeek)) continue;
       const dateTasks = tasks.filter((t: any) => t.dueDate === dateStr);
-      const gaps = GapLogic.recalculateGapsForDate(dateStr, dateTasks, preferences, 'local-user');
+      let gaps: TimeGap[];
+      if (preferences.show_device_calendar_busy) {
+        gaps = await calendarService.getAvailableGaps(dateStr, preferences, dateTasks, 'local-user');
+      } else {
+        gaps = GapLogic.recalculateGapsForDate(dateStr, dateTasks, preferences, 'local-user');
+      }
       out.push(...gaps);
       if (storageManager) { try { await storageManager.saveGaps(gaps, dateStr); } catch {} }
     }
@@ -212,8 +218,12 @@ export class GapsAPI {
       }
       if (preferences) {
         const dateTasks = tasks.filter((t: any) => t.dueDate === date);
-        const gaps = GapLogic.recalculateGapsForDate(date, dateTasks, preferences, 'local-user');
-        return gaps;
+        if (preferences.show_device_calendar_busy) {
+          return await calendarService.getAvailableGaps(date, preferences, dateTasks, 'local-user');
+        } else {
+          const gaps = GapLogic.recalculateGapsForDate(date, dateTasks, preferences, 'local-user');
+          return gaps;
+        }
       }
     } catch {}
     // Fallback to any locally cached gaps by date

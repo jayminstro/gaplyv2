@@ -66,6 +66,9 @@ export class PreferenceChangeDetector {
           'calendar_buffer_time',
           'show_device_calendar_busy',
           'device_calendar_included_ids',
+          'calendar_block_tentative',
+          'calendar_dedupe_strategy',
+          'planning_slot_minutes'
         ],
         impact: 'medium',
         requiresGapRecalculation: true,
@@ -80,7 +83,12 @@ export class PreferenceChangeDetector {
           'preferred_categories',
           'autostart',
           'show_timer',
-          'show_device_calendar_titles'
+          'show_device_calendar_titles',
+          'calendar_all_day_block_mode',
+          'calendar_all_day_fixed_block_minutes',
+          'calendar_all_day_fixed_block_start',
+          'calendar_block_needs_action',
+          'debugCalendarSync'
         ],
         impact: 'low',
         requiresGapRecalculation: false,

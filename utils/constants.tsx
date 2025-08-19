@@ -13,6 +13,15 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   show_device_calendar_busy: false,
   show_device_calendar_titles: false,
   device_calendar_included_ids: [],
+  // Calendar Busy Handling
+  calendar_all_day_block_mode: 'workday',
+  calendar_all_day_fixed_block_minutes: 30,
+  calendar_all_day_fixed_block_start: 'start',
+  calendar_block_tentative: false,
+  calendar_block_needs_action: false,
+  calendar_dedupe_strategy: 'auto',
+  planning_slot_minutes: 15,
+  debugCalendarSync: false,
   
   // Timer & Activity Settings
   autostart: true,

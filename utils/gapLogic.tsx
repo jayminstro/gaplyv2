@@ -1,4 +1,5 @@
 import { TimeGap, UserPreferences, Task } from '../types/index';
+import { CalendarBusyBlock } from '../types/calendar';
 import { timeToMinutes, minutesToTime } from './helpers';
 import { generateUUID } from './uuid';
 import { format, parseISO } from 'date-fns';
@@ -382,6 +383,42 @@ export class GapLogic {
     
     console.log(`✅ Recalculated ${currentGaps.length} gaps for ${date}`);
     return currentGaps;
+  }
+
+  /**
+   * Apply calendar busy blocks to current gaps and return resulting gaps
+   */
+  static applyBusyToGaps(gaps: TimeGap[], busyBlocks: CalendarBusyBlock[]): TimeGap[] {
+    if (!busyBlocks || busyBlocks.length === 0) return gaps;
+    let result = [...gaps];
+    for (const block of busyBlocks) {
+      const blockStart = block.start_time;
+      const blockEnd = block.end_time;
+      const updated: TimeGap[] = [];
+      for (const gap of result) {
+        const gapStartMin = timeToMinutes(gap.start_time);
+        const gapEndMin = timeToMinutes(gap.end_time);
+        const blockStartMin = timeToMinutes(blockStart);
+        const blockEndMin = timeToMinutes(blockEnd);
+        if (blockStartMin < gapEndMin && blockEndMin > gapStartMin) {
+          // overlap: split using scheduleTaskInGap semantics
+          try {
+            const split = this.scheduleTaskInGap(gap, blockStart, blockEnd, 'calendar_sync');
+            if (!split.deletedGap) {
+              updated.push(...split.newGaps);
+            }
+          } catch {
+            // if block exceeds gap, either trim or delete
+            // keep original gap if invalid block; be conservative
+            updated.push(gap);
+          }
+        } else {
+          updated.push(gap);
+        }
+      }
+      result = updated;
+    }
+    return result;
   }
 
   /**

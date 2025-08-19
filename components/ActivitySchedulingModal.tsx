@@ -6,6 +6,7 @@ import { generateUUID } from '../utils/uuid';
 import { GapsAPI } from '../utils/gapsAPI';
 import { supabase } from '../utils/supabase/client';
 import { toast } from 'sonner';
+import { calendarService } from '../utils/calendar/index';
 
 interface ActivitySchedulingModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export function ActivitySchedulingModal({
   const [availableGaps, setAvailableGaps] = useState<TimeGap[]>([]);
   const [isLoadingGaps, setIsLoadingGaps] = useState(true);
   const [selectedOption, setSelectedOption] = useState<'gap' | 'task' | null>(null);
+  const [suggestions, setSuggestions] = useState<{ start_time: string; end_time: string }[] | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,6 +79,19 @@ export function ActivitySchedulingModal({
 
   const scheduleInGap = async (gap: TimeGap) => {
     try {
+      // Validate against calendar busy
+      if (userPreferences?.show_device_calendar_busy) {
+        const valid = await calendarService.validateScheduling({ start_time: gap.start_time, end_time: minutesToTime(timeToMinutes(gap.start_time) + activity.duration) }, gap.date, userPreferences);
+        if (!valid.canSchedule) {
+          // Build suggestions from current day's gaps
+          try {
+            const alt = await calendarService.suggestAlternatives({ start_time: gap.start_time, end_time: minutesToTime(timeToMinutes(gap.start_time) + activity.duration) }, gap.date, availableGaps, userPreferences!);
+            setSuggestions((alt || []).slice(0, 3).map(a => ({ start_time: a.start_time, end_time: a.end_time })));
+          } catch {}
+          toast.error('Time conflicts with calendar busy', { description: 'Showing alternative slots.' });
+          return;
+        }
+      }
       // Create a scheduled task
       const newTask: Task = {
         id: generateUUID(),
@@ -113,8 +128,7 @@ export function ActivitySchedulingModal({
         gap.id,
         gap.start_time,
         taskEndTime,
-        newTask,
-        session.access_token
+        newTask
       );
 
       if (result.success) {
@@ -299,6 +313,18 @@ export function ActivitySchedulingModal({
             {/* Gap Options */}
             {selectedOption === 'gap' && (
               <div className="ml-4 space-y-2 max-h-48 overflow-y-auto">
+                {suggestions && suggestions.length > 0 && (
+                  <div className="p-3 bg-amber-900/20 border border-amber-700/30 rounded-xl text-amber-200 text-xs">
+                    <div className="font-medium mb-2">Suggestions</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {suggestions.map((s, idx) => (
+                        <div key={idx} className="px-2 py-1 bg-amber-800/30 rounded">
+                          {s.start_time} - {s.end_time}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {isLoadingGaps ? (
                   <div className="text-center py-4">
                     <div className="text-slate-400">Loading available times...</div>

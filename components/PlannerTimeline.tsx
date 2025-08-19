@@ -4,6 +4,7 @@ import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Calendar, S
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { ActivityStackModal } from './ActivityStackModal';
+import { calendarService } from '../utils/calendar/index';
 
 interface TimelineItem {
   id: string;
@@ -47,6 +48,25 @@ function PlannerTimeline({
   
   // Ref for the timeline container to enable auto-scrolling
   const timelineRef = useRef<HTMLDivElement>(null);
+  const [busyOverlays, setBusyOverlays] = useState<{ start: Date; end: Date }[]>([]);
+
+  // Load busy overlays for selected date when preference enabled
+  useEffect(() => {
+    const loadBusy = async () => {
+      try {
+        if (!userPreferences?.show_device_calendar_busy) { setBusyOverlays([]); return; }
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const blocks = await calendarService.getBusyBlocks({ start: dateStr, end: dateStr }, userPreferences);
+        const mapped = (blocks || [])
+          .filter(b => b.date === dateStr)
+          .map(b => ({ start: parseISO(`${b.date}T${b.start_time}`), end: parseISO(`${b.date}T${b.end_time}`) }));
+        setBusyOverlays(mapped);
+      } catch {
+        setBusyOverlays([]);
+      }
+    };
+    void loadBusy();
+  }, [selectedDate, userPreferences?.show_device_calendar_busy]);
   
   // Stacking modal state (overlaps only)
   const [stackModalOpen, setStackModalOpen] = useState(false);
@@ -448,6 +468,17 @@ function PlannerTimeline({
             {/* Current time marker - just the line */}
             {shouldShowCurrentTime && slot.hour24 === currentHour && (
               <div className="absolute left-20 top-0 bottom-0 w-0.5 bg-red-500 z-10" />
+            )}
+            {/* Busy overlay marker for this hour */}
+            {userPreferences?.show_device_calendar_busy && (
+              (() => {
+                const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
+                const hourEnd = new Date(selectedDate); hourEnd.setHours(slot.hour24 + 1, 0, 0, 0);
+                const hasBusy = busyOverlays.some(b => b.start < hourEnd && b.end > hourStart);
+                return hasBusy ? (
+                  <div className="absolute left-20 right-4 h-1 top-1 rounded-full bg-red-500/25" />
+                ) : null;
+              })()
             )}
             
             {/* Timeline items */}

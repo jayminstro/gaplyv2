@@ -71,6 +71,14 @@ export interface UserPreferences {
   show_device_calendar_busy?: boolean;           // default false
   show_device_calendar_titles?: boolean;         // default false
   device_calendar_included_ids?: string[];       // default []
+  calendar_all_day_block_mode?: 'workday' | 'window' | 'ignore';
+  calendar_all_day_fixed_block_minutes?: number;
+  calendar_all_day_fixed_block_start?: 'start' | 'middle' | 'end';
+  calendar_block_tentative?: boolean;
+  calendar_block_needs_action?: boolean;
+  calendar_dedupe_strategy?: 'auto' | 'prefer_google' | 'prefer_device' | 'none';
+  planning_slot_minutes?: number;
+  debugCalendarSync?: boolean;
   
   // Timer & Activity Settings
   autostart: boolean;
