@@ -328,8 +328,13 @@ function PlannerContent({
           const busyStartMin = timeToMinutes(sStr);
           const busyEndMin = timeToMinutes(eStr);
           if (busyStartMin < gapEndMin && busyEndMin > gapStartMin) {
-            const result = GapLogic.scheduleTaskInGap(gap, sStr, Math.max(0, busyEndMin - busyStartMin), 'calendar_sync');
-            newGaps.push(...result);
+            const result = GapLogic.scheduleTaskInGap(gap, sStr, eStr, 'calendar_sync');
+            if (result.deletedGap) {
+              // Gap was completely filled, don't add it back
+              continue;
+            } else {
+              newGaps.push(...result.newGaps);
+            }
           } else {
             newGaps.push(gap);
           }
