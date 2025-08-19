@@ -8,7 +8,7 @@ import { calendarService } from '../utils/calendar/index';
 
 interface TimelineItem {
   id: string;
-  type: 'task' | 'gap';
+  type: 'task' | 'gap' | 'calendar';
   startTime: Date;
   endTime: Date;
   title: string;
@@ -16,7 +16,7 @@ interface TimelineItem {
   category?: string;
   icon: React.ReactNode;
   iconColor: string;
-  data: Task | TimeGap;
+  data: Task | TimeGap | any; // calendar events will be any type for now
   gapSource?: 'default' | 'calendar' | 'manual';
 }
 
@@ -185,6 +185,32 @@ function PlannerTimeline({
       }
     });
     
+    // Add calendar events as timeline items
+    if (userPreferences?.show_device_calendar_busy && busyOverlays.length > 0) {
+      busyOverlays.forEach((event, index) => {
+        try {
+          const durationMinutes = Math.round((event.end.getTime() - event.start.getTime()) / (1000 * 60));
+          
+          items.push({
+            id: `calendar-${index}`,
+            type: 'calendar',
+            startTime: event.start,
+            endTime: event.end,
+            title: 'Calendar Event', // We'll need to get the actual title from the busy blocks
+            duration: `${durationMinutes} min`,
+            icon: <Calendar className="w-4 h-4 text-red-400" />,
+            iconColor: 'bg-red-500/20',
+            data: { start: event.start, end: event.end, title: 'Calendar Event' },
+            gapSource: 'calendar'
+          });
+          
+          console.log(`✅ Added calendar event to timeline: ${format(event.start, 'HH:mm')}-${format(event.end, 'HH:mm')} (${durationMinutes} min)`);
+        } catch (error) {
+          console.error(`❌ Error processing calendar event:`, error);
+        }
+      });
+    }
+
     // Add tasks
     tasks.forEach(task => {
       if (!task.dueDate) return;
@@ -441,8 +467,8 @@ function PlannerTimeline({
           | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date };
 
         const gapUnits: RenderUnit[] = itemsAtHour
-          .filter((it) => it.type === 'gap')
-          .map((gap) => ({ kind: 'gap', item: gap }));
+          .filter((it) => it.type === 'gap' || it.type === 'calendar')
+          .map((item) => ({ kind: 'gap', item }));
 
         const taskGroups = groupOverlappingTasks(itemsAtHour);
         const groupUnits: RenderUnit[] = taskGroups.map((g) => ({
@@ -487,6 +513,40 @@ function PlannerTimeline({
                 renderUnits.map((unit) => {
                   if (unit.kind === 'gap') {
                     const item = unit.item;
+                    
+                    // Handle calendar events differently from gaps
+                    if (item.type === 'calendar') {
+                      return (
+                        <div
+                          key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                              <Calendar className="w-4 h-4 text-red-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                                <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
+                                  Calendar
+                                </span>
+                              </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                                <span className="font-medium">
+                                  {formatTimeRange(item.startTime, item.endTime)}
+                                </span>
+                                {userPreferences?.show_duration_in_planner && (
+                                  <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Handle regular gaps
                     const gapSourceInfo = getGapSourceInfo(item.data as TimeGap);
                     return (
                       <button
@@ -523,7 +583,8 @@ function PlannerTimeline({
                                   hourEnd.setHours(hourStart.getHours() + 1);
                                   displayStart = currentTime > item.startTime ? currentTime : item.startTime;
                                   displayEnd = item.endTime < hourEnd ? item.endTime : hourEnd;
-                                  minutesLeftInHour = Math.max(0, Math.round((hourEnd.getTime() - currentTime.getTime()) / (1000 * 60)));
+                                  // Calculate minutes left in the current gap, not the entire hour
+                                  minutesLeftInHour = Math.max(0, Math.round((item.endTime.getTime() - currentTime.getTime()) / (1000 * 60)));
                                 }
                                 return (
                                   <>
