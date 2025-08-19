@@ -314,9 +314,208 @@ export function DebugPanel({ isVisible = true, onClose, embedded = false }: Debu
                   console.error('🔧 ISO bridge events error:', e);
                 }
               }} className="bg-purple-700 hover:bg-purple-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test ISO Events</button>
+
+            <button onClick={async () => {
+              try {
+                // Test the date range conversion logic
+                const testDate = '2025-08-12';
+                const date = new Date(testDate + 'T00:00:00');
+                const tzOffset = date.getTimezoneOffset();
+                const adjustedStart = new Date(date.getTime() + (tzOffset * 60 * 1000));
+                const endDate = new Date(testDate + 'T23:59:59.999');
+                const adjustedEnd = new Date(endDate.getTime() + (tzOffset * 60 * 1000));
+                
+                console.log('🔧 Date range conversion test:', {
+                  testDate,
+                  originalStart: date.toISOString(),
+                  originalEnd: endDate.toISOString(),
+                  tzOffset,
+                  adjustedStart: adjustedStart.toISOString(),
+                  adjustedEnd: adjustedEnd.toISOString()
+                });
+                
+                toast.success('Date range conversion test logged to console');
+              } catch (e) {
+                toast.error('Date range conversion test failed');
+                console.error('🔧 Date range conversion test error:', e);
+              }
+            }} className="bg-indigo-700 hover:bg-indigo-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test Date Range Conversion</button>
+
+            <button onClick={async () => {
+              try {
+                // Test the full calendar service flow with the fixed date conversion
+                const testDate = '2025-08-12';
+                
+                console.log('🔧 Testing calendar service with date:', testDate);
+                const blocks = await calendarService.getBusyBlocks(
+                  { start: testDate, end: testDate },
+                  { show_device_calendar_busy: true, debugCalendarSync: true } as any
+                );
+                
+                console.log('🔧 Calendar service test result:', { testDate, blocksCount: blocks.length, blocks });
+                toast.success(`Calendar service test: ${blocks.length} blocks found`);
+              } catch (e) {
+                toast.error('Calendar service test failed');
+                console.error('🔧 Calendar service test error:', e);
+              }
+            }} className="bg-green-700 hover:bg-green-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test Calendar Service</button>
+
+            <button onClick={async () => {
+              try {
+                // Test the specific failing date from the logs
+                const testDate = '2025-08-12';
+                
+                console.log('🔧 Testing specific failing date:', testDate);
+                
+                // Test with debug mode enabled
+                const testPrefs = { 
+                  show_device_calendar_busy: true, 
+                  debugCalendarSync: true,
+                  device_calendar_included_ids: [] // Use all calendars
+                } as any;
+                
+                const blocks = await calendarService.getBusyBlocks(
+                  { start: testDate, end: testDate },
+                  testPrefs
+                );
+                
+                console.log('🔧 Specific date test result:', { testDate, blocksCount: blocks.length, blocks });
+                toast.success(`Specific date test: ${blocks.length} blocks found`);
+              } catch (e) {
+                toast.error('Specific date test failed');
+                console.error('🔧 Specific date test error:', e);
+              }
+            }} className="bg-yellow-700 hover:bg-yellow-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test Specific Date</button>
+
+            <button onClick={async () => {
+              try {
+                // Test the CalendarBridge directly with corrected date format
+                const testDate = '2025-08-12';
+                
+                // Apply the same date conversion logic that the device provider uses
+                const startDate = new Date(testDate + 'T00:00:00');
+                const endDate = new Date(testDate + 'T23:59:59.999');
+                const tzOffset = startDate.getTimezoneOffset();
+                const adjustedStart = new Date(startDate.getTime() + (tzOffset * 60 * 1000));
+                const adjustedEnd = new Date(endDate.getTime() + (tzOffset * 60 * 1000));
+                
+                console.log('🔧 Bridge test date conversion:', {
+                  testDate,
+                  startDate: startDate.toISOString(),
+                  endDate: endDate.toISOString(),
+                  tzOffset,
+                  adjustedStart: adjustedStart.toISOString(),
+                  adjustedEnd: adjustedEnd.toISOString()
+                });
+                
+                const res = await CalendarBridge.getEvents({
+                  start: adjustedStart.toISOString(),
+                  end: adjustedEnd.toISOString(),
+                  calendarIds: []
+                });
+                
+                console.log('🔧 Bridge direct test result:', { testDate, eventsCount: res.events?.length || 0, res });
+                toast.success(`Bridge direct test: ${res.events?.length || 0} events found`);
+              } catch (e) {
+                toast.error('Bridge direct test failed');
+                console.error('🔧 Bridge direct test error:', e);
+              }
+            }} className="bg-orange-700 hover:bg-orange-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test Bridge Direct</button>
+
+            <button onClick={async () => {
+              try {
+                // Check current calendar permissions and available calendars
+                console.log('🔧 Checking calendar permissions and calendars...');
+                
+                const authStatus = await CalendarBridge.getAuthorizationStatus();
+                console.log('🔧 Authorization status:', authStatus);
+                
+                const calendars = await CalendarBridge.getCalendars();
+                console.log('🔧 Available calendars:', calendars);
+                
+                // Check if we have any calendars with events
+                if (calendars.calendars && calendars.calendars.length > 0) {
+                  const firstCalendar = calendars.calendars[0];
+                  console.log('🔧 Testing with first calendar:', firstCalendar);
+                  
+                  const testDate = '2025-08-12';
+                  const startDate = new Date(testDate + 'T00:00:00');
+                  const endDate = new Date(testDate + 'T23:59:59.999');
+                  const tzOffset = startDate.getTimezoneOffset();
+                  const adjustedStart = new Date(startDate.getTime() + (tzOffset * 60 * 1000));
+                  const adjustedEnd = new Date(endDate.getTime() + (tzOffset * 60 * 1000));
+                  
+                  const res = await CalendarBridge.getEvents({
+                    start: adjustedStart.toISOString(),
+                    end: adjustedEnd.toISOString(),
+                    calendarIds: [firstCalendar.id]
+                  });
+                  
+                  console.log('🔧 Test with specific calendar result:', { 
+                    calendar: firstCalendar, 
+                    eventsCount: res.events?.length || 0, 
+                    res 
+                  });
+                }
+                
+                toast.success(`Calendar check complete. Status: ${authStatus.status}, Calendars: ${calendars.calendars?.length || 0}`);
+              } catch (e) {
+                toast.error('Calendar check failed');
+                console.error('🔧 Calendar check error:', e);
+              }
+            }} className="bg-red-700 hover:bg-red-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Check Calendar State</button>
+
+            <button onClick={async () => {
+              try {
+                // Test the exact flow that the gaps API uses
+                const testDate = '2025-08-12';
+                console.log('🔧 Testing exact gaps API flow with date:', testDate);
+                
+                // This is exactly what the gaps API calls
+                const blocks = await calendarService.getAvailableGaps(
+                  testDate,
+                  { show_device_calendar_busy: true, debugCalendarSync: true } as any,
+                  [], // empty tasks array
+                  'local-user'
+                );
+                
+                console.log('🔧 Gaps API flow test result:', { testDate, blocksCount: blocks.length, blocks });
+                toast.success(`Gaps API flow test: ${blocks.length} blocks found`);
+              } catch (e) {
+                toast.error('Gaps API flow test failed');
+                console.error('🔧 Gaps API flow test error:', e);
+              }
+            }} className="bg-pink-700 hover:bg-pink-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Test Gaps API Flow</button>
+
+            <button onClick={async () => {
+              try {
+                // Clear the calendar cache to test fresh data
+                console.log('🔧 Clearing calendar cache...');
+                
+                // Clear localStorage items that might be related to calendar cache
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i);
+                  if (key && (key.includes('calendar') || key.includes('busy') || key.includes('cache'))) {
+                    keysToRemove.push(key);
+                  }
+                }
+                
+                keysToRemove.forEach(key => {
+                  localStorage.removeItem(key);
+                  console.log('🔧 Removed cache key:', key);
+                });
+                
+                console.log('🔧 Calendar cache cleared. Removed keys:', keysToRemove);
+                toast.success(`Calendar cache cleared. Removed ${keysToRemove.length} keys`);
+              } catch (e) {
+                toast.error('Failed to clear calendar cache');
+                console.error('🔧 Clear cache error:', e);
+              }
+            }} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded flex items-center justify-center gap-2"><ShieldCheck className="w-4 h-4" /> Clear Calendar Cache</button>
               <button onClick={async () => {
                 try {
-                  // Test with a very broad date range using ISO strings
+                  // Test with very broad date range using ISO strings
                   const startDate = new Date();
                   startDate.setFullYear(startDate.getFullYear() - 1); // 1 year ago
                   const endDate = new Date();
