@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, addDays, startOfDay, isSameDay } from 'date-fns';
+import { format, addDays, startOfDay, isSameDay, parseISO } from 'date-fns';
 import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
@@ -263,33 +263,22 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-  const [deviceBusy, setDeviceBusy] = useState<{ start: number; end: number; title: string; isAllDay?: boolean }[]>([]);
+  const [deviceBusy, setDeviceBusy] = useState<{ start: Date; end: Date; title: string; isAllDay: boolean }[]>([]);
 
+  // Fetch device calendar busy times for the selected date
   useEffect(() => {
-    const shouldUseDeviceCalendar = !!userPreferences?.show_device_calendar_busy && typeof window !== 'undefined' && (window as any).Capacitor;
-    if (!shouldUseDeviceCalendar) {
-      setDeviceBusy([]);
-      return;
-    }
-
     const fetchBusy = async () => {
+      if (!userPreferences?.show_device_calendar_busy) {
+        setDeviceBusy([]);
+        return;
+      }
+      
       try {
         const start = startOfDay(selectedDate);
-        const end = addDays(start, 1);
-        let includeIds = userPreferences?.device_calendar_included_ids || [];
-        // If not set yet in preferences, try lightweight localStorage fallback to persist across cold starts
-        if (!includeIds || includeIds.length === 0) {
-          try {
-            const userId = session?.user?.id || 'local-user';
-            const raw = localStorage.getItem(`gaply_device_calendar_${userId}`);
-            if (raw) {
-              const fb = JSON.parse(raw || '{}') || {};
-              if (Array.isArray(fb.device_calendar_included_ids)) {
-                includeIds = fb.device_calendar_included_ids;
-              }
-            }
-          } catch {}
-        }
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        
+        let includeIds = userPreferences.device_calendar_included_ids || [];
         if (!includeIds || includeIds.length === 0) {
           try {
             const cals = await loadDeviceCalendars();
@@ -297,7 +286,12 @@ function PlannerContent({
           } catch {}
         }
         const events = await fetchDeviceWindow(includeIds, start.toISOString(), end.toISOString());
-        setDeviceBusy(events.map(e => ({ start: e.start, end: e.end, title: e.title || '' , isAllDay: e.isAllDay })));
+        setDeviceBusy(events.map(e => ({ 
+          start: new Date(e.start), 
+          end: new Date(e.end), 
+          title: e.title || '', 
+          isAllDay: e.isAllDay || false 
+        })));
       } catch (e) {
         setDeviceBusy([]);
       }
@@ -308,44 +302,92 @@ function PlannerContent({
 
   const applyDeviceBusyToGaps = (gapsIn: TimeGap[]) => {
     if (!userPreferences?.show_device_calendar_busy || deviceBusy.length === 0) return gapsIn;
-    let current = [...gapsIn];
-    for (const evt of deviceBusy) {
-      try {
-        const evtStart = new Date(evt.start);
-        const evtEnd = new Date(evt.end);
-        // Coerce to selected date window
-        const dayStart = startOfDay(selectedDate);
-        const dayEnd = addDays(dayStart, 1);
-        const s = new Date(Math.max(evtStart.getTime(), dayStart.getTime()));
-        const e = new Date(Math.min(evtEnd.getTime(), dayEnd.getTime()));
-        if (e <= s) continue;
-        const sStr = minutesToTime(s.getHours() * 60 + s.getMinutes());
-        const eStr = minutesToTime(e.getHours() * 60 + e.getMinutes());
-        const newGaps: TimeGap[] = [];
-        for (const gap of current) {
-          const gapStartMin = timeToMinutes(gap.start_time);
-          const gapEndMin = timeToMinutes(gap.end_time);
-          const busyStartMin = timeToMinutes(sStr);
-          const busyEndMin = timeToMinutes(eStr);
-          if (busyStartMin < gapEndMin && busyEndMin > gapStartMin) {
-            const result = GapLogic.scheduleTaskInGap(gap, sStr, eStr, 'calendar_sync');
-            if (result.deletedGap) {
-              // Gap was completely filled, don't add it back
-              continue;
-            } else {
-              newGaps.push(...result.newGaps);
+    
+    // Create a timeline of all time slots (gaps + calendar events)
+    const timeline: Array<{ start: Date; end: Date; type: 'gap' | 'calendar'; data: any }> = [];
+    
+    // Add all gaps to timeline
+    gapsIn.forEach(gap => {
+      const start = parseISO(`${gap.date}T${gap.start_time}`);
+      const end = parseISO(`${gap.date}T${gap.end_time}`);
+      timeline.push({ start, end, type: 'gap', data: gap });
+    });
+    
+    // Add calendar events to timeline
+    deviceBusy.forEach(event => {
+      timeline.push({ start: event.start, end: event.end, type: 'calendar', data: event });
+    });
+    
+    // Sort timeline by start time
+    timeline.sort((a, b) => a.start.getTime() - b.start.getTime());
+    
+    // Process timeline to create final gaps (removing calendar event times)
+    const finalGaps: TimeGap[] = [];
+    let currentGap: TimeGap | null = null;
+    
+    for (const item of timeline) {
+      if (item.type === 'gap') {
+        // This is a gap - check if it overlaps with any calendar events
+        let gapStart = item.start;
+        let gapEnd = item.end;
+        
+        // Find calendar events that overlap with this gap
+        const overlappingEvents = deviceBusy.filter(event => {
+          return event.start < gapEnd && event.end > gapStart;
+        });
+        
+        if (overlappingEvents.length === 0) {
+          // No overlap, keep the gap as-is
+          finalGaps.push(item.data);
+        } else {
+          // Process overlaps to create remaining gaps
+          let remainingGaps: TimeGap[] = [item.data];
+          
+          for (const event of overlappingEvents) {
+            const newRemainingGaps: TimeGap[] = [];
+            
+            for (const gap of remainingGaps) {
+              const gapStart = parseISO(`${gap.date}T${gap.start_time}`);
+              const gapEnd = parseISO(`${gap.date}T${gap.end_time}`);
+              
+              if (event.start < gapEnd && event.end > gapStart) {
+                // Overlap detected - split the gap
+                const result = GapLogic.scheduleTaskInGap(
+                  gap, 
+                  minutesToTime(event.start.getHours() * 60 + event.start.getMinutes()),
+                  minutesToTime(event.end.getHours() * 60 + event.end.getMinutes()),
+                  'calendar_sync'
+                );
+                
+                if (!result.deletedGap) {
+                  newRemainingGaps.push(...result.newGaps);
+                }
+              } else {
+                newRemainingGaps.push(gap);
+              }
             }
-          } else {
-            newGaps.push(gap);
+            
+            remainingGaps = newRemainingGaps;
           }
+          
+          finalGaps.push(...remainingGaps);
         }
-        current = newGaps;
-      } catch {}
+      }
     }
-    return current;
+    
+    return finalGaps;
   };
 
   const adjustedGaps = useMemo(() => applyDeviceBusyToGaps(selectedDateGaps), [selectedDateGaps, deviceBusy, userPreferences?.show_device_calendar_busy]);
+  
+  // Debug: Log calendar events and adjusted gaps
+  useEffect(() => {
+    if (userPreferences?.show_device_calendar_busy) {
+      console.log(`🔍 Calendar Debug - Device busy events:`, deviceBusy);
+      console.log(`🔍 Calendar Debug - Original gaps:`, selectedDateGaps.length);
+      console.log(`🔍 Calendar Debug - Adjusted gaps:`, adjustedGaps.length);
+    }
+  }, [deviceBusy, selectedDateGaps, adjustedGaps, userPreferences?.show_device_calendar_busy]);
   
   // Debug: Log gap information
   console.log(`🔍 Gap Debug - Total gaps: ${gaps.length}, Selected date: ${format(selectedDate, 'yyyy-MM-dd')}, Gaps for selected date: ${selectedDateGaps.length}`);
@@ -686,6 +728,7 @@ function PlannerContent({
           userPreferences={userPreferences}
           isWorkingDay={isSelectedDateWorkingDay}
           hasWorkingDays={workingDays.length > 0}
+          calendarEvents={deviceBusy}
         />
       </div>
     </div>
