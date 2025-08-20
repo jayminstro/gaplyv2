@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { format, parseISO, addMinutes, isSameDay } from 'date-fns';
+import { format, parseISO, addMinutes, isSameDay, isValid as isValidDate } from 'date-fns';
 import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Calendar, Settings, Sparkles } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
@@ -188,26 +188,70 @@ function PlannerTimeline({
     });
     
     // Add calendar events as timeline items
-    if (userPreferences?.show_device_calendar_busy && calendarEvents.length > 0) {
-      console.log(`🔍 Timeline Debug - Processing ${calendarEvents.length} calendar events`);
-      calendarEvents.forEach((event, index) => {
+    if (userPreferences?.show_device_calendar_busy) {
+      // Combine both sources: direct prop events and busy overlays as fallback
+      const candidates: Array<{ start: Date; end: Date; title: string }>= [];
+      if (calendarEvents && calendarEvents.length > 0) {
+        for (const ev of calendarEvents) {
+          candidates.push({ start: ev.start, end: ev.end, title: ev.title || '' });
+        }
+      }
+      if (busyOverlays && busyOverlays.length > 0) {
+        for (const ov of busyOverlays) {
+          candidates.push({ start: ov.start, end: ov.end, title: '' });
+        }
+      }
+
+      // Dedupe by start-end key
+      const seen = new Set<string>();
+      const filtered = candidates.filter((c) => {
+        const key = `${c.start.getTime()}-${c.end.getTime()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (filtered.length > 0) {
+        console.log(`🔍 Timeline Debug - Processing ${filtered.length} calendar events (combined sources)`);
+      }
+
+      filtered.forEach((event) => {
         try {
-          const durationMinutes = Math.round((event.end.getTime() - event.start.getTime()) / (1000 * 60));
-          
-          items.push({
-            id: `calendar-${index}`,
-            type: 'calendar',
-            startTime: event.start,
-            endTime: event.end,
-            title: event.title,
-            duration: `${durationMinutes} min`,
-            icon: <Calendar className="w-4 h-4 text-red-400" />,
-            iconColor: 'bg-red-500/20',
-            data: { start: event.start, end: event.end, title: event.title },
-            gapSource: 'calendar'
-          });
-          
-          console.log(`✅ Added calendar event to timeline: ${format(event.start, 'HH:mm')}-${format(event.end, 'HH:mm')} (${durationMinutes} min)`);
+          // Only include events on the selected date (overlap)
+          const dayStart = new Date(selectedDate); dayStart.setHours(0,0,0,0);
+          const dayEnd = new Date(selectedDate); dayEnd.setHours(23,59,59,999);
+          if (!(event.start <= dayEnd && event.end >= dayStart)) {
+            return;
+          }
+          // Split into per-hour segments to avoid cross-slot rendering issues
+          const segmentStart = event.start < dayStart ? dayStart : event.start;
+          const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
+          const startHour = new Date(segmentStart).getHours();
+          const endHourExclusive = new Date(segmentEnd).getHours() + (new Date(segmentEnd).getMinutes() > 0 || new Date(segmentEnd).getSeconds() > 0 ? 1 : 0);
+          for (let hour = startHour; hour < Math.max(startHour + 1, endHourExclusive); hour++) {
+            const hourStart = new Date(selectedDate); hourStart.setHours(hour, 0, 0, 0);
+            const hourEnd = new Date(selectedDate); hourEnd.setHours(hour + 1, 0, 0, 0);
+            const segStart = segmentStart > hourStart ? segmentStart : hourStart;
+            const segEnd = segmentEnd < hourEnd ? segmentEnd : hourEnd;
+            if (!isValidDate(segStart) || !isValidDate(segEnd)) {
+              continue;
+            }
+            if (segEnd <= segStart) continue;
+            const durationMinutes = Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / (1000 * 60)));
+            items.push({
+              id: `cal-${event.start.getTime()}-${event.end.getTime()}-${hour}`,
+              type: 'calendar',
+              startTime: segStart,
+              endTime: segEnd,
+              title: event.title || 'Busy',
+              duration: `${durationMinutes} min`,
+              icon: <Calendar className="w-4 h-4 text-red-400" />,
+              iconColor: 'bg-red-500/20',
+              data: { start: segStart, end: segEnd, title: event.title || '' },
+              gapSource: 'calendar'
+            });
+            console.log(`✅ Added calendar segment: ${format(segStart, 'HH:mm')}-${format(segEnd, 'HH:mm')} (${durationMinutes} min)`);
+          }
         } catch (error) {
           console.error(`❌ Error processing calendar event:`, error);
         }
@@ -296,7 +340,7 @@ function PlannerTimeline({
     console.log(`🔍 PlannerTimeline Debug - Final timeline items: ${sortedItems.length} total, ${gapItems.length} gaps`);
     
     return sortedItems;
-  }, [tasks, gaps, selectedDate, userPreferences, currentTime]);
+  }, [tasks, gaps, selectedDate, userPreferences, currentTime, calendarEvents, busyOverlays]);
   
   // Generate time slots for the day based on user's working hours
   const generateTimeSlots = () => {
@@ -378,10 +422,9 @@ function PlannerTimeline({
   
   // Simple function to get items for each time slot
   const getItemsForHour = (hour: number) => {
-    return timelineItems.filter(item => {
-      const itemHour = item.startTime.getHours();
-      return itemHour === hour;
-    });
+    const hourStart = new Date(selectedDate); hourStart.setHours(hour, 0, 0, 0);
+    const hourEnd = new Date(selectedDate); hourEnd.setHours(hour + 1, 0, 0, 0);
+    return timelineItems.filter(item => item.startTime < hourEnd && item.endTime > hourStart);
   };
   
   // Group overlapping tasks among a set of timeline items (tasks only)
@@ -431,6 +474,9 @@ function PlannerTimeline({
   const formatTimeRange = (startTime: Date, endTime: Date) => {
     const is24Hour = userPreferences?.time_format === '24h';
     const timeFormat = is24Hour ? 'HH:mm' : 'h:mm a';
+    if (!startTime || !endTime || !isValidDate(startTime) || !isValidDate(endTime)) {
+      return '--';
+    }
     const start = format(startTime, timeFormat);
     const end = format(endTime, timeFormat);
     return `${start} - ${end}`;
@@ -526,9 +572,12 @@ function PlannerTimeline({
                 renderUnits.map((unit) => {
                   if (unit.kind === 'calendar') {
                     const item = unit.item;
+                    if (!isValidDate(item.startTime) || !isValidDate(item.endTime)) {
+                      return null;
+                    }
                     return (
                       <div
-                        key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
+                        key={`${item.type}-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                         className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
                       >
                         <div className="flex items-center gap-3">
@@ -543,9 +592,19 @@ function PlannerTimeline({
                               </span>
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
-                              <span className="font-medium">
-                                {formatTimeRange(item.startTime, item.endTime)}
-                              </span>
+                              {(() => {
+                                // Clip display to the current hour slot for multi-hour events
+                                const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
+                                const hourEnd = new Date(selectedDate); hourEnd.setHours(slot.hour24 + 1, 0, 0, 0);
+                                const displayStart = item.startTime > hourStart ? item.startTime : hourStart;
+                                const displayEnd = item.endTime < hourEnd ? item.endTime : hourEnd;
+                                if (!isValidDate(displayStart) || !isValidDate(displayEnd)) {
+                                  return <span className="font-medium">--</span>;
+                                }
+                                return (
+                                  <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
+                                );
+                              })()}
                               {userPreferences?.show_duration_in_planner && (
                                 <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
                               )}
@@ -563,7 +622,7 @@ function PlannerTimeline({
                     const gapSourceInfo = getGapSourceInfo(item.data as TimeGap);
                     return (
                       <button
-                        key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
+                        key={`${item.type}-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                         onClick={() => handleItemClick(item)}
                         className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`}
                         type="button"

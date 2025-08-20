@@ -5,7 +5,7 @@ import { PlannerTimeline } from './PlannerTimeline';
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { GapsAPI } from '../utils/gapsAPI';
 import { useGaps } from '../hooks/useGaps';
-import { mergeAndDeduplicateGaps, GapLogic } from '../utils/gapLogic';
+import { mergeAndDeduplicateGaps } from '../utils/gapLogic';
 import { minutesToTime, timeToMinutes } from '../utils/helpers';
 import { fetchWindow as fetchDeviceWindow, loadCalendars as loadDeviceCalendars } from '../src/utils/calendarSource.ios';
 import { normalizeWorkingDays } from '../utils/gapLogic';
@@ -323,7 +323,7 @@ function PlannerContent({
     
     // Process timeline to create final gaps (removing calendar event times)
     const finalGaps: TimeGap[] = [];
-    let currentGap: TimeGap | null = null;
+    // removed unused variable from prior approach
     
     for (const item of timeline) {
       if (item.type === 'gap') {
@@ -340,37 +340,56 @@ function PlannerContent({
           // No overlap, keep the gap as-is
           finalGaps.push(item.data);
         } else {
-          // Process overlaps to create remaining gaps
-          let remainingGaps: TimeGap[] = [item.data];
-          
-          for (const event of overlappingEvents) {
-            const newRemainingGaps: TimeGap[] = [];
-            
-            for (const gap of remainingGaps) {
-              const gapStart = parseISO(`${gap.date}T${gap.start_time}`);
-              const gapEnd = parseISO(`${gap.date}T${gap.end_time}`);
-              
-              if (event.start < gapEnd && event.end > gapStart) {
-                // Overlap detected - split the gap
-                const result = GapLogic.scheduleTaskInGap(
-                  gap, 
-                  minutesToTime(event.start.getHours() * 60 + event.start.getMinutes()),
-                  minutesToTime(event.end.getHours() * 60 + event.end.getMinutes()),
-                  'calendar_sync'
-                );
-                
-                if (!result.deletedGap) {
-                  newRemainingGaps.push(...result.newGaps);
-                }
-              } else {
-                newRemainingGaps.push(gap);
-              }
-            }
-            
-            remainingGaps = newRemainingGaps;
+          // Robustly subtract overlapping calendar intervals from the gap without throwing
+          const gapStartMin = timeToMinutes(item.data.start_time);
+          const gapEndMin = timeToMinutes(item.data.end_time);
+          if (gapEndMin <= gapStartMin) {
+            continue;
           }
-          
-          finalGaps.push(...remainingGaps);
+
+          // Collect overlapping intervals in minutes and sort
+          const overlaps = overlappingEvents
+            .map(e => ({
+              start: Math.max(0, e.start.getHours() * 60 + e.start.getMinutes()),
+              end: Math.min(24 * 60, e.end.getHours() * 60 + e.end.getMinutes()),
+            }))
+            .filter(iv => iv.end > iv.start && iv.end > gapStartMin && iv.start < gapEndMin)
+            .sort((a, b) => a.start - b.start);
+
+          let cursor = gapStartMin;
+          const newGaps: TimeGap[] = [];
+          for (const iv of overlaps) {
+            const segStart = Math.max(cursor, gapStartMin);
+            const segEnd = Math.min(iv.start, gapEndMin);
+            if (segEnd > segStart) {
+              const startStr = minutesToTime(segStart);
+              const endStr = minutesToTime(segEnd);
+              newGaps.push({
+                ...item.data,
+                id: `${item.data.id}-calcut-${segStart}-${segEnd}`,
+                start_time: startStr,
+                end_time: endStr,
+                duration_minutes: segEnd - segStart,
+                modified_by: 'calendar_sync',
+              } as TimeGap);
+            }
+            cursor = Math.max(cursor, Math.min(iv.end, gapEndMin));
+            if (cursor >= gapEndMin) break;
+          }
+          if (cursor < gapEndMin) {
+            const startStr = minutesToTime(cursor);
+            const endStr = minutesToTime(gapEndMin);
+            newGaps.push({
+              ...item.data,
+              id: `${item.data.id}-calcut-${cursor}-${gapEndMin}`,
+              start_time: startStr,
+              end_time: endStr,
+              duration_minutes: gapEndMin - cursor,
+              modified_by: 'calendar_sync',
+            } as TimeGap);
+          }
+
+          finalGaps.push(...newGaps);
         }
       }
     }
