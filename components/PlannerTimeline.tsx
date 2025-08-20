@@ -31,6 +31,7 @@ interface PlannerTimelineProps {
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
   hasWorkingDays?: boolean;
+  calendarEvents?: Array<{ start: Date; end: Date; title: string; isAllDay: boolean }>;
 }
 
 function PlannerTimeline({ 
@@ -43,7 +44,8 @@ function PlannerTimeline({
   onGapUtilize,
   userPreferences,
   isWorkingDay = true,
-  hasWorkingDays = true
+  hasWorkingDays = true,
+  calendarEvents = []
 }: PlannerTimelineProps) {
   
   // Ref for the timeline container to enable auto-scrolling
@@ -186,8 +188,9 @@ function PlannerTimeline({
     });
     
     // Add calendar events as timeline items
-    if (userPreferences?.show_device_calendar_busy && busyOverlays.length > 0) {
-      busyOverlays.forEach((event, index) => {
+    if (userPreferences?.show_device_calendar_busy && calendarEvents.length > 0) {
+      console.log(`🔍 Timeline Debug - Processing ${calendarEvents.length} calendar events`);
+      calendarEvents.forEach((event, index) => {
         try {
           const durationMinutes = Math.round((event.end.getTime() - event.start.getTime()) / (1000 * 60));
           
@@ -196,11 +199,11 @@ function PlannerTimeline({
             type: 'calendar',
             startTime: event.start,
             endTime: event.end,
-            title: 'Calendar Event', // We'll need to get the actual title from the busy blocks
+            title: event.title,
             duration: `${durationMinutes} min`,
             icon: <Calendar className="w-4 h-4 text-red-400" />,
             iconColor: 'bg-red-500/20',
-            data: { start: event.start, end: event.end, title: 'Calendar Event' },
+            data: { start: event.start, end: event.end, title: event.title },
             gapSource: 'calendar'
           });
           
@@ -436,9 +439,10 @@ function PlannerTimeline({
   const handleItemClick = (item: TimelineItem) => {
     if (item.type === 'task') {
       onTaskOpen(item.data as Task);
-    } else {
+    } else if (item.type === 'gap') {
       onGapUtilize(item.data as TimeGap);
     }
+    // Calendar items are not clickable, so no action needed
   };
 
   return (
@@ -464,11 +468,18 @@ function PlannerTimeline({
         // Build render units: gaps as-is, tasks grouped by overlap
         type RenderUnit =
           | { kind: 'gap'; item: TimelineItem }
-          | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date };
+          | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date }
+          | { kind: 'calendar'; item: TimelineItem };
 
         const gapUnits: RenderUnit[] = itemsAtHour
-          .filter((it) => it.type === 'gap' || it.type === 'calendar')
-          .map((item) => ({ kind: 'gap', item }));
+          .filter((it) => it.type === 'gap')
+          .map((gap) => ({ kind: 'gap', item: gap }));
+        
+        const calendarUnits: RenderUnit[] = itemsAtHour
+          .filter((it) => it.type === 'calendar')
+          .map((calendar) => ({ kind: 'calendar', item: calendar }));
+        
+        const allUnits = [...gapUnits, ...calendarUnits];
 
         const taskGroups = groupOverlappingTasks(itemsAtHour);
         const groupUnits: RenderUnit[] = taskGroups.map((g) => ({
@@ -478,10 +489,12 @@ function PlannerTimeline({
           endTime: g.endTime,
         }));
 
-        const renderUnits: RenderUnit[] = [...gapUnits, ...groupUnits].sort(
-          (a, b) =>
-            (a.kind === 'gap' ? a.item.startTime.getTime() : a.startTime.getTime()) -
-            (b.kind === 'gap' ? b.item.startTime.getTime() : b.startTime.getTime())
+        const renderUnits: RenderUnit[] = [...allUnits, ...groupUnits].sort(
+          (a, b) => {
+            const aTime = a.kind === 'gap' || a.kind === 'calendar' ? a.item.startTime.getTime() : a.startTime.getTime();
+            const bTime = b.kind === 'gap' || b.kind === 'calendar' ? b.item.startTime.getTime() : b.startTime.getTime();
+            return aTime - bTime;
+          }
         );
 
         return (
@@ -511,40 +524,40 @@ function PlannerTimeline({
             <div className="flex-1 space-y-3">
               {renderUnits.length > 0 ? (
                 renderUnits.map((unit) => {
-                  if (unit.kind === 'gap') {
+                  if (unit.kind === 'calendar') {
                     const item = unit.item;
-                    
-                    // Handle calendar events differently from gaps
-                    if (item.type === 'calendar') {
-                      return (
-                        <div
-                          key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                              <Calendar className="w-4 h-4 text-red-400" />
+                    return (
+                      <div
+                        key={`${item.type}-${item.id}-${item.startTime.getTime()}`}
+                        className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <Calendar className="w-4 h-4 text-red-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                              <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
+                                Calendar
+                              </span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
-                                <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
-                                  Calendar
-                                </span>
-                              </div>
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
-                                <span className="font-medium">
-                                  {formatTimeRange(item.startTime, item.endTime)}
-                                </span>
-                                {userPreferences?.show_duration_in_planner && (
-                                  <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
-                                )}
-                              </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                              <span className="font-medium">
+                                {formatTimeRange(item.startTime, item.endTime)}
+                              </span>
+                              {userPreferences?.show_duration_in_planner && (
+                                <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
+                              )}
                             </div>
                           </div>
                         </div>
-                      );
-                    }
+                      </div>
+                    );
+                  }
+
+                  if (unit.kind === 'gap') {
+                    const item = unit.item;
                     
                     // Handle regular gaps
                     const gapSourceInfo = getGapSourceInfo(item.data as TimeGap);
