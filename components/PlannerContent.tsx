@@ -9,6 +9,8 @@ import { mergeAndDeduplicateGaps } from '../utils/gapLogic';
 import { minutesToTime, timeToMinutes } from '../utils/helpers';
 import { fetchWindow as fetchDeviceWindow, loadCalendars as loadDeviceCalendars } from '../src/utils/calendarSource.ios';
 import { normalizeWorkingDays } from '../utils/gapLogic';
+import { CalendarBridge } from '../src/plugins/calendar-bridge';
+import { App } from '@capacitor/app';
 
 interface PlannerContentProps {
   globalTasks: Task[];
@@ -264,6 +266,11 @@ function PlannerContent({
 
   // Phase 2: Device calendar busy → subtract from gaps
   const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }[]>([]);
+  const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const touchStartY = useRef(0);
+  const touchMoveY = useRef(0);
 
   // Fetch device calendar busy times for the selected date
   useEffect(() => {
@@ -312,7 +319,92 @@ function PlannerContent({
     };
     fetchBusy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDateStr, userPreferences?.show_device_calendar_busy, JSON.stringify(userPreferences?.device_calendar_included_ids)]);
+  }, [selectedDateStr, userPreferences?.show_device_calendar_busy, JSON.stringify(userPreferences?.device_calendar_included_ids), calendarRefreshTrigger]);
+
+  // Manual refresh function for calendar events
+  const refreshCalendarEvents = async (showRefreshState = false) => {
+    console.log('🔄 Manual refresh of calendar events triggered...');
+    
+    if (showRefreshState) {
+      setIsRefreshing(true);
+    }
+    
+    setCalendarRefreshTrigger(prev => prev + 1);
+    
+    if (showRefreshState) {
+      // Reset refresh state after a short delay
+      setTimeout(() => {
+        setIsRefreshing(false);
+        setPullDistance(0);
+      }, 1000);
+    }
+  };
+
+  // Listen for native calendar event store changes and auto-refresh
+  useEffect(() => {
+    if (!userPreferences?.show_device_calendar_busy) {
+      return;
+    }
+
+    console.log('🔄 Setting up calendar event store listener...');
+    
+    const removePromise = CalendarBridge?.addListener('eventStoreChanged', async () => {
+      console.log('📅 Calendar event store changed - triggering refresh...');
+      refreshCalendarEvents();
+    });
+
+    return () => { 
+      console.log('🔄 Removing calendar event store listener...');
+      removePromise?.then(l => l.remove()); 
+    };
+  }, [userPreferences?.show_device_calendar_busy]);
+
+  // Listen for app state changes to refresh when returning from calendar app
+  useEffect(() => {
+    if (!userPreferences?.show_device_calendar_busy) {
+      return;
+    }
+
+    console.log('🔄 Setting up app state change listener...');
+    
+    const appStateSubscription = App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        console.log('📱 App became active - refreshing calendar events...');
+        refreshCalendarEvents();
+      }
+    });
+
+    return () => { 
+      console.log('🔄 Removing app state change listener...');
+      appStateSubscription.then(l => l.remove()); 
+    };
+  }, [userPreferences?.show_device_calendar_busy]);
+
+  // Pull-to-refresh touch handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchMoveY.current = e.touches[0].clientY;
+    const scrollTop = (e.target as HTMLElement).scrollTop;
+    
+    // Only allow pull-to-refresh when at the top of the scroll
+    if (scrollTop === 0 && touchMoveY.current > touchStartY.current) {
+      const distance = Math.min(touchMoveY.current - touchStartY.current, 80);
+      setPullDistance(distance);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (pullDistance > 50) {
+      // Trigger refresh if pulled far enough
+      refreshCalendarEvents(true);
+    } else {
+      // Reset pull distance if not far enough
+      setPullDistance(0);
+    }
+  };
 
   const applyDeviceBusyToGaps = (gapsIn: TimeGap[]) => {
     if (!userPreferences?.show_device_calendar_busy || deviceBusy.length === 0) return gapsIn;
@@ -749,7 +841,31 @@ function PlannerContent({
         ref={timelineRef}
         className="flex-1 overflow-y-auto ios-scroll android-scroll no-bounce px-6 pt-2" 
         data-scrollable="true"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
+        {/* Pull-to-refresh indicator */}
+        {(isRefreshing || pullDistance > 0) && (
+          <div 
+            className="sticky top-0 z-50 flex items-center justify-center py-2 transition-all duration-300 bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/30"
+            style={{ 
+              transform: `translateY(${Math.max(pullDistance - 20, 0)}px)`,
+              opacity: Math.min(pullDistance / 50, 1)
+            }}
+          >
+            <div className={`flex items-center gap-2 text-sm text-slate-300 ${isRefreshing ? 'animate-pulse' : ''}`}>
+              {isRefreshing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Refreshing calendar...</span>
+                </>
+              ) : (
+                <span>{pullDistance > 50 ? 'Release to refresh' : 'Pull to refresh'}</span>
+              )}
+            </div>
+          </div>
+        )}
         <PlannerTimeline
           tasks={selectedDateTasks}
           gaps={adjustedGaps}
