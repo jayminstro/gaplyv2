@@ -270,7 +270,6 @@ function PlannerContent({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const touchStartY = useRef(0);
-  const touchMoveY = useRef(0);
 
   // Fetch device calendar busy times for the selected date
   useEffect(() => {
@@ -306,7 +305,7 @@ function PlannerContent({
             id: e.id,
             start: startDate, 
             end: endDate, 
-            title: e.title || '', 
+            title: userPreferences?.show_device_calendar_titles ? (e.title || '') : 'Busy', 
             isAllDay: e.isAllDay || false 
           };
         });
@@ -319,7 +318,7 @@ function PlannerContent({
     };
     fetchBusy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDateStr, userPreferences?.show_device_calendar_busy, JSON.stringify(userPreferences?.device_calendar_included_ids), calendarRefreshTrigger]);
+  }, [selectedDateStr, userPreferences?.show_device_calendar_busy, userPreferences?.show_device_calendar_titles, JSON.stringify(userPreferences?.device_calendar_included_ids), calendarRefreshTrigger]);
 
   // Manual refresh function for calendar events
   const refreshCalendarEvents = async (showRefreshState = false) => {
@@ -382,23 +381,50 @@ function PlannerContent({
 
   // Pull-to-refresh touch handlers
   const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.currentTarget as HTMLElement;
     touchStartY.current = e.touches[0].clientY;
+    
+    // Only start tracking if we're at the very top of the scroll container
+    if (target.scrollTop === 0) {
+      // Reset any existing pull distance when starting a new gesture
+      setPullDistance(0);
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    touchMoveY.current = e.touches[0].clientY;
-    const scrollTop = (e.target as HTMLElement).scrollTop;
+    const target = e.currentTarget as HTMLElement;
+    const currentY = e.touches[0].clientY;
+    const scrollTop = target.scrollTop;
     
-    // Only allow pull-to-refresh when at the top of the scroll
-    if (scrollTop === 0 && touchMoveY.current > touchStartY.current) {
-      const distance = Math.min(touchMoveY.current - touchStartY.current, 80);
-      setPullDistance(distance);
+    // Only allow pull-to-refresh when:
+    // 1. We're at the very top of the scroll (scrollTop === 0)
+    // 2. The user is pulling down (currentY > touchStartY)
+    // 3. The pull distance is significant enough (> 10px to avoid accidental triggers)
+    if (scrollTop === 0 && currentY > touchStartY.current) {
+      const rawDistance = currentY - touchStartY.current;
+      
+      // Require a minimum pull distance before activating
+      if (rawDistance > 10) {
+        // Apply resistance - make it harder to pull as distance increases
+        const resistance = Math.max(0.5, 1 - (rawDistance / 200));
+        const distance = Math.min(rawDistance * resistance, 80);
+        setPullDistance(distance);
+        
+        // Prevent default scrolling behavior when actively pulling to refresh
+        e.preventDefault();
+      }
+    } else {
+      // Reset pull distance if conditions aren't met
+      setPullDistance(0);
     }
   };
 
   const handleTouchEnd = () => {
-    if (pullDistance > 50) {
-      // Trigger refresh if pulled far enough
+    // Only trigger refresh if:
+    // 1. Pull distance is significant (> 60px for more intentional gesture)
+    // 2. User isn't just accidentally scrolling
+    if (pullDistance > 60) {
+      // Trigger refresh with visual feedback
       refreshCalendarEvents(true);
     } else {
       // Reset pull distance if not far enough
@@ -851,7 +877,7 @@ function PlannerContent({
             className="sticky top-0 z-50 flex items-center justify-center py-2 transition-all duration-300 bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/30"
             style={{ 
               transform: `translateY(${Math.max(pullDistance - 20, 0)}px)`,
-              opacity: Math.min(pullDistance / 50, 1)
+              opacity: Math.min(pullDistance / 60, 1)
             }}
           >
             <div className={`flex items-center gap-2 text-sm text-slate-300 ${isRefreshing ? 'animate-pulse' : ''}`}>
@@ -861,7 +887,7 @@ function PlannerContent({
                   <span>Refreshing calendar...</span>
                 </>
               ) : (
-                <span>{pullDistance > 50 ? 'Release to refresh' : 'Pull to refresh'}</span>
+                <span>{pullDistance > 60 ? 'Release to refresh' : 'Pull to refresh'}</span>
               )}
             </div>
           </div>

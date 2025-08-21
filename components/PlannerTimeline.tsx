@@ -1007,6 +1007,7 @@ function PlannerTimeline({
       tasks={selectedOverlap?.tasks || []}
       calendarEvents={selectedOverlap?.calendarEvents || []}
       timeSlot={selectedOverlap?.timeSlot || ''}
+      userPreferences={userPreferences}
       onActivitySelect={(activity) => {
         setOverlapModalOpen(false);
         onTaskEdit?.(activity);

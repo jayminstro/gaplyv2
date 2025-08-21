@@ -1,5 +1,5 @@
 import { X, Clock, Play, Calendar } from 'lucide-react';
-import { Task } from '../types/index';
+import { Task, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { format } from 'date-fns';
 
@@ -11,6 +11,7 @@ interface OverlapModalProps {
   timeSlot: string;
   onActivitySelect: (activity: Task) => void;
   onStartTimer: (activity: Task) => void;
+  userPreferences?: UserPreferences;
 }
 
 export function OverlapModal({
@@ -20,7 +21,8 @@ export function OverlapModal({
   calendarEvents,
   timeSlot,
   onActivitySelect,
-  onStartTimer
+  onStartTimer,
+  userPreferences
 }: OverlapModalProps) {
   if (!isOpen) return null;
 
@@ -75,7 +77,7 @@ export function OverlapModal({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-white font-medium text-lg mb-1">
-                        {event.title || 'Busy'}
+                        {userPreferences?.show_device_calendar_titles ? (event.title || 'Busy') : 'Busy'}
                       </div>
                       <div className="text-slate-400 text-sm space-y-1">
                         <div className="flex items-center gap-2">
