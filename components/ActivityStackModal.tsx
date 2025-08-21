@@ -9,7 +9,7 @@ interface ActivityStackModalProps {
   timeSlot: string;
   onActivitySelect: (activity: Task) => void;
   onStartTimer: (activity: Task) => void;
-  stackReason?: 'time_overlap' | 'visual_proximity' | 'single';
+  stackReason?: 'time_overlap' | 'visual_proximity' | 'single' | 'time_overlap_with_calendar';
 }
 
 export function ActivityStackModal({
@@ -45,11 +45,13 @@ export function ActivityStackModal({
             <h3 className="text-xl text-white">
               {activities.length === 1 ? 'Activity Details' : 
                stackReason === 'time_overlap' ? 'Overlapping Activities' : 
+               stackReason === 'time_overlap_with_calendar' ? 'Overlapping Events & Activities' :
                'Grouped Activities'}
             </h3>
             <p className="text-slate-400 text-sm">
               {activities.length === 1 ? 'Single activity' :
                stackReason === 'time_overlap' ? `${activities.length} activities with time conflicts` :
+               stackReason === 'time_overlap_with_calendar' ? `${activities.length} activities with calendar conflicts` :
                `${activities.length} activities grouped together`} • {timeSlot}
             </p>
           </div>

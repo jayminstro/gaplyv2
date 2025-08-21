@@ -263,7 +263,7 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-  const [deviceBusy, setDeviceBusy] = useState<{ start: Date; end: Date; title: string; isAllDay: boolean }[]>([]);
+  const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }[]>([]);
 
   // Fetch device calendar busy times for the selected date
   useEffect(() => {
@@ -286,12 +286,26 @@ function PlannerContent({
           } catch {}
         }
         const events = await fetchDeviceWindow(includeIds, start.toISOString(), end.toISOString());
-        setDeviceBusy(events.map(e => ({ 
-          start: new Date(e.start), 
-          end: new Date(e.end), 
-          title: e.title || '', 
-          isAllDay: e.isAllDay || false 
-        })));
+        console.log(`🔧 Raw calendar events fetched:`, events);
+        
+        const processedEvents = events.map(e => {
+          // Convert timestamps to Date objects
+          const startDate = new Date(e.start);
+          const endDate = new Date(e.end);
+          
+          console.log(`🔧 Processing event: ${e.title} (id: ${e.id}) from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+          
+          return { 
+            id: e.id,
+            start: startDate, 
+            end: endDate, 
+            title: e.title || '', 
+            isAllDay: e.isAllDay || false 
+          };
+        });
+        
+        console.log(`🔧 Processed calendar events for deviceBusy:`, processedEvents);
+        setDeviceBusy(processedEvents);
       } catch (e) {
         setDeviceBusy([]);
       }

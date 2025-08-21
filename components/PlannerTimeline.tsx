@@ -4,6 +4,7 @@ import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Calendar, S
 import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { ActivityStackModal } from './ActivityStackModal';
+import { OverlapModal } from './OverlapModal';
 import { calendarService } from '../utils/calendar/index';
 
 interface TimelineItem {
@@ -31,7 +32,7 @@ interface PlannerTimelineProps {
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
   hasWorkingDays?: boolean;
-  calendarEvents?: Array<{ start: Date; end: Date; title: string; isAllDay: boolean }>;
+  calendarEvents?: Array<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }>;
 }
 
 function PlannerTimeline({ 
@@ -74,6 +75,15 @@ function PlannerTimeline({
   const [stackModalOpen, setStackModalOpen] = useState(false);
   const [selectedStack, setSelectedStack] = useState<Task[]>([]);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
+  
+  // New modal state for mixed calendar/task overlaps
+  const [overlapModalOpen, setOverlapModalOpen] = useState(false);
+  const [selectedOverlap, setSelectedOverlap] = useState<{
+    tasks: Task[];
+    calendarEvents: Array<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }>;
+    timeSlot: string;
+    hasCalendarEvents: boolean;
+  } | null>(null);
   
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
@@ -189,27 +199,29 @@ function PlannerTimeline({
     
     // Add calendar events as timeline items
     if (userPreferences?.show_device_calendar_busy) {
+      console.log(`🔧 Timeline Debug - Calendar events prop:`, calendarEvents);
+      console.log(`🔧 Timeline Debug - Selected date:`, selectedDate.toISOString());
+      
       // Combine both sources: direct prop events and busy overlays as fallback
-      const candidates: Array<{ start: Date; end: Date; title: string }>= [];
+      const candidates: Array<{ id: string; start: Date; end: Date; title: string }>= [];
       if (calendarEvents && calendarEvents.length > 0) {
+        console.log(`🔧 Timeline Debug - Processing ${calendarEvents.length} calendar events from prop`);
         for (const ev of calendarEvents) {
-          candidates.push({ start: ev.start, end: ev.end, title: ev.title || '' });
+          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '' });
         }
       }
       if (busyOverlays && busyOverlays.length > 0) {
-        for (const ov of busyOverlays) {
-          candidates.push({ start: ov.start, end: ov.end, title: '' });
+        console.log(`🔧 Timeline Debug - Processing ${busyOverlays.length} busy overlays`);
+        for (let i = 0; i < busyOverlays.length; i++) {
+          const ov = busyOverlays[i];
+          candidates.push({ id: `busy-overlay-${i}`, start: ov.start, end: ov.end, title: '' });
         }
       }
+      
+      console.log(`🔧 Timeline Debug - Total candidates:`, candidates.length);
 
-      // Dedupe by start-end key
-      const seen = new Set<string>();
-      const filtered = candidates.filter((c) => {
-        const key = `${c.start.getTime()}-${c.end.getTime()}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      // Remove time-based deduplication to allow overlapping events with same times
+      const filtered = candidates;
 
       if (filtered.length > 0) {
         console.log(`🔍 Timeline Debug - Processing ${filtered.length} calendar events (combined sources)`);
@@ -220,9 +232,17 @@ function PlannerTimeline({
           // Only include events on the selected date (overlap)
           const dayStart = new Date(selectedDate); dayStart.setHours(0,0,0,0);
           const dayEnd = new Date(selectedDate); dayEnd.setHours(23,59,59,999);
+          
+          console.log(`🔧 Timeline Debug - Event "${event.title}": ${event.start.toISOString()} to ${event.end.toISOString()}`);
+          console.log(`🔧 Timeline Debug - Day range: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`);
+          console.log(`🔧 Timeline Debug - Overlap check: start <= dayEnd? ${event.start <= dayEnd}, end >= dayStart? ${event.end >= dayStart}`);
+          
           if (!(event.start <= dayEnd && event.end >= dayStart)) {
+            console.log(`🔧 Timeline Debug - Event filtered out due to date range`);
             return;
           }
+          
+          console.log(`🔧 Timeline Debug - Event "${event.title}" passed date filter`);
           // Split into per-hour segments to avoid cross-slot rendering issues
           const segmentStart = event.start < dayStart ? dayStart : event.start;
           const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
@@ -239,7 +259,7 @@ function PlannerTimeline({
             if (segEnd <= segStart) continue;
             const durationMinutes = Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / (1000 * 60)));
             items.push({
-              id: `cal-${event.start.getTime()}-${event.end.getTime()}-${hour}`,
+              id: `cal-${event.id}-${hour}`,
               type: 'calendar',
               startTime: segStart,
               endTime: segEnd,
@@ -247,7 +267,7 @@ function PlannerTimeline({
               duration: `${durationMinutes} min`,
               icon: <Calendar className="w-4 h-4 text-red-400" />,
               iconColor: 'bg-red-500/20',
-              data: { start: segStart, end: segEnd, title: event.title || '' },
+              data: { id: event.id, start: segStart, end: segEnd, title: event.title || '', isAllDay: false },
               gapSource: 'calendar'
             });
             console.log(`✅ Added calendar segment: ${format(segStart, 'HH:mm')}-${format(segEnd, 'HH:mm')} (${durationMinutes} min)`);
@@ -427,17 +447,18 @@ function PlannerTimeline({
     return timelineItems.filter(item => item.startTime < hourEnd && item.endTime > hourStart);
   };
   
-  // Group overlapping tasks among a set of timeline items (tasks only)
-  const groupOverlappingTasks = (items: TimelineItem[]) => {
-    const taskItems = items
-      .filter((it) => it.type === 'task')
+  // Group overlapping tasks and calendar events among a set of timeline items
+  const groupOverlappingItems = (items: TimelineItem[]) => {
+    // Separate tasks and calendar events, but process them together for overlapping detection
+    const allItems = items
+      .filter((it) => it.type === 'task' || it.type === 'calendar')
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-    const groups: { items: TimelineItem[]; startTime: Date; endTime: Date }[] = [];
+    const groups: { items: TimelineItem[]; startTime: Date; endTime: Date; hasCalendarEvents: boolean }[] = [];
     let currentGroup: TimelineItem[] = [];
     let currentGroupEnd: Date | null = null;
 
-    for (const item of taskItems) {
+    for (const item of allItems) {
       if (currentGroup.length === 0) {
         currentGroup = [item];
         currentGroupEnd = item.endTime;
@@ -453,6 +474,7 @@ function PlannerTimeline({
             items: currentGroup,
             startTime: currentGroup[0].startTime,
             endTime: currentGroupEnd as Date,
+            hasCalendarEvents: currentGroup.some(it => it.type === 'calendar')
           });
           currentGroup = [item];
           currentGroupEnd = item.endTime;
@@ -465,6 +487,7 @@ function PlannerTimeline({
         items: currentGroup,
         startTime: currentGroup[0].startTime,
         endTime: currentGroupEnd as Date,
+        hasCalendarEvents: currentGroup.some(it => it.type === 'calendar')
       });
     }
 
@@ -511,34 +534,36 @@ function PlannerTimeline({
       {timeSlots.map((slot) => {
         const itemsAtHour = getItemsForHour(slot.hour24);
 
-        // Build render units: gaps as-is, tasks grouped by overlap
-        type RenderUnit =
+        // Build render units: gaps as-is, tasks and calendar events grouped by overlap
+        type RenderUnit = 
           | { kind: 'gap'; item: TimelineItem }
-          | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date }
-          | { kind: 'calendar'; item: TimelineItem };
+          | { kind: 'taskGroup'; items: TimelineItem[]; startTime: Date; endTime: Date; hasCalendarEvents: boolean };
 
         const gapUnits: RenderUnit[] = itemsAtHour
           .filter((it) => it.type === 'gap')
           .map((gap) => ({ kind: 'gap', item: gap }));
-        
-        const calendarUnits: RenderUnit[] = itemsAtHour
-          .filter((it) => it.type === 'calendar')
-          .map((calendar) => ({ kind: 'calendar', item: calendar }));
-        
-        const allUnits = [...gapUnits, ...calendarUnits];
 
-        const taskGroups = groupOverlappingTasks(itemsAtHour);
+        const taskGroups = groupOverlappingItems(itemsAtHour);
+        console.log(`🔧 Timeline Debug - Hour ${slot.hour24}: ${itemsAtHour.length} items, ${taskGroups.length} groups`);
+        if (itemsAtHour.length > 0) {
+          console.log(`🔧 Timeline Debug - Items for hour ${slot.hour24}:`, itemsAtHour.map(i => `${i.type}:${i.title}(${format(i.startTime, 'HH:mm')}-${format(i.endTime, 'HH:mm')})`));
+        }
+        if (taskGroups.length > 0) {
+          console.log(`🔧 Timeline Debug - Task groups for hour ${slot.hour24}:`, taskGroups.map(g => `${g.items.length} items (hasCalendar: ${g.hasCalendarEvents})`));
+        }
+        
         const groupUnits: RenderUnit[] = taskGroups.map((g) => ({
           kind: 'taskGroup',
           items: g.items,
           startTime: g.startTime,
           endTime: g.endTime,
+          hasCalendarEvents: g.hasCalendarEvents
         }));
 
-        const renderUnits: RenderUnit[] = [...allUnits, ...groupUnits].sort(
+        const renderUnits: RenderUnit[] = [...gapUnits, ...groupUnits].sort(
           (a, b) => {
-            const aTime = a.kind === 'gap' || a.kind === 'calendar' ? a.item.startTime.getTime() : a.startTime.getTime();
-            const bTime = b.kind === 'gap' || b.kind === 'calendar' ? b.item.startTime.getTime() : b.startTime.getTime();
+            const aTime = a.kind === 'gap' ? a.item.startTime.getTime() : a.startTime.getTime();
+            const bTime = b.kind === 'gap' ? b.item.startTime.getTime() : b.startTime.getTime();
             return aTime - bTime;
           }
         );
@@ -570,51 +595,6 @@ function PlannerTimeline({
             <div className="flex-1 space-y-3">
               {renderUnits.length > 0 ? (
                 renderUnits.map((unit) => {
-                  if (unit.kind === 'calendar') {
-                    const item = unit.item;
-                    if (!isValidDate(item.startTime) || !isValidDate(item.endTime)) {
-                      return null;
-                    }
-                    return (
-                      <div
-                        key={`${item.type}-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
-                        className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Calendar className="w-4 h-4 text-red-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
-                              <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
-                                Calendar
-                              </span>
-                            </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
-                              {(() => {
-                                // Clip display to the current hour slot for multi-hour events
-                                const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
-                                const hourEnd = new Date(selectedDate); hourEnd.setHours(slot.hour24 + 1, 0, 0, 0);
-                                const displayStart = item.startTime > hourStart ? item.startTime : hourStart;
-                                const displayEnd = item.endTime < hourEnd ? item.endTime : hourEnd;
-                                if (!isValidDate(displayStart) || !isValidDate(displayEnd)) {
-                                  return <span className="font-medium">--</span>;
-                                }
-                                return (
-                                  <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
-                                );
-                              })()}
-                              {userPreferences?.show_duration_in_planner && (
-                                <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
                   if (unit.kind === 'gap') {
                     const item = unit.item;
                     
@@ -686,68 +666,157 @@ function PlannerTimeline({
 
                   if (items.length === 1) {
                     const item = items[0];
-                    return (
-                      <button
-                        key={`task-${item.id}-${item.startTime.getTime()}`}
-                        onClick={() => handleItemClick(item)}
-                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50`}
-                        type="button"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className={`w-10 h-10 ${item.iconColor} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
-                          >
-                            {renderSafeIcon(item.icon)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                    
+                    if (item.type === 'calendar') {
+                      // Render single calendar event
+                      if (!isValidDate(item.startTime) || !isValidDate(item.endTime)) {
+                        return null;
+                      }
+                      return (
+                        <div
+                          key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                              <Calendar className="w-4 h-4 text-red-400" />
                             </div>
-                            <div className="flex items-center gap-3 text-sm text-slate-400">
-                              <span className="truncate font-medium">{formatTimeRange(item.startTime, item.endTime)}</span>
-                              {userPreferences?.show_duration_in_planner && (
-                                <>
-                                  <span>•</span>
-                                  <span>{item.duration}</span>
-                                </>
-                              )}
-                              {item.category && (
-                                <>
-                                  <span>•</span>
-                                  <span className="truncate">{item.category}</span>
-                                </>
-                              )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                                <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
+                                  Calendar
+                                </span>
+                              </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                                {(() => {
+                                  // Clip display to the current hour slot for multi-hour events
+                                  const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
+                                  const hourEnd = new Date(selectedDate); hourEnd.setHours(slot.hour24 + 1, 0, 0, 0);
+                                  const displayStart = item.startTime > hourStart ? item.startTime : hourStart;
+                                  const displayEnd = item.endTime < hourEnd ? item.endTime : hourEnd;
+                                  if (!isValidDate(displayStart) || !isValidDate(displayEnd)) {
+                                    return <span className="font-medium">--</span>;
+                                  }
+                                  return (
+                                    <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
+                                  );
+                                })()}
+                                {userPreferences?.show_duration_in_planner && (
+                                  <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </button>
-                    );
+                      );
+                    } else {
+                      // Render single task
+                      return (
+                        <button
+                          key={`task-${item.id}-${item.startTime.getTime()}`}
+                          onClick={() => handleItemClick(item)}
+                          className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50`}
+                          type="button"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div 
+                              className={`w-10 h-10 ${item.iconColor} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                            >
+                              {renderSafeIcon(item.icon)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-slate-400">
+                                <span className="truncate font-medium">{formatTimeRange(item.startTime, item.endTime)}</span>
+                                {userPreferences?.show_duration_in_planner && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{item.duration}</span>
+                                  </>
+                                )}
+                                {item.category && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="truncate">{item.category}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    }
                   }
 
-                  // Stack button for overlapping tasks
+                  // Stack button for overlapping tasks and calendar events
                   return (
                     <button
                       key={`stack-${slot.hour24}-${startTime.getTime()}`}
                       onClick={() => {
-                        setSelectedStack(items.map((t) => t.data as Task));
-                        setSelectedTimeSlot(formatTimeRange(startTime, endTime));
-                        setStackModalOpen(true);
+                        // Separate tasks and calendar events for the modal
+                        const tasks = items.filter(t => t.type === 'task').map(t => t.data as Task);
+                        const calendarEvents = items.filter(t => t.type === 'calendar').map(t => t.data);
+                        
+                        if (unit.hasCalendarEvents) {
+                          // Use the new overlap modal for mixed content
+                          setSelectedOverlap({
+                            tasks,
+                            calendarEvents,
+                            timeSlot: formatTimeRange(startTime, endTime),
+                            hasCalendarEvents: true
+                          });
+                          setOverlapModalOpen(true);
+                        } else {
+                          // Use existing modal for tasks only
+                          setSelectedStack(tasks);
+                          setSelectedTimeSlot(formatTimeRange(startTime, endTime));
+                          setStackModalOpen(true);
+                        }
                       }}
-                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-amber-500/30 hover:border-amber-500/50`}
+                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation ${
+                        unit.hasCalendarEvents 
+                          ? 'bg-red-800/40 hover:bg-red-800/60 border border-red-500/30 hover:border-red-500/50' 
+                          : 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 hover:border-amber-500/50'
+                      }`}
                       type="button"
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 bg-amber-500/20 rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
-                          <Clock className="w-4 h-4 text-amber-400" />
+                        <div className={`w-10 h-10 ${
+                          unit.hasCalendarEvents 
+                            ? 'bg-red-500/20 group-hover:scale-110' 
+                            : 'bg-amber-500/20 group-hover:scale-110'
+                        } rounded-full flex items-center justify-center flex-shrink-0 transition-transform`}>
+                          {unit.hasCalendarEvents ? (
+                            <Calendar className="w-4 h-4 text-red-400" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-400" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
-                            <h3 className="text-white font-medium truncate text-base">{items.length} overlapping activities</h3>
+                            <h3 className="text-white font-medium truncate text-base">
+                              {unit.hasCalendarEvents 
+                                ? `${items.length} overlapping events` 
+                                : `${items.length} overlapping activities`
+                              }
+                            </h3>
                           </div>
                           <div className="flex items-center gap-3 text-sm text-slate-400">
-                            <span className="truncate font-medium">{formatTimeRange(startTime, endTime)}</span>
+                            <span className="font-medium">{formatTimeRange(startTime, endTime)}</span>
                             <span>•</span>
-                            <span>{items.length} tasks</span>
+                            <div className="flex flex-col text-right">
+                              {unit.hasCalendarEvents ? (
+                                <>
+                                  <span>{items.filter(t => t.type === 'calendar').length} Calendar</span>
+                                  <span>{items.filter(t => t.type === 'task').length} Tasks</span>
+                                </>
+                              ) : (
+                                <span>{items.length} Tasks</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -930,6 +999,22 @@ function PlannerTimeline({
         onTaskOpen(activity);
       }}
       stackReason={selectedStack.length <= 1 ? 'single' : 'time_overlap'}
+    />
+    {/* Overlap Modal - handles mixed calendar/task overlaps */}
+    <OverlapModal
+      isOpen={overlapModalOpen}
+      onClose={() => setOverlapModalOpen(false)}
+      tasks={selectedOverlap?.tasks || []}
+      calendarEvents={selectedOverlap?.calendarEvents || []}
+      timeSlot={selectedOverlap?.timeSlot || ''}
+      onActivitySelect={(activity) => {
+        setOverlapModalOpen(false);
+        onTaskEdit?.(activity);
+      }}
+      onStartTimer={(activity) => {
+        setOverlapModalOpen(false);
+        onTaskOpen(activity);
+      }}
     />
     </>
   );
