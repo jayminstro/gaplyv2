@@ -265,7 +265,7 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-  const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }[]>([]);
+  const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }[]>([]);
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -306,7 +306,7 @@ function PlannerContent({
             id: e.id,
             start: startDate, 
             end: endDate, 
-            title: e.title || '', 
+            title: userPreferences?.show_device_calendar_titles ? (e.title || '') : undefined, // Respect the preference
             isAllDay: e.isAllDay || false 
           };
         });
