@@ -5,6 +5,7 @@ import { Task, TimeGap, UserPreferences } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { ActivityStackModal } from './ActivityStackModal';
 import { OverlapModal } from './OverlapModal';
+import { CalendarEventModal } from './CalendarEventModal';
 import { calendarService } from '../utils/calendar/index';
 
 interface TimelineItem {
@@ -84,6 +85,10 @@ function PlannerTimeline({
     timeSlot: string;
     hasCalendarEvents: boolean;
   } | null>(null);
+  
+  // Calendar event modal state
+  const [calendarEventModalOpen, setCalendarEventModalOpen] = useState(false);
+  const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<any>(null);
   
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
@@ -510,8 +515,10 @@ function PlannerTimeline({
       onTaskOpen(item.data as Task);
     } else if (item.type === 'gap') {
       onGapUtilize(item.data as TimeGap);
+    } else if (item.type === 'calendar') {
+      setSelectedCalendarEvent(item.data);
+      setCalendarEventModalOpen(true);
     }
-    // Calendar items are not clickable, so no action needed
   };
 
   return (
@@ -667,17 +674,19 @@ function PlannerTimeline({
                   if (items.length === 1) {
                     const item = items[0];
                     
-                    if (item.type === 'calendar') {
+                                        if (item.type === 'calendar') {
                       // Render single calendar event
                       if (!isValidDate(item.startTime) || !isValidDate(item.endTime)) {
                         return null;
                       }
                       return (
-                        <div
+                        <button
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
+                          onClick={() => handleItemClick(item)}
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation hover:bg-red-800/40 hover:border-red-500/50"
+                          type="button"
                         >
-                                                      <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
@@ -708,7 +717,7 @@ function PlannerTimeline({
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       );
                     } else {
                       // Render single task
@@ -1014,6 +1023,16 @@ function PlannerTimeline({
       onStartTimer={(activity) => {
         setOverlapModalOpen(false);
         onTaskOpen(activity);
+      }}
+    />
+    
+    {/* Calendar Event Modal - shows calendar event details */}
+    <CalendarEventModal
+      event={selectedCalendarEvent}
+      isOpen={calendarEventModalOpen}
+      onClose={() => {
+        setCalendarEventModalOpen(false);
+        setSelectedCalendarEvent(null);
       }}
     />
     </>
