@@ -1089,30 +1089,29 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                       disabled={!localPreferences.show_device_calendar_busy}
                     />
                   </div>
+                    <div className="flex items-center justify-between py-3">
 
-                  <div className="py-3">
-                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1">
                         <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
                         <div className="flex-1">
                           <div className="text-white text-sm font-medium">Open calendar events in</div>
+                          {!localPreferences.show_device_calendar_titles && (
+                            <div className="text-xs text-slate-500 mt-1">Enable event titles to choose how events open</div>
+                          )}
+
                         </div>
                       </div>
                       <ToggleGroup
                         type="single"
                         value={localPreferences.device_calendar_open_in || 'gaply'}
-                        onValueChange={(value) => updatePreference('device_calendar_open_in', value)}
+                        onValueChange={(value) => value && updatePreference('device_calendar_open_in', value)}
                         disabled={!localPreferences.show_device_calendar_titles}
                         className={!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}
                       >
-                        <ToggleGroupItem value="gaply" disabled={!localPreferences.show_device_calendar_titles} className="px-3 py-1 text-xs">Gaply (recommended)</ToggleGroupItem>
-                        <ToggleGroupItem value="calendar_app" disabled={!localPreferences.show_device_calendar_titles} className="px-3 py-1 text-xs">Calendar app</ToggleGroupItem>
+                        <ToggleGroupItem value="gaply" className="px-3 py-1 text-xs">Gaply (recommended)</ToggleGroupItem>
+                        <ToggleGroupItem value="calendar_app" className="px-3 py-1 text-xs">Calendar app</ToggleGroupItem>
                       </ToggleGroup>
                     </div>
-                    {!localPreferences.show_device_calendar_titles && (
-                      <div className="text-xs text-slate-500 mt-2">Enable event titles to choose how events open</div>
-                    )}
-                  </div>
 
                   <div className="flex items-center justify-between py-3">
                     <div className="flex items-center gap-3 flex-1">
