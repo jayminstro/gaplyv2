@@ -1089,8 +1089,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                       disabled={!localPreferences.show_device_calendar_busy}
                     />
                   </div>
-
                     <div className="flex items-center justify-between py-3">
+
                       <div className="flex items-center gap-3 flex-1">
                         <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
                         <div className="flex-1">
@@ -1098,6 +1098,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                           {!localPreferences.show_device_calendar_titles && (
                             <div className="text-xs text-slate-500 mt-1">Enable event titles to choose how events open</div>
                           )}
+
                         </div>
                       </div>
                       <ToggleGroup
