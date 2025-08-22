@@ -508,6 +508,7 @@ export class PreferenceManager {
             show_device_calendar_busy: (localStored as any).show_device_calendar_busy ?? false,
             show_device_calendar_titles: (localStored as any).show_device_calendar_titles ?? false,
             device_calendar_included_ids: (localStored as any).device_calendar_included_ids ?? [],
+            device_calendar_open_in: (localStored as any).device_calendar_open_in ?? 'gaply',
           } as UserPreferences;
         }
       } catch {}

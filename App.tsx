@@ -87,6 +87,7 @@ export default function App() {
         show_device_calendar_busy: (fallback.show_device_calendar_busy ?? pref.show_device_calendar_busy ?? false),
         show_device_calendar_titles: (fallback.show_device_calendar_titles ?? pref.show_device_calendar_titles ?? false),
         device_calendar_included_ids: includedIds,
+        device_calendar_open_in: (fallback.device_calendar_open_in ?? pref.device_calendar_open_in ?? 'gaply') as any,
       } as UserPreferences;
     } catch {
       return pref;

@@ -13,6 +13,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   show_device_calendar_busy: false,
   show_device_calendar_titles: false,
   device_calendar_included_ids: [],
+  device_calendar_open_in: 'gaply',
   // Calendar Busy Handling
   calendar_all_day_block_mode: 'workday',
   calendar_all_day_fixed_block_minutes: 30,

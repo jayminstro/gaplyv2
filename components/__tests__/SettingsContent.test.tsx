@@ -107,6 +107,7 @@ describe('SettingsContent device calendar toggle', () => {
     const stored = JSON.parse(localStorage.getItem('gaply_device_calendar_user1') || '{}');
     expect(stored.show_device_calendar_busy).toBe(false);
     expect(stored.show_device_calendar_titles).toBe(false);
+    expect(stored.device_calendar_open_in).toBe('gaply');
 
     const updatedPrefs = onUpdate.mock.calls[0][0] as UserPreferences;
     await act(async () => {
@@ -127,6 +128,7 @@ describe('SettingsContent device calendar toggle', () => {
     const storedAgain = JSON.parse(localStorage.getItem('gaply_device_calendar_user1') || '{}');
     expect(storedAgain.show_device_calendar_busy).toBe(false);
     expect(storedAgain.show_device_calendar_titles).toBe(false);
+    expect(storedAgain.device_calendar_open_in).toBe('gaply');
   });
 });
 
