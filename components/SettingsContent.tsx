@@ -327,21 +327,31 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
     }
   ];
 
-  const updatePreference = (key: string, value: any) => {
-    console.log('🔧 updatePreference called with:', key, value);
-    console.log('🔧 Before update, localPreferences[key]:', localPreferences[key as keyof UserPreferences]);
-    
-    const next = { ...localPreferences, [key]: value } as UserPreferences;
-    console.log('🔧 Next preferences object:', next);
-    
-    setLocalPreferences(next);
-    
-    const isLocalOnly = key === 'show_device_calendar_busy' || key === 'show_device_calendar_titles' || key === 'device_calendar_included_ids';
+  const LOCAL_ONLY_KEYS = new Set([
+    'show_device_calendar_busy',
+    'show_device_calendar_titles',
+    'device_calendar_included_ids'
+  ]);
+
+  const updatePreferences = (patch: Partial<UserPreferences>) => {
+    let next: UserPreferences;
+    setLocalPreferences(prev => {
+      next = { ...prev, ...patch } as UserPreferences;
+      return next;
+    });
+
+    const keys = Object.keys(patch);
+    const isLocalOnly = keys.every(k => LOCAL_ONLY_KEYS.has(k));
     if (isLocalOnly) {
-      console.log('🔧 This is a local-only preference, updating immediately...');
       // Immediately propagate local-only changes to parent and persist locally
       onPreferencesUpdate?.(next);
-      try { (async () => { if (localFirstService && (localFirstService as any)?.savePreferences) { await localFirstService.savePreferences(next); } })(); } catch {}
+      try {
+        (async () => {
+          if (localFirstService && (localFirstService as any)?.savePreferences) {
+            await localFirstService.savePreferences(next);
+          }
+        })();
+      } catch {}
       // Also persist a lightweight fallback in localStorage to survive early restarts
       try {
         const userId = session?.user?.id || 'local-user';
@@ -351,14 +361,17 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           device_calendar_included_ids: next.device_calendar_included_ids ?? []
         };
         localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
-        console.log('🔧 Saved to localStorage:', devicePrefs);
       } catch {}
-      console.log('🔧 Local-only preference updated, returning early');
       return; // Avoid triggering autosave debounce for local-only keys
     }
+
     if (PREF_AUTOSAVE && !suppressAutosaveRef.current) {
       requestAutosave();
     }
+  };
+
+  const updatePreference = (key: string, value: any) => {
+    updatePreferences({ [key]: value } as Partial<UserPreferences>);
   };
 
   // Merge server canonical with local-only fields that are not stored remotely
@@ -478,8 +491,10 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
     } else {
       // Turning OFF: disable titles too
       console.log('🔧 Disabling device calendar busy...');
-      updatePreference('show_device_calendar_busy', false);
-      updatePreference('show_device_calendar_titles', false);
+      updatePreferences({
+        show_device_calendar_busy: false,
+        show_device_calendar_titles: false
+      });
       // Persist immediately when manual mode; autosave handles otherwise
       if (!PREF_AUTOSAVE) {
         setTimeout(() => { void savePreferences(); }, 0);
