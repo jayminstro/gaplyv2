@@ -32,7 +32,7 @@ interface PlannerTimelineProps {
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
   hasWorkingDays?: boolean;
-  calendarEvents?: Array<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }>;
+  calendarEvents?: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
 }
 
 function PlannerTimeline({ 
@@ -80,7 +80,7 @@ function PlannerTimeline({
   const [overlapModalOpen, setOverlapModalOpen] = useState(false);
   const [selectedOverlap, setSelectedOverlap] = useState<{
     tasks: Task[];
-    calendarEvents: Array<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }>;
+    calendarEvents: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
     timeSlot: string;
     hasCalendarEvents: boolean;
   } | null>(null);
@@ -677,13 +677,13 @@ function PlannerTimeline({
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                           className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
                         >
-                          <div className="flex items-center gap-3">
+                                                      <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                                <h3 className="text-white font-medium truncate text-base">{item.title || 'Busy'}</h3>
                                 <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
                                   Calendar
                                 </span>

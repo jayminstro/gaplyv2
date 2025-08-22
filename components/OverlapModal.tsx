@@ -7,7 +7,7 @@ interface OverlapModalProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: Task[];
-  calendarEvents: Array<{ id: string; start: Date; end: Date; title: string; isAllDay: boolean }>;
+  calendarEvents: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
   timeSlot: string;
   onActivitySelect: (activity: Task) => void;
   onStartTimer: (activity: Task) => void;
