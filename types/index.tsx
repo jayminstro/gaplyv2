@@ -71,6 +71,7 @@ export interface UserPreferences {
   show_device_calendar_busy?: boolean;           // default false
   show_device_calendar_titles?: boolean;         // default false
   device_calendar_included_ids?: string[];       // default []
+  device_calendar_open_in?: 'gaply' | 'calendar_app';
   calendar_all_day_block_mode?: 'workday' | 'window' | 'ignore';
   calendar_all_day_fixed_block_minutes?: number;
   calendar_all_day_fixed_block_start?: 'start' | 'middle' | 'end';

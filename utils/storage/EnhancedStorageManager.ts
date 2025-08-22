@@ -695,6 +695,7 @@ export class EnhancedStorageManager {
           device_calendar_included_ids: (Array.isArray(fb.device_calendar_included_ids)
             ? fb.device_calendar_included_ids
             : (prefs.device_calendar_included_ids ?? [])) as any,
+          device_calendar_open_in: (fb.device_calendar_open_in ?? prefs.device_calendar_open_in ?? 'gaply') as any,
         } as UserPreferences;
         // Persist merged locally if anything changed
         if (JSON.stringify(merged) !== JSON.stringify(prefs)) {

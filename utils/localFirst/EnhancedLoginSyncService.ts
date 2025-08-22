@@ -384,6 +384,7 @@ export class EnhancedLoginSyncService {
         let fallbackBusy = false;
         let fallbackTitles = false;
         let fallbackIds: string[] = [];
+        let fallbackOpenIn: 'gaply' | 'calendar_app' = 'gaply';
         try {
           const raw = localStorage.getItem(`gaply_device_calendar_${this.userId || 'local-user'}`);
           if (raw) {
@@ -391,6 +392,7 @@ export class EnhancedLoginSyncService {
             fallbackBusy = !!fb.show_device_calendar_busy;
             fallbackTitles = !!fb.show_device_calendar_titles;
             fallbackIds = Array.isArray(fb.device_calendar_included_ids) ? fb.device_calendar_included_ids : [];
+            fallbackOpenIn = fb.device_calendar_open_in === 'calendar_app' ? 'calendar_app' : 'gaply';
           }
         } catch {}
 
@@ -406,6 +408,9 @@ export class EnhancedLoginSyncService {
             Array.isArray(localPreferences?.device_calendar_included_ids)
               ? (localPreferences!.device_calendar_included_ids as any)
               : (fallbackIds as any)
+          ) as any,
+          device_calendar_open_in: (
+            (localPreferences?.device_calendar_open_in as any) ?? (fallbackOpenIn as any) ?? 'gaply'
           ) as any,
         } as UserPreferences;
 
