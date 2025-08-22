@@ -33,6 +33,7 @@ import { DebugPanel } from './DebugPanel';
 import { WorkingDaysSelector } from './WorkingDaysSelector';
 import { ToggleGroup as CategoryToggleGroup } from './ToggleGroup';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { cn } from './ui/utils';
 import { WidgetShare } from './WidgetShare';
 import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
 import { ensurePermissionOrThrow, loadCalendars as loadDeviceCalendars, getPermissionStatus as getDevicePermissionStatus, openIOSSettings } from '../src/utils/calendarSource.ios';
@@ -1089,29 +1090,42 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                       disabled={!localPreferences.show_device_calendar_busy}
                     />
                   </div>
-                    <div className="flex items-center justify-between py-3">
-
-                      <div className="flex items-center gap-3 flex-1">
-                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                        <div className="flex-1">
-                          <div className="text-white text-sm font-medium">Open calendar events in</div>
-                          {!localPreferences.show_device_calendar_titles && (
-                            <div className="text-xs text-slate-500 mt-1">Enable event titles to choose how events open</div>
-                          )}
-
-                        </div>
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Open calendar events in</div>
+                        {!localPreferences.show_device_calendar_titles && (
+                          <div className="text-xs text-slate-500 mt-1">Enable event titles to choose how events open</div>
+                        )}
                       </div>
-                      <ToggleGroup
-                        type="single"
-                        value={localPreferences.device_calendar_open_in || 'gaply'}
-                        onValueChange={(value) => value && updatePreference('device_calendar_open_in', value)}
-                        disabled={!localPreferences.show_device_calendar_titles}
-                        className={!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}
-                      >
-                        <ToggleGroupItem value="gaply" className="px-3 py-1 text-xs">Gaply (recommended)</ToggleGroupItem>
-                        <ToggleGroupItem value="calendar_app" className="px-3 py-1 text-xs">Calendar app</ToggleGroupItem>
-                      </ToggleGroup>
                     </div>
+                    <ToggleGroup
+                      type="single"
+                      value={localPreferences.device_calendar_open_in || 'gaply'}
+                      onValueChange={(value) => value && updatePreference('device_calendar_open_in', value)}
+                      disabled={!localPreferences.show_device_calendar_titles}
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        !localPreferences.show_device_calendar_titles ? 'opacity-50' : '',
+                        'bg-slate-800/50 border-slate-700 hover:bg-slate-700/50'
+                      )}
+                    >
+                      <ToggleGroupItem 
+                        value="gaply" 
+                        className="px-4 py-2 text-xs font-medium text-slate-300 border-r border-slate-700 first:rounded-l-md last:rounded-r-md last:border-r-0 min-w-[85px] text-center [&[data-state=on]]:bg-blue-600 [&[data-state=on]]:border-blue-600 [&[data-state=on]]:text-white"
+                      >
+                        Gaply
+                      </ToggleGroupItem>
+                      <ToggleGroupItem 
+                        value="calendar_app" 
+                        className="px-4 py-2 text-xs font-medium text-slate-300 border-r border-slate-700 first:rounded-l-md last:rounded-r-md last:border-r-0 min-w-[85px] text-center [&[data-state=on]]:bg-blue-600 [&[data-state=on]]:border-blue-600 [&[data-state=on]]:text-white"
+                      >
+                        Calendar
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
 
                   <div className="flex items-center justify-between py-3">
                     <div className="flex items-center gap-3 flex-1">

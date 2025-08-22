@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Task, TimeGap } from '../types/index';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface ScheduleTaskOptions {
   task: Task;
