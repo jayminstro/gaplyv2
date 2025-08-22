@@ -31,7 +31,8 @@ import { EnhancedStorageManager } from '../utils/storage/EnhancedStorageManager'
 import { CalendarSync } from './CalendarSync';
 import { DebugPanel } from './DebugPanel';
 import { WorkingDaysSelector } from './WorkingDaysSelector';
-import { ToggleGroup } from './ToggleGroup';
+import { ToggleGroup as CategoryToggleGroup } from './ToggleGroup';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { WidgetShare } from './WidgetShare';
 import { DeviceCalendarPickerModal } from './DeviceCalendarPickerModal';
 import { ensurePermissionOrThrow, loadCalendars as loadDeviceCalendars, getPermissionStatus as getDevicePermissionStatus, openIOSSettings } from '../src/utils/calendarSource.ios';
@@ -1082,12 +1083,34 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                         <div className="text-slate-400 text-xs">If off, events appear as 'Busy'</div>
                       </div>
                     </div>
-                    <Switch 
-                      checked={localPreferences.show_device_calendar_titles || false} 
+                    <Switch
+                      checked={localPreferences.show_device_calendar_titles || false}
                       onCheckedChange={(checked) => updatePreference('show_device_calendar_titles', checked)}
                       disabled={!localPreferences.show_device_calendar_busy}
                     />
                   </div>
+
+                    <div className="flex items-center justify-between py-3">
+                      <div className="flex items-center gap-3 flex-1">
+                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        <div className="flex-1">
+                          <div className="text-white text-sm font-medium">Open calendar events in</div>
+                          {!localPreferences.show_device_calendar_titles && (
+                            <div className="text-xs text-slate-500 mt-1">Enable event titles to choose how events open</div>
+                          )}
+                        </div>
+                      </div>
+                      <ToggleGroup
+                        type="single"
+                        value={localPreferences.device_calendar_open_in || 'gaply'}
+                        onValueChange={(value) => value && updatePreference('device_calendar_open_in', value)}
+                        disabled={!localPreferences.show_device_calendar_titles}
+                        className={!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}
+                      >
+                        <ToggleGroupItem value="gaply" className="px-3 py-1 text-xs">Gaply (recommended)</ToggleGroupItem>
+                        <ToggleGroupItem value="calendar_app" className="px-3 py-1 text-xs">Calendar app</ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
 
                   <div className="flex items-center justify-between py-3">
                     <div className="flex items-center gap-3 flex-1">
@@ -1237,7 +1260,7 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
               </div>
 
               <div className="py-3">
-                <ToggleGroup
+                <CategoryToggleGroup
                   title="Preferred Categories"
                   icon={BookOpen}
                   options={['Personal', 'Work', 'Health', 'Learning', 'Creative', 'Social']}
