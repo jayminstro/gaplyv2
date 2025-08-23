@@ -6,17 +6,31 @@ import { format } from 'date-fns';
 
 interface CalendarEvent {
   id: string;
-  start: Date;
-  end: Date;
+  calendarId: string;
   title: string;
-  isAllDay?: boolean;
-  // Additional fields that might be available from Google Calendar or other sources
-  organizer?: string;
+  start: number; // timestamp in milliseconds
+  end: number;   // timestamp in milliseconds
+  isAllDay: boolean;
+  // Rich event properties
+  organizer?: {
+    name?: string;
+    email?: string;
+  };
   attendees?: Array<{
     email: string;
     name?: string;
     responseStatus?: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+    isOrganizer?: boolean;
   }>;
+  location?: string;
+  notes?: string;
+  url?: string;
+  transparency?: 'opaque' | 'transparent';
+  status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  recurrenceRules?: string[];
+  lastModifiedDate?: number; // timestamp in milliseconds
+  creationDate?: number; // timestamp in milliseconds
+  // Conference data
   conferenceData?: {
     entryPoints?: Array<{
       uri: string;
@@ -24,8 +38,6 @@ interface CalendarEvent {
       label?: string;
     }>;
   };
-  description?: string;
-  location?: string;
 }
 
 interface CalendarEventModalProps {
@@ -39,8 +51,8 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
 
   if (!event) return null;
 
-  const startDate = event.start;
-  const endDate = event.end;
+  const startDate = new Date(event.start);
+  const endDate = new Date(event.end);
   const duration = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60)); // minutes
   
   // Handle minimal event data (like from busy overlays)
@@ -123,7 +135,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
               <User className="w-5 h-5 text-slate-400" />
               <div>
                 <div className="text-sm text-slate-400">Organizer</div>
-                <div className="font-medium">{event.organizer}</div>
+                <div className="font-medium">{event.organizer.name || event.organizer.email}</div>
               </div>
             </div>
           )}
@@ -158,7 +170,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
           )}
 
           {/* Notes Preview */}
-          {event.description && (
+          {event.notes && (
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-slate-300">
                 <FileText className="w-5 h-5 text-slate-400" />
@@ -180,7 +192,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
               {notesExpanded && (
                 <div className="ml-8 p-4 bg-slate-800/30 rounded-xl border border-slate-700/30">
                   <p className="text-slate-300 text-sm whitespace-pre-wrap">
-                    {event.description}
+                    {event.notes}
                   </p>
                 </div>
               )}
@@ -188,7 +200,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
               {!notesExpanded && (
                 <div className="ml-8">
                   <p className="text-slate-400 text-sm line-clamp-2">
-                    {event.description}
+                    {event.notes}
                   </p>
                 </div>
               )}
@@ -200,7 +212,7 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
             <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-700/30">
               <p className="text-slate-400 text-sm text-center">
                 This is a busy time block from your calendar. 
-                {event.organizer && ` Organized by ${event.organizer}.`}
+                {event.organizer && ` Organized by ${event.organizer.name || event.organizer.email}.`}
               </p>
             </div>
           )}

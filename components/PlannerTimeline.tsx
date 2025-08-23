@@ -205,14 +205,46 @@ function PlannerTimeline({
     // Add calendar events as timeline items
     if (userPreferences?.show_device_calendar_busy) {
       console.log(`🔧 Timeline Debug - Calendar events prop:`, calendarEvents);
+      console.log(`🔧 Timeline Debug - Calendar events detailed:`, calendarEvents?.map(ev => ({
+        id: ev.id,
+        title: ev.title,
+        start: ev.start,
+        end: ev.end,
+        organizer: ev.organizer,
+        attendees: ev.attendees,
+        location: ev.location,
+        notes: ev.notes,
+        url: ev.url,
+        transparency: ev.transparency,
+        status: ev.status,
+        conferenceData: ev.conferenceData
+      })));
       console.log(`🔧 Timeline Debug - Selected date:`, selectedDate.toISOString());
       
       // Combine both sources: direct prop events and busy overlays as fallback
-      const candidates: Array<{ id: string; start: Date; end: Date; title: string }>= [];
+      const candidates: Array<{ id: string; start: Date; end: Date; title: string; richData?: any }>= [];
       if (calendarEvents && calendarEvents.length > 0) {
         console.log(`🔧 Timeline Debug - Processing ${calendarEvents.length} calendar events from prop`);
         for (const ev of calendarEvents) {
-          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '' });
+          candidates.push({ 
+            id: ev.id, 
+            start: ev.start, 
+            end: ev.end, 
+            title: ev.title || '',
+            richData: {
+              organizer: ev.organizer,
+              attendees: ev.attendees,
+              location: ev.location,
+              notes: ev.notes,
+              url: ev.url,
+              transparency: ev.transparency,
+              status: ev.status,
+              recurrenceRules: ev.recurrenceRules,
+              lastModifiedDate: ev.lastModifiedDate,
+              creationDate: ev.creationDate,
+              conferenceData: ev.conferenceData
+            }
+          });
         }
       }
       if (busyOverlays && busyOverlays.length > 0) {
@@ -232,22 +264,23 @@ function PlannerTimeline({
         console.log(`🔍 Timeline Debug - Processing ${filtered.length} calendar events (combined sources)`);
       }
 
-      filtered.forEach((event) => {
-        try {
-          // Only include events on the selected date (overlap)
-          const dayStart = new Date(selectedDate); dayStart.setHours(0,0,0,0);
-          const dayEnd = new Date(selectedDate); dayEnd.setHours(23,59,59,999);
-          
-          console.log(`🔧 Timeline Debug - Event "${event.title}": ${event.start.toISOString()} to ${event.end.toISOString()}`);
-          console.log(`🔧 Timeline Debug - Day range: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`);
-          console.log(`🔧 Timeline Debug - Overlap check: start <= dayEnd? ${event.start <= dayEnd}, end >= dayStart? ${event.end >= dayStart}`);
-          
-          if (!(event.start <= dayEnd && event.end >= dayStart)) {
-            console.log(`🔧 Timeline Debug - Event filtered out due to date range`);
-            return;
-          }
-          
-          console.log(`🔧 Timeline Debug - Event "${event.title}" passed date filter`);
+              filtered.forEach((event) => {
+          try {
+            // Only include events on the selected date (overlap)
+            const dayStart = new Date(selectedDate); dayStart.setHours(0,0,0,0);
+            const dayEnd = new Date(selectedDate); dayEnd.setHours(23,59,59,999);
+            
+            console.log(`🔧 Timeline Debug - Event "${event.title}": ${event.start.toISOString()} to ${event.end.toISOString()}`);
+            console.log(`🔧 Timeline Debug - Event rich data:`, event.richData);
+            console.log(`🔧 Timeline Debug - Day range: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`);
+            console.log(`🔧 Timeline Debug - Overlap check: start <= dayEnd? ${event.start <= dayEnd}, end >= dayStart? ${event.end >= dayStart}`);
+            
+            if (!(event.start <= dayEnd && event.end >= dayStart)) {
+              console.log(`🔧 Timeline Debug - Event filtered out due to date range`);
+              return;
+            }
+            
+            console.log(`🔧 Timeline Debug - Event "${event.title}" passed date filter`);
           // Split into per-hour segments to avoid cross-slot rendering issues
           const segmentStart = event.start < dayStart ? dayStart : event.start;
           const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
@@ -272,7 +305,25 @@ function PlannerTimeline({
               duration: `${durationMinutes} min`,
               icon: <Calendar className="w-4 h-4 text-red-400" />,
               iconColor: 'bg-red-500/20',
-              data: { id: event.id, start: segStart, end: segEnd, title: event.title || '', isAllDay: false },
+              data: {
+                id: event.id,
+                start: segStart,
+                end: segEnd,
+                title: event.title || '',
+                isAllDay: false,
+                // Use the enhanced calendar data structure from richData
+                organizer: event.richData?.organizer,
+                attendees: event.richData?.attendees,
+                location: event.richData?.location,
+                notes: event.richData?.notes,
+                url: event.richData?.url,
+                transparency: event.richData?.transparency,
+                status: event.richData?.status,
+                recurrenceRules: event.richData?.recurrenceRules,
+                lastModifiedDate: event.richData?.lastModifiedDate,
+                creationDate: event.richData?.creationDate,
+                conferenceData: event.richData?.conferenceData
+              },
               gapSource: 'calendar'
             });
             console.log(`✅ Added calendar segment: ${format(segStart, 'HH:mm')}-${format(segEnd, 'HH:mm')} (${durationMinutes} min)`);
@@ -516,6 +567,7 @@ function PlannerTimeline({
     } else if (item.type === 'gap') {
       onGapUtilize(item.data as TimeGap);
     } else if (item.type === 'calendar') {
+      console.log(`🔧 Calendar Event Modal Debug - Opening modal with data:`, item.data);
       setSelectedCalendarEvent(item.data);
       setCalendarEventModalOpen(true);
     }

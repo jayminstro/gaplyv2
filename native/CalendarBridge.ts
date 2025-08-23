@@ -19,6 +19,34 @@ export interface CalendarEvent {
   start: number; // timestamp in milliseconds
   end: number;   // timestamp in milliseconds
   isAllDay: boolean;
+  // Rich event properties
+  organizer?: {
+    name?: string;
+    email?: string;
+  };
+  attendees?: Array<{
+    email: string;
+    name?: string;
+    responseStatus?: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+    isOrganizer?: boolean;
+  }>;
+  location?: string;
+  notes?: string;
+  url?: string;
+  transparency?: 'opaque' | 'transparent';
+  status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  recurrenceRules?: string[];
+  lastModifiedDate?: number; // timestamp in milliseconds
+  creationDate?: number; // timestamp in milliseconds
+  // Conference data
+  conferenceData?: {
+    entryPoints?: Array<{
+      uri: string;
+      entryPointType: 'video' | 'phone' | 'sip' | 'more';
+      label?: string;
+    }>;
+  };
+  // Note: Conference data availability varies by iOS version and calendar type
 }
 
 export interface CalendarBridgeInterface {

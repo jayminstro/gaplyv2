@@ -265,7 +265,38 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-  const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }[]>([]);
+  const [deviceBusy, setDeviceBusy] = useState<{ 
+    id: string; 
+    start: Date; 
+    end: Date; 
+    title: string | undefined; 
+    isAllDay: boolean;
+    organizer?: {
+      name?: string;
+      email?: string;
+    };
+    attendees?: Array<{ 
+      email: string; 
+      name?: string; 
+      responseStatus?: string;
+      isOrganizer?: boolean;
+    }>;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: string;
+    status?: string;
+    recurrenceRules?: string[];
+    lastModifiedDate?: number;
+    creationDate?: number;
+    conferenceData?: { 
+      entryPoints?: Array<{ 
+        uri: string; 
+        entryPointType: string; 
+        label?: string 
+      }> 
+    };
+  }[]>([]);
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -301,13 +332,36 @@ function PlannerContent({
           const endDate = new Date(e.end);
           
           console.log(`🔧 Processing event: ${e.title} (id: ${e.id}) from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+          console.log(`🔧 Raw event data:`, e); // Added for debugging
+          console.log(`🔧 Enhanced event data:`, {
+            organizer: e.organizer,
+            attendees: e.attendees,
+            location: e.location,
+            notes: e.notes,
+            url: e.url,
+            transparency: e.transparency,
+            status: e.status,
+            conferenceData: e.conferenceData
+          });
           
           return { 
             id: e.id,
             start: startDate, 
             end: endDate, 
-            title: userPreferences?.show_device_calendar_titles ? (e.title || '') : undefined, // Respect the preference
-            isAllDay: e.isAllDay || false 
+            title: userPreferences?.show_device_calendar_titles ? (e.title || '') : undefined,
+            isAllDay: e.isAllDay || false,
+            // Map all the rich calendar data
+            organizer: e.organizer,
+            attendees: e.attendees,
+            location: e.location,
+            notes: e.notes,
+            url: e.url,
+            transparency: e.transparency,
+            status: e.status,
+            recurrenceRules: e.recurrenceRules,
+            lastModifiedDate: e.lastModifiedDate,
+            creationDate: e.creationDate,
+            conferenceData: e.conferenceData
           };
         });
         
