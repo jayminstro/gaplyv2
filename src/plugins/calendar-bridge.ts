@@ -24,6 +24,7 @@ export interface CalendarBridgePlugin {
   getAuthorizationStatus(): Promise<{ status: string }>;
   getCalendars(): Promise<{ calendars: CalendarInfo[] }>;
   getEvents(opts: { start: string; end: string; calendarIds: string[] }): Promise<{ events: NativeEvent[] }>;
+  openEventInCalendar(opts: { eventId: string }): Promise<{ success: boolean; method: string }>;
   openSettings(): Promise<void>;
   addListener(eventName: 'eventStoreChanged', listenerFunc: () => void): Promise<{ remove: () => void }>;
   ping(): Promise<{ ok: boolean }>;

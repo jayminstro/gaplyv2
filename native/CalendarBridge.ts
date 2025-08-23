@@ -53,6 +53,7 @@ export interface CalendarBridgeInterface {
   requestPermission(): Promise<CalendarPermissionStatus>;
   getCalendars(): Promise<{ calendars: Calendar[] }>;
   getEvents(opts: { start: string; end: string; calendarIds?: string[] }): Promise<{ events: CalendarEvent[] }>;
+  openEventInCalendar(opts: { eventId: string }): Promise<{ success: boolean; method: string }>;
   openSettings(): Promise<void>;
 }
 

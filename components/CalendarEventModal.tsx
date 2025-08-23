@@ -48,6 +48,7 @@ interface CalendarEventModalProps {
 
 export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModalProps) {
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [isOpeningCalendar, setIsOpeningCalendar] = useState(false);
 
   if (!event) return null;
 
@@ -85,11 +86,33 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
     ep.entryPointType === 'video'
   );
 
-  const handleOpenInCalendar = () => {
-    // This would open the event in the device's default calendar app
-    // For now, we'll just close the modal and could implement this later
-    console.log('Opening calendar event in device calendar:', event.id);
-    onClose();
+  const handleOpenInCalendar = async () => {
+    try {
+      setIsOpeningCalendar(true);
+      console.log('Opening calendar event in device calendar:', event.id);
+      
+      // Import the CalendarBridge dynamically to avoid issues
+      const { CalendarBridge } = await import('../src/plugins/calendar-bridge');
+      
+      if (CalendarBridge) {
+        const result = await CalendarBridge.openEventInCalendar({ eventId: event.id });
+        console.log('Calendar event opened successfully:', result);
+        
+        // Close the modal after opening the calendar
+        setTimeout(() => {
+          onClose();
+        }, 500); // Small delay to ensure the calendar app opens
+      } else {
+        console.log('CalendarBridge not available, falling back to basic behavior');
+        onClose();
+      }
+    } catch (error) {
+      console.error('Error opening calendar event:', error);
+      // Fallback: just close the modal
+      onClose();
+    } finally {
+      setIsOpeningCalendar(false);
+    }
   };
 
   return (
@@ -235,10 +258,20 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
         <div className="px-6 py-4 border-t border-slate-700/50">
           <Button
             onClick={handleOpenInCalendar}
-            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl h-11 shadow-lg"
+            disabled={isOpeningCalendar}
+            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl h-11 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <ExternalLink className="w-4 h-4 mr-2" />
-            Open in Calendar
+            {isOpeningCalendar ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                Opening...
+              </>
+            ) : (
+              <>
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open in Calendar
+              </>
+            )}
           </Button>
         </div>
       </DialogContent>
