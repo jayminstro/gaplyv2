@@ -811,19 +811,43 @@ function PlannerContent({
               </button>
             </div>
           ) : (
-          <div className="flex flex-wrap items-center gap-3 pb-4 px-8">
+          <div
+            className="flex items-center gap-3 overflow-x-auto ios-scroll android-scroll pb-4 px-8" 
+            style={{ 
+              scrollbarWidth: 'none', 
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+              scrollSnapType: 'x mandatory'
+            }}
+            ref={(el) => {
+              // Auto-scroll to today on mount
+              if (el && !el.dataset.scrolled) {
+                const today = startOfDay(new Date());
+                const index = dateTabs.findIndex(tab => isSameDay(tab.date, today));
+                const targetChild = index >= 0 ? (el.children[index] as HTMLElement) : (el.children[0] as HTMLElement);
+                if (targetChild) {
+                  const containerWidth = el.offsetWidth;
+                  const buttonWidth = targetChild.offsetWidth;
+                  const scrollLeft = targetChild.offsetLeft - (containerWidth / 2) + (buttonWidth / 2);
+                  el.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+                }
+                el.dataset.scrolled = 'true';
+              }
+            }}
+          >
             {dateTabs.map((tab) => (
               <button
                 key={tab.date.toISOString()}
                 onClick={() => setSelectedDate(tab.date)}
                 className={`
-                  px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium
+                  px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation flex-shrink-0
                   ${isSameDay(selectedDate, tab.date)
                     ? 'bg-blue-600 text-white shadow-lg scale-105'
                     : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 active:bg-slate-600/50'
                   }
                   ${tab.isToday ? 'ring-2 ring-blue-400/30' : ''}
                 `}
+                style={{ scrollSnapAlign: 'center' }}
                 type="button"
               >
                 {tab.label}
@@ -855,7 +879,7 @@ function PlannerContent({
                 setSelectedDate(targetDate);
                 setTimeout(scrollToCurrentTime, 150);
               }}
-              className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium border border-slate-600/30 hover:border-slate-500/50"
+              className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium min-w-fit touch-manipulation flex-shrink-0 border border-slate-600/30 hover:border-slate-500/50"
               type="button"
               title="Jump to today and current time"
             >

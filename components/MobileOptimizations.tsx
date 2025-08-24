@@ -110,11 +110,13 @@ export function MobileOptimizations() {
         -webkit-text-size-adjust: 100%;
         -ms-text-size-adjust: 100%;
         height: 100%;
+        overflow-x: hidden;
       }
       
       /* Enhanced body styling for mobile */
       body {
         height: 100%;
+        overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: none;
         overscroll-behavior-y: none;
@@ -123,6 +125,7 @@ export function MobileOptimizations() {
       /* Root container styling */
       #root {
         height: 100%;
+        overflow-x: hidden;
       }
       
       /* Better touch targets for mobile */

@@ -261,6 +261,27 @@
 /* Ensure smooth scrolling for touch devices */
 body, html {
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbars for any scrollable containers */
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
+  display: none;
+}
+
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 /* Enhanced mobile touch scrolling */
@@ -382,7 +403,7 @@ body, html {
     left: 16px !important;
     right: 16px !important;
     transform: none !important;
-    width: calc(100% - 32px) !important;
+    width: calc(100vw - 32px) !important;
   }
   
   .ios-toast {
