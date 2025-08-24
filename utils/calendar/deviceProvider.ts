@@ -105,6 +105,24 @@ export class DeviceCalendarProvider {
     });
     
     const title = preferences.show_device_calendar_titles ? nativeEvent.title : undefined;
+    // Map the new transparency values to the expected format
+    let transparency: 'busy' | 'free' | 'oof' | 'tentative' | undefined;
+    if (nativeEvent.transparency === 'opaque') {
+      transparency = 'busy';
+    } else if (nativeEvent.transparency === 'transparent') {
+      transparency = 'free';
+    }
+    
+    // Map the new status values to the expected format
+    let status: 'confirmed' | 'tentative' | 'cancelled' | undefined;
+    if (nativeEvent.status === 'confirmed') {
+      status = 'confirmed';
+    } else if (nativeEvent.status === 'tentative') {
+      status = 'tentative';
+    } else if (nativeEvent.status === 'cancelled') {
+      status = 'cancelled';
+    }
+    
     const block: CalendarBusyBlock = {
       date,
       start_time,
@@ -113,8 +131,8 @@ export class DeviceCalendarProvider {
       calendarId: nativeEvent.calendarId,
       title,
       isAllDay: nativeEvent.isAllDay,
-      transparency: nativeEvent.transparency,
-      status: nativeEvent.status,
+      transparency,
+      status,
       lastSyncedAt: new Date().toISOString()
     };
     
