@@ -89,8 +89,8 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
       {/* Background actions */}
       <div className="absolute inset-0 flex">
         {/* Complete action (left side) */}
-        <motion.div 
-          className="flex items-center justify-center bg-green-500 w-[84px] shrink-0"
+        <motion.div
+          className="flex items-center justify-center bg-green-500 basis-20"
           style={{ opacity: completeOpacity }}
           onClick={(e) => {
             // Clicking the background (not the button) should close actions
@@ -113,8 +113,8 @@ export function TaskTile({ task, onEdit, onTimer, onComplete, onDelete, onSchedu
         <div className="flex-1" />
         
         {/* Delete action (right side) */}
-        <motion.div 
-          className="flex items-center justify-center bg-red-500 w-[84px] shrink-0"
+        <motion.div
+          className="flex items-center justify-center bg-red-500 basis-20"
           style={{ opacity: deleteOpacity }}
           onClick={(e) => {
             // Clicking the background (not the button) should close actions

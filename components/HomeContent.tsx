@@ -111,7 +111,7 @@ export function HomeContent({
             <ChevronRight className="w-5 h-5" />
           </div>
           
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          <div className="flex flex-wrap gap-3 pb-2">
             {(suggestions || []).map((suggestion) => (
               <div 
                 key={suggestion.id}
