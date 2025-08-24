@@ -15,6 +15,20 @@ export class GapsAPI {
   // Local-only implementation: no server calls for gaps. Gaps are derived from tasks + preferences.
 
   /**
+   * Update calendar service initialization status when gaps are successfully saved
+   */
+  private static updateCalendarInitializationStatus(): void {
+    try {
+      // Access the calendar service instance and update its initialization status
+      if (calendarService && typeof calendarService.updateInitializationStatus === 'function') {
+        calendarService.updateInitializationStatus();
+      }
+    } catch (error) {
+      console.log('🚀 Could not update calendar initialization status:', error);
+    }
+  }
+
+  /**
    * Check if we should use local fallback mode
    */
   // Compatibility shim (no longer used)
@@ -24,6 +38,7 @@ export class GapsAPI {
    * Get gaps within the 14-day rolling window
    */
   static async getGapsInRollingWindow(_accessToken: string, storageManager?: any): Promise<TimeGap[]> {
+    const startTime = performance.now();
     const { window_start, window_end } = GapLogic.calculateRollingWindow();
     console.log(`📅 Computing gaps locally for rolling window: ${window_start} to ${window_end}`);
     const startDate = new Date(window_start);
@@ -54,20 +69,67 @@ export class GapsAPI {
 
     const normalizedWorkingDays = normalizeWorkingDays(preferences.calendar_working_days);
     const out: TimeGap[] = [];
+    
+    // Progressive loading: Load current day first, then others without calendar integration
+    const today = new Date().toISOString().split('T')[0];
+    let currentDayProcessed = false;
+    
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
       const dateStr = format(d, 'yyyy-MM-dd');
       const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' });
       if (!normalizedWorkingDays.includes(dayOfWeek)) continue;
+      
       const dateTasks = tasks.filter((t: any) => t.dueDate === dateStr);
       let gaps: TimeGap[];
-      if (preferences.show_device_calendar_busy) {
-        gaps = await calendarService.getAvailableGaps(dateStr, preferences, dateTasks, 'local-user');
+      
+      // Only integrate calendar for current day on initial load
+      if (preferences.show_device_calendar_busy && dateStr === today && !currentDayProcessed) {
+        // 🚀 SAFEGUARD: Prevent calendar calls during app initialization
+        const hasExistingGaps = localStorage.getItem(`gaply_gaps_${today}`);
+        let isInitializationMode = !hasExistingGaps || hasExistingGaps === '[]' || hasExistingGaps === 'null';
+        
+        // Additional check: parse JSON and verify if there are actual gaps
+        if (!isInitializationMode && hasExistingGaps) {
+          try {
+            const gaps = JSON.parse(hasExistingGaps);
+            isInitializationMode = !Array.isArray(gaps) || gaps.length === 0;
+          } catch (e) {
+            isInitializationMode = true; // If parsing fails, assume initialization mode
+          }
+        }
+        
+        if (isInitializationMode) {
+          console.log('🚀 Initialization mode detected in getGapsInRollingWindow, skipping calendar integration to prevent freezing');
+          console.log('🚀 Calculating basic gaps for current day instead');
+          gaps = GapLogic.recalculateGapsForDate(dateStr, dateTasks, preferences, 'local-user');
+        } else {
+          console.log('🚀 Progressive loading: Processing current day with calendar integration');
+          gaps = await calendarService.getAvailableGaps(dateStr, preferences, dateTasks, 'local-user');
+        }
+        currentDayProcessed = true;
       } else {
+        // For other days, just calculate basic gaps without calendar integration
+        console.log(`📅 Progressive loading: Processing ${dateStr} without calendar integration`);
         gaps = GapLogic.recalculateGapsForDate(dateStr, dateTasks, preferences, 'local-user');
       }
+      
       out.push(...gaps);
       if (storageManager) { try { await storageManager.saveGaps(gaps, dateStr); } catch {} }
     }
+    
+    // Initialize progressive calendar loading in background
+    if (preferences.show_device_calendar_busy) {
+      console.log('🚀 Progressive loading: Starting background calendar data loading');
+      // Don't await this - let it run in background
+      calendarService.initializeProgressiveLoading(preferences).catch(error => {
+        console.error('🚀 Progressive loading error:', error);
+      });
+    }
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    console.log(`🚀 Progressive loading completed in ${duration}ms - ${out.length} gaps created`);
+    
     return out;
   }
 
@@ -185,6 +247,11 @@ export class GapsAPI {
       try {
         localStorage.setItem(`gaply_gaps_${date}`, JSON.stringify(gaps));
         console.log(`💾 Also saved ${gaps.length} gaps to localStorage as backup for ${date}`);
+        
+        // 🚀 Update calendar initialization status if we have actual gaps
+        if (gaps.length > 0) {
+          this.updateCalendarInitializationStatus();
+        }
       } catch (localStorageError) {
         console.warn('⚠️ Failed to save gaps to localStorage backup:', localStorageError);
       }
@@ -218,6 +285,30 @@ export class GapsAPI {
       }
       if (preferences) {
         const dateTasks = tasks.filter((t: any) => t.dueDate === date);
+        
+              // 🚀 PREVENT CALENDAR CALLS DURING INITIALIZATION
+      // Check if we're in initialization mode (no existing gaps in storage)
+      const hasExistingGaps = localStorage.getItem(`gaply_gaps_${date}`);
+      let isInitializationMode = !hasExistingGaps || hasExistingGaps === '[]' || hasExistingGaps === 'null';
+      
+      // Additional check: parse JSON and verify if there are actual gaps
+      if (!isInitializationMode && hasExistingGaps) {
+        try {
+          const gaps = JSON.parse(hasExistingGaps);
+          isInitializationMode = !Array.isArray(gaps) || gaps.length === 0;
+        } catch (e) {
+          isInitializationMode = true; // If parsing fails, assume initialization mode
+        }
+      }
+        
+        if (isInitializationMode) {
+          console.log('🚀 Initialization mode detected, skipping calendar integration to prevent freezing');
+          console.log('🚀 Calculating basic gaps from tasks and preferences only');
+          const gaps = GapLogic.recalculateGapsForDate(date, dateTasks, preferences, 'local-user');
+          return gaps;
+        }
+        
+        // Only integrate calendar if not in initialization mode
         if (preferences.show_device_calendar_busy) {
           return await calendarService.getAvailableGaps(date, preferences, dateTasks, 'local-user');
         } else {
@@ -495,6 +586,11 @@ export const gapsAPI = {
       console.warn('No access token provided for gaps API, saving locally');
       const today = new Date().toISOString().split('T')[0];
       localStorage.setItem(`gaply_gaps_${today}`, JSON.stringify(gaps));
+      
+      // 🚀 Update calendar initialization status if we have actual gaps
+      if (gaps.length > 0) {
+        GapsAPI.updateCalendarInitializationStatus();
+      }
       return;
     }
     

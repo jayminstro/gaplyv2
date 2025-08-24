@@ -575,7 +575,7 @@ function PlannerTimeline({
 
   return (
     <>
-    <div ref={timelineRef} className="space-y-4 pb-8 relative">
+    <div ref={timelineRef} className="space-y-4 pb-8 relative w-full overflow-hidden">
       {!hasWorkingDays && (
         <div className="text-center py-8 bg-slate-800/30 border border-slate-700/30 rounded-2xl">
           <h3 className="text-slate-200 font-medium mb-1">No working days selected</h3>
@@ -651,7 +651,7 @@ function PlannerTimeline({
             )}
             
             {/* Timeline items */}
-            <div className="flex-1 space-y-3">
+            <div className="flex-1 space-y-3 min-w-0 overflow-hidden">
               {renderUnits.length > 0 ? (
                 renderUnits.map((unit) => {
                   if (unit.kind === 'gap') {
@@ -679,7 +679,7 @@ function PlannerTimeline({
                                 {gapSourceInfo.label}
                               </span>
                             </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400 min-w-0">
                               {(() => {
                                 // Dynamic display range for current hour when inside the gap and viewing today
                                 const isTodaySelected = isSameDay(selectedDate, currentTime);
@@ -699,14 +699,14 @@ function PlannerTimeline({
                                 }
                                 return (
                                   <>
-                                    <span className="font-medium">
+                                    <span className="font-medium truncate flex-shrink-0">
                                       {formatTimeRange(displayStart, displayEnd)}
                                     </span>
                                     {minutesLeftInHour !== null && (
-                                      <span className="text-xs text-slate-500 sm:ml-2">{`${minutesLeftInHour} Minutes Left In Current Hour`}</span>
+                                      <span className="text-xs text-slate-500 sm:ml-2 truncate flex-1 min-w-0">{`${minutesLeftInHour} Minutes Left In Current Hour`}</span>
                                     )}
                                     {userPreferences?.show_duration_in_planner && minutesLeftInHour === null && (
-                                      <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
+                                      <span className="text-xs text-slate-500 sm:ml-2 truncate flex-1 min-w-0">{item.duration}</span>
                                     )}
                                   </>
                                 );
@@ -749,7 +749,7 @@ function PlannerTimeline({
                                   Calendar
                                 </span>
                               </div>
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400 min-w-0">
                                 {(() => {
                                   // Clip display to the current hour slot for multi-hour events
                                   const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
@@ -760,11 +760,11 @@ function PlannerTimeline({
                                     return <span className="font-medium">--</span>;
                                   }
                                   return (
-                                    <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
+                                    <span className="font-medium truncate flex-shrink-0">{formatTimeRange(displayStart, displayEnd)}</span>
                                   );
                                 })()}
                                 {userPreferences?.show_duration_in_planner && (
-                                  <span className="text-xs text-slate-500 sm:ml-2">{item.duration}</span>
+                                  <span className="text-xs text-slate-500 sm:ml-2 truncate flex-1 min-w-0">{item.duration}</span>
                                 )}
                               </div>
                             </div>
@@ -790,18 +790,18 @@ function PlannerTimeline({
                               <div className="flex items-center justify-between mb-1">
                                 <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
                               </div>
-                              <div className="flex items-center gap-3 text-sm text-slate-400">
-                                <span className="truncate font-medium">{formatTimeRange(item.startTime, item.endTime)}</span>
+                              <div className="flex items-center gap-3 text-sm text-slate-400 min-w-0">
+                                <span className="truncate font-medium flex-shrink-0">{formatTimeRange(item.startTime, item.endTime)}</span>
                                 {userPreferences?.show_duration_in_planner && (
                                   <>
-                                    <span>•</span>
-                                    <span>{item.duration}</span>
+                                    <span className="flex-shrink-0">•</span>
+                                    <span className="truncate flex-1 min-w-0">{item.duration}</span>
                                   </>
                                 )}
                                 {item.category && (
                                   <>
-                                    <span>•</span>
-                                    <span className="truncate">{item.category}</span>
+                                    <span className="flex-shrink-0">•</span>
+                                    <span className="truncate flex-1 min-w-0">{item.category}</span>
                                   </>
                                 )}
                               </div>
@@ -865,17 +865,17 @@ function PlannerTimeline({
                               }
                             </h3>
                           </div>
-                          <div className="flex items-center gap-3 text-sm text-slate-400">
-                            <span className="font-medium">{formatTimeRange(startTime, endTime)}</span>
-                            <span>•</span>
-                            <div className="flex flex-col text-right">
+                          <div className="flex items-center gap-3 text-sm text-slate-400 min-w-0">
+                            <span className="font-medium truncate flex-shrink-0">{formatTimeRange(startTime, endTime)}</span>
+                            <span className="flex-shrink-0">•</span>
+                            <div className="flex flex-col text-right flex-shrink-0">
                               {unit.hasCalendarEvents ? (
                                 <>
-                                  <span>{items.filter(t => t.type === 'calendar').length} Calendar</span>
-                                  <span>{items.filter(t => t.type === 'task').length} Tasks</span>
+                                  <span className="truncate">{items.filter(t => t.type === 'calendar').length} Calendar</span>
+                                  <span className="truncate">{items.filter(t => t.type === 'task').length} Tasks</span>
                                 </>
                               ) : (
-                                <span>{items.length} Tasks</span>
+                                <span className="truncate">{items.length} Tasks</span>
                               )}
                             </div>
                           </div>
@@ -997,14 +997,14 @@ function PlannerTimeline({
                                   </span>
                                 </div>
                                 
-                                <div className="flex items-center gap-3 text-sm text-slate-400">
-                                  <span className="truncate font-medium">
+                                <div className="flex items-center gap-3 text-sm text-slate-400 min-w-0">
+                                  <span className="truncate font-medium flex-shrink-0">
                                     {formatTimeRange(displayStart, displayEnd)}
                                   </span>
                                   {userPreferences?.show_duration_in_planner && (
                                     <>
-                                      <span>•</span>
-                                      <span>{durationText}</span>
+                                      <span className="flex-shrink-0">•</span>
+                                      <span className="truncate flex-1 min-w-0">{durationText}</span>
                                     </>
                                   )}
                                 </div>

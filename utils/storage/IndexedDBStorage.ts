@@ -28,6 +28,9 @@ export class IndexedDBStorage {
   async initialize(): Promise<void> {
     return new Promise<void>((resolve) => {
       try {
+        const startTime = Date.now();
+        console.log('🔍 IndexedDB initialization started...');
+        
         // Test if IndexedDB is actually available
         if (!window.indexedDB) {
           console.warn('IndexedDB not available, falling back to localStorage');
@@ -36,6 +39,7 @@ export class IndexedDBStorage {
           return;
         }
 
+        console.log('🔍 Opening IndexedDB...');
         const request = indexedDB.open(this.dbName, this.version);
 
         request.onerror = () => {
@@ -50,10 +54,11 @@ export class IndexedDBStorage {
 
         request.onsuccess = () => {
           this.db = request.result;
+          console.log(`🔍 IndexedDB opened successfully (${Date.now() - startTime}ms)`);
           
           // Test if the database is actually writable
           this.testDatabaseWritable().then(() => {
-            console.log('✅ IndexedDB storage initialized and writable');
+            console.log(`✅ IndexedDB storage initialized and writable (${Date.now() - startTime}ms)`);
             resolve();
           }).catch(() => {
             console.warn('IndexedDB not writable, falling back to localStorage');

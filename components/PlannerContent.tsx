@@ -460,6 +460,32 @@ function PlannerContent({
     }
   };
 
+  // Date navigation touch handlers for horizontal scrolling
+  const dateNavTouchStart = useRef<number>(0);
+  const dateNavTouchMove = useRef<number>(0);
+  const dateNavRef = useRef<HTMLDivElement>(null);
+
+  const handleDateNavTouchStart = (e: React.TouchEvent) => {
+    dateNavTouchStart.current = e.touches[0].clientX;
+  };
+
+  const handleDateNavTouchMove = (e: React.TouchEvent) => {
+    dateNavTouchMove.current = e.touches[0].clientX;
+  };
+
+  const handleDateNavTouchEnd = () => {
+    const diff = dateNavTouchStart.current - dateNavTouchMove.current;
+    const threshold = 50; // Minimum swipe distance
+    
+    if (Math.abs(diff) > threshold && dateNavRef.current) {
+      const scrollAmount = diff > 0 ? 200 : -200; // Scroll left or right
+      dateNavRef.current.scrollBy({
+        left: scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   const applyDeviceBusyToGaps = (gapsIn: TimeGap[]) => {
     if (!userPreferences?.show_device_calendar_busy || deviceBusy.length === 0) return gapsIn;
     
@@ -811,13 +837,20 @@ function PlannerContent({
               </button>
             </div>
           ) : (
-          <div className="flex flex-wrap items-center gap-3 pb-4 px-8">
+          <div 
+            ref={dateNavRef}
+            className="flex items-center gap-3 pb-4 px-8 overflow-x-auto scrollbar-hide scroll-smooth"
+            style={{ paddingLeft: '2rem', paddingRight: '2rem' }}
+            onTouchStart={handleDateNavTouchStart}
+            onTouchMove={handleDateNavTouchMove}
+            onTouchEnd={handleDateNavTouchEnd}
+          >
             {dateTabs.map((tab) => (
               <button
                 key={tab.date.toISOString()}
                 onClick={() => setSelectedDate(tab.date)}
                 className={`
-                  px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium
+                  px-4 py-2 rounded-2xl transition-all whitespace-nowrap text-sm font-medium flex-shrink-0
                   ${isSameDay(selectedDate, tab.date)
                     ? 'bg-blue-600 text-white shadow-lg scale-105'
                     : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 active:bg-slate-600/50'
@@ -855,14 +888,19 @@ function PlannerContent({
                 setSelectedDate(targetDate);
                 setTimeout(scrollToCurrentTime, 150);
               }}
-              className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium border border-slate-600/30 hover:border-slate-500/50"
+              className="px-3 py-2 bg-slate-700/30 hover:bg-slate-600/30 text-slate-300 hover:text-white rounded-2xl transition-all whitespace-nowrap text-sm font-medium border border-slate-600/30 hover:border-slate-500/50 flex-shrink-0"
               type="button"
               title="Jump to today and current time"
             >
               Now
             </button>
+          
+          {/* Swipe hint */}
+          <div className="text-center text-xs text-slate-500 mt-1 opacity-60">
+            Swipe to see more days
           </div>
-          )}
+        </div>
+        )}
         </div>
       </div>
 

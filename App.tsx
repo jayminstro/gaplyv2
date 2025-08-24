@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { preferencesAPI, tasksAPI, tasksAPIExtended, profileAPI } from './utils/api';
 import { GapsAPI } from './utils/gapsAPI';
 import { GapLogic, mergeAndDeduplicateGaps } from './utils/gapLogic';
+import { calendarService } from './utils/calendar';
 import { supabase } from './utils/supabase/client';
 import { toast } from 'sonner';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -40,6 +41,12 @@ export default function App() {
   const [selectedGap, setSelectedGap] = useState<TimeGap | null>(null);
   const [isGapModalOpen, setIsGapModalOpen] = useState(false);
   const [isExternalGapModalOpen, setIsExternalGapModalOpen] = useState(false);
+
+  // 🚀 Global initialization flag to prevent calendar calls during app startup
+  const [isAppInitializing, setIsAppInitializing] = useState(true);
+
+  // Add initialization timeout to prevent freezing
+  const [initTimeout, setInitTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Listen for modal open events from nested components (e.g., TodayTimeline)
   useEffect(() => {
@@ -119,6 +126,9 @@ export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isAppVisible, setIsAppVisible] = useState(true); // used by lifecycle handlers
+  
+  // Add emergency fallback state to prevent infinite loading
+  const [emergencyFallback, setEmergencyFallback] = useState(false);
   
   // Daily cleanup state
   const [lastCleanupDate, setLastCleanupDate] = useState<string>('');
@@ -240,6 +250,22 @@ export default function App() {
       window.removeEventListener('blur', handleBlur);
     };
   }, [isAppInitialized, isAuthenticated, isDataLoading]);
+
+  // Emergency fallback to prevent infinite loading
+  useEffect(() => {
+    const emergencyTimeout = setTimeout(() => {
+      if (isLoading || isDataLoading) {
+        console.warn('🚨 Emergency fallback triggered - forcing app to show content');
+        setEmergencyFallback(true);
+        setIsLoading(false);
+        setIsDataLoading(false);
+        setIsAppInitialized(true);
+        setIsAppInitializing(false);
+      }
+    }, 30000); // 30 second emergency timeout
+
+    return () => clearTimeout(emergencyTimeout);
+  }, [isLoading, isDataLoading]);
 
   // Daily cleanup job
   useEffect(() => {
@@ -540,6 +566,16 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     setIsWidgetMode(urlParams.get('widget') === 'true');
 
+    // Add initialization timeout to prevent freezing
+    const timeout = setTimeout(() => {
+      console.warn('⚠️ App initialization timeout reached - forcing completion');
+      setIsLoading(false);
+      setIsAppInitialized(true);
+      setIsAppInitializing(false);
+    }, 10000); // 10 second timeout
+
+    setInitTimeout(timeout);
+
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -554,6 +590,11 @@ export default function App() {
         console.error('Auth check error:', error);
       } finally {
         setIsLoading(false);
+        // Clear timeout on successful auth
+        if (initTimeout) {
+          clearTimeout(initTimeout);
+          setInitTimeout(null);
+        }
       }
     };
 
@@ -568,6 +609,11 @@ export default function App() {
         setIsLoading(false);
         setIsDataLoading(true); // Start data loading when user is authenticated
         setIsAppInitialized(true); // Mark app as initialized
+        // Clear timeout on successful auth
+        if (initTimeout) {
+          clearTimeout(initTimeout);
+          setInitTimeout(null);
+        }
       } else {
         setIsAuthenticated(false);
         setUser(null);
@@ -578,7 +624,12 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (initTimeout) {
+        clearTimeout(initTimeout);
+      }
+    };
   }, []);
 
   // Initialize local-first system with login sync
@@ -589,41 +640,35 @@ export default function App() {
       try {
         console.log('🔄 Initializing local-first system with login sync...');
         
+        // Add timeout to prevent freezing during storage initialization
+        const storageTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Storage initialization timeout')), 15000); // 15 second timeout
+        });
+        
         // Create enhanced storage manager first (shared instance)
         const enhancedStorage = new EnhancedStorageManager(user.id, {
           storageType: 'auto', // Auto-detect best storage (IndexedDB preferred)
-          enableEncryption: true, // Enable encryption for sensitive data
-          encryptFields: ['description', 'notes', 'title'], // Encrypt sensitive fields
-          enableAnalytics: true, // Enable storage analytics
+          enableEncryption: false, // Disable encryption to prevent freezing
+          encryptFields: [], // No encryption fields
+          enableAnalytics: false, // Disable analytics to prevent freezing
           enableSync: false, // Disable sync for now (using LoginSyncService instead)
           enableMemoryCache: true, // Enable ultra-fast memory caching
-          enablePredictiveCache: true, // Enable AI-driven predictive caching
-          enableCacheLimits: true, // Enable intelligent storage management
-          analyticsConfig: {
-            trackAccessPatterns: true,
-            trackSizeChanges: true,
-            trackPerformance: true,
-            retentionDays: 30,
-            sampleRate: 0.1
-          },
+          enablePredictiveCache: false, // Disable predictive cache to prevent freezing
+          enableCacheLimits: false, // Disable cache limits to prevent freezing
           memoryCacheConfig: {
-            maxSize: 50, // Reduced for iPhone energy efficiency
-            defaultTTL: 10 * 60 * 1000, // 10 minutes TTL (reduced for energy)
+            maxSize: 25, // Reduced for iPhone energy efficiency
+            defaultTTL: 5 * 60 * 1000, // 5 minutes TTL (reduced for energy)
             enableStats: false, // Disable stats in production for energy savings
             evictionPolicy: 'lru'
-          },
-          cacheLimits: {
-            maxTasks: 1000, // Reduced for iPhone
-            maxGaps: 5000, // 7 days worth of gaps
-            maxActivities: 500,
-            maxStorageSize: 50 * 1024 * 1024, // 50MB (reduced for energy)
-            maxMemoryUsage: 50, // 50MB (reduced for iPhone)
-            maxCacheEntries: 500, // Reduced for energy
-            maxSessionData: 10, // 10MB (reduced for energy)
-            cleanupThreshold: 0.7 // More aggressive cleanup
           }
         });
-        await enhancedStorage.initialize();
+        
+        // Race between storage initialization and timeout
+        await Promise.race([
+          enhancedStorage.initialize(),
+          storageTimeout
+        ]);
+        
         setLocalFirstService(enhancedStorage);
         
         // Create default gaps for today before running login sync
@@ -661,6 +706,18 @@ export default function App() {
           const todayGaps = await GapsAPI.ensureTodayGaps(userPrefs, session?.access_token || '', user.id, enhancedStorage);
           console.log(`✅ Created ${todayGaps.length} default gaps for today before login sync`);
           
+          // 🚀 Update calendar initialization status if we have actual gaps
+          if (todayGaps.length > 0) {
+            try {
+              if (calendarService && typeof calendarService.updateInitializationStatus === 'function') {
+                calendarService.updateInitializationStatus();
+                console.log('🚀 Calendar initialization status updated after creating today gaps');
+              }
+            } catch (error) {
+              console.log('🚀 Could not update calendar initialization status:', error);
+            }
+          }
+          
           // Verify gaps were saved with retry logic
           let verificationRetries = 0;
           const maxVerificationRetries = 5;
@@ -695,20 +752,35 @@ export default function App() {
         
         // Create login sync service with the same storage instance
         const loginService = new EnhancedLoginSyncService(user.id, enhancedStorage);
-        const syncResult = await loginService.initializeAndSync();
         
-        if (syncResult.success) {
-          console.log('✅ Login sync completed successfully');
-          console.log(`📊 Sync summary: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
+        // Add timeout to login sync to prevent freezing
+        const syncTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Login sync timeout')), 10000); // 10 second timeout
+        });
+        
+        try {
+          const syncResult = await Promise.race([
+            loginService.initializeAndSync(),
+            syncTimeout
+          ]) as any; // Type assertion to fix TypeScript error
           
-          if (syncResult.conflictsResolved > 0) {
-            console.log(`🔄 ${syncResult.conflictsResolved} conflicts resolved`);
+          if (syncResult.success) {
+            console.log('✅ Login sync completed successfully');
+            console.log(`📊 Sync summary: ${syncResult.tasksSynced} tasks, ${syncResult.gapsSynced} gaps synced`);
+            
+            if (syncResult.conflictsResolved > 0) {
+              console.log(`🔄 ${syncResult.conflictsResolved} conflicts resolved`);
+            }
+            
+            setLoginSyncService(loginService);
+          } else {
+            console.warn('⚠️ Login sync completed with warnings:', syncResult.errors);
+            setLoginSyncService(loginService); // Still set the service even with warnings
           }
-          
+        } catch (syncError) {
+          console.warn('⚠️ Login sync failed or timed out:', syncError);
+          // Still set the service to prevent blocking
           setLoginSyncService(loginService);
-        } else {
-          console.warn('⚠️ Login sync completed with warnings:', syncResult.errors);
-          setLoginSyncService(loginService); // Still set the service even with warnings
         }
         
         setIsDataLoading(false);
@@ -957,11 +1029,22 @@ export default function App() {
         
         console.log('🔍 Storage manager is ready, proceeding with data loading...');
         
-        // Wait for login sync to complete if it's still running
+        // Wait for login sync to complete if it's still running (with timeout)
         if (loginSyncService) {
           console.log('⏳ Waiting for login sync to complete...');
-          // Give login sync a moment to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Give login sync a moment to complete, but don't wait forever
+          const loginWaitTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Login sync wait timeout')), 5000); // 5 second timeout
+          });
+          
+          try {
+            await Promise.race([
+              new Promise(resolve => setTimeout(resolve, 1000)),
+              loginWaitTimeout
+            ]);
+          } catch (waitError) {
+            console.warn('⚠️ Login sync wait timed out, proceeding anyway:', waitError);
+          }
         }
         
         const loadWithRetry = async (apiCall: () => Promise<any>, name: string, defaultValue: any) => {
@@ -1008,6 +1091,18 @@ export default function App() {
               const newTodayGaps = await GapsAPI.ensureTodayGaps(preferences, session?.access_token || '', session?.user?.id, localFirstService);
               finalGapsData = newTodayGaps;
               console.log(`✅ Created ${newTodayGaps.length} default gaps for today`);
+              
+              // 🚀 Update calendar initialization status if we have actual gaps
+              if (newTodayGaps.length > 0) {
+                try {
+                  if (calendarService && typeof calendarService.updateInitializationStatus === 'function') {
+                    calendarService.updateInitializationStatus();
+                    console.log('🚀 Calendar initialization status updated after creating today gaps in loadAppData');
+                  }
+                } catch (error) {
+                  console.log('🚀 Could not update calendar initialization status:', error);
+                }
+              }
             }
             
             // Verify gaps were saved to storage with retry logic
@@ -1234,6 +1329,16 @@ export default function App() {
         }
 
         console.log('✅ App data sync completed');
+        
+        // 🚀 Update calendar initialization status after successful data loading
+        try {
+          if (calendarService && typeof calendarService.updateInitializationStatus === 'function') {
+            calendarService.updateInitializationStatus();
+            console.log('🚀 Calendar initialization status updated - calendar integration now enabled');
+          }
+        } catch (error) {
+          console.log('🚀 Could not update calendar initialization status:', error);
+        }
       } catch (error) {
         console.error('❌ Error during app data sync:', error);
         console.log('📱 Keeping existing local data');
@@ -1242,7 +1347,20 @@ export default function App() {
 
     // Add a small delay to ensure critical data loads first
     setTimeout(() => {
-      loadAppData();
+      // Add timeout to entire data loading to prevent freezing
+      const dataLoadTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Data loading timeout')), 20000); // 20 second timeout
+      });
+      
+      Promise.race([
+        loadAppData(),
+        dataLoadTimeout
+      ]).catch((timeoutError) => {
+        console.warn('⚠️ Data loading timed out:', timeoutError);
+        // Set minimal state to prevent freezing
+        setIsDataLoading(false);
+        setIsAppInitializing(false);
+      });
     }, 200);
   }, [isAuthenticated, user?.id, session?.access_token, localFirstService]);
 
@@ -1515,7 +1633,7 @@ export default function App() {
           updated_at: new Date().toISOString()
         };
         
-        console.log(`📝 Updating task: ${updatedTask.title}`);
+        console.log(`📝 Updating task: ${task.title}`);
         
         // Save the updated task locally
         await localFirstService.saveTask(updatedTask);
@@ -1716,13 +1834,18 @@ export default function App() {
     }
   };
 
-  // Show loading screen while checking authentication (only if app is not initialized)
-  if (isLoading && !isAppInitialized) {
+  // Emergency fallback check - if emergency fallback is triggered, show content anyway
+  if (emergencyFallback) {
+    console.log('🚨 Using emergency fallback - showing app content');
+  }
+
+  // Show loading screen while checking authentication (only if app is not initialized and no emergency fallback)
+  if (isLoading && !isAppInitialized && !emergencyFallback) {
     return <LoadingScreen />;
   }
 
-  // Show loading screen if authenticated but data is still loading (only if app is not initialized)
-  if (isAuthenticated && isDataLoading && !isAppInitialized) {
+  // Show loading screen if authenticated but data is still loading (only if app is not initialized and no emergency fallback)
+  if (isAuthenticated && isDataLoading && !isAppInitialized && !emergencyFallback) {
     return <LoadingScreen isDataLoading={true} userName={profile?.first_name} />;
   }
 
@@ -1874,12 +1997,12 @@ export default function App() {
         </div>
 
         {/* Timer Modal */}
-      <TimerModal
-        isOpen={isTimerModalOpen}
-        onClose={() => setIsTimerModalOpen(false)}
-        task={timerTask}
-        onTimerUpdate={handleGlobalTimerUpdate}
-      />
+        <TimerModal
+          isOpen={isTimerModalOpen}
+          onClose={() => setIsTimerModalOpen(false)}
+          task={timerTask}
+          onTimerUpdate={handleGlobalTimerUpdate}
+        />
 
         {/* Edit Task Modal (global) */}
         <EditTaskModal
@@ -1895,21 +2018,21 @@ export default function App() {
           }}
         />
 
-      {/* Gap Utilization Modal */}
-      <GapUtilizationModal
-        isOpen={isGapModalOpen}
-        onClose={() => {
-          setIsGapModalOpen(false);
-          setSelectedGap(null);
-        }}
-        gap={selectedGap}
-        existingTasks={globalTasks}
-        onTaskCreated={handleTaskCreated}
-        userPreferences={preferences}
-      />
-    </div>
-  );
-}
+        {/* Gap Utilization Modal */}
+        <GapUtilizationModal
+          isOpen={isGapModalOpen}
+          onClose={() => {
+            setIsGapModalOpen(false);
+            setSelectedGap(null);
+          }}
+          gap={selectedGap}
+          existingTasks={globalTasks}
+          onTaskCreated={handleTaskCreated}
+          userPreferences={preferences}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white relative overflow-hidden">

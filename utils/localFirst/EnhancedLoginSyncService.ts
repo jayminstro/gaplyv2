@@ -171,7 +171,7 @@ export class EnhancedLoginSyncService {
     try {
       // Import APIs dynamically to avoid circular dependencies
       const { tasksAPI } = await import('../api');
-      const { GapsAPI } = await import('../gapsAPI');
+      // const { GapsAPI } = await import('../gapsAPI'); // Commented out to prevent calendar calls during initialization
 
       // Fetch tasks
       let tasks: Task[] = [];
@@ -181,13 +181,11 @@ export class EnhancedLoginSyncService {
         console.warn('Failed to fetch remote tasks:', error);
       }
 
-      // Fetch gaps
+      // Fetch gaps - SKIP this during initialization to prevent calendar freezing
+      // Gaps will be calculated locally from tasks + preferences instead
       let gaps: TimeGap[] = [];
-      try {
-        gaps = await GapsAPI.getAllGaps(accessToken);
-      } catch (error) {
-        console.warn('Failed to fetch remote gaps:', error);
-      }
+      console.log('🚀 Skipping remote gaps fetch during initialization to prevent calendar freezing');
+      console.log('🚀 Gaps will be calculated locally from tasks and preferences');
 
       // Fetch preferences
       let preferences: UserPreferences | null = null;

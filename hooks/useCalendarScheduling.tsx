@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Task, TimeGap } from '../types/index';
+import { useState, useEffect, useCallback } from 'react';
+import { Task, TimeGap, UserPreferences } from '../types/index';
 import { toast } from 'sonner';
+import { calendarService } from '../utils/calendar';
 
 interface ScheduleTaskOptions {
   task: Task;
@@ -16,8 +17,61 @@ interface CalendarEvent {
   end: { dateTime: string; timeZone: string };
 }
 
-export function useCalendarScheduling() {
+export function useCalendarScheduling(preferences: UserPreferences | null) {
   const [isScheduling, setIsScheduling] = useState(false);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<string>('current');
+  const [isProgressiveLoadingComplete, setIsProgressiveLoadingComplete] = useState(false);
+
+  // Initialize progressive loading when preferences are available
+  useEffect(() => {
+    if (preferences && preferences.show_device_calendar_busy) {
+      console.log('🚀 Initializing progressive calendar loading...');
+      initializeProgressiveLoading();
+    }
+  }, [preferences]);
+
+  const initializeProgressiveLoading = useCallback(async () => {
+    if (!preferences) return;
+    
+    setIsCalendarLoading(true);
+    setLoadingPhase('current');
+    
+    try {
+      await calendarService.initializeProgressiveLoading(preferences);
+      
+      // Monitor loading progress
+      const checkProgress = setInterval(() => {
+        const currentPhase = calendarService.getLoadingPhase();
+        const isComplete = calendarService.isProgressiveLoadingComplete();
+        
+        setLoadingPhase(currentPhase);
+        setIsProgressiveLoadingComplete(isComplete);
+        
+        if (isComplete) {
+          setIsCalendarLoading(false);
+          clearInterval(checkProgress);
+          console.log('🚀 Progressive calendar loading completed');
+        }
+      }, 500);
+      
+    } catch (error) {
+      console.error('🚀 Error initializing progressive loading:', error);
+      setIsCalendarLoading(false);
+      setLoadingPhase('complete');
+    }
+  }, [preferences]);
+
+  const getCalendarData = useCallback(async (dateRange: { start: string; end: string }) => {
+    if (!preferences) return [];
+    
+    try {
+      return await calendarService.getCalendarDataWhenReady(dateRange, preferences);
+    } catch (error) {
+      console.error('Error getting calendar data:', error);
+      return [];
+    }
+  }, [preferences]);
 
   const scheduleTaskToGap = async (options: ScheduleTaskOptions) => {
     setIsScheduling(true);
@@ -204,6 +258,11 @@ export function useCalendarScheduling() {
     scheduleTaskToGap,
     findBestGapForTask,
     getAvailableTimeSlotsInGap,
-    createGoogleCalendarEvent
+    createGoogleCalendarEvent,
+    isCalendarLoading,
+    loadingPhase,
+    isProgressiveLoadingComplete,
+    getCalendarData,
+    initializeProgressiveLoading
   };
 }

@@ -283,6 +283,39 @@ body, html {
   .scroll-smooth {
     scroll-behavior: smooth;
   }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Ensure timeline items never overflow */
+  .timeline-item {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  
+  .timeline-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  /* Ensure modal content never overflows */
+  .modal-content {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  
+  .modal-text {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
 }
 
 /* Safe area utilities for mobile devices */

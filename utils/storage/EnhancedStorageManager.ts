@@ -116,16 +116,23 @@ export class EnhancedStorageManager {
 
     try {
       console.log('🚀 Initializing enhanced storage system...');
+      const startTime = Date.now();
 
       // 1. Determine storage type
+      console.log('🔍 Step 1: Determining storage type...');
       const storageType = await this.determineStorageType();
-      console.log(`📦 Using storage type: ${storageType}`);
+      console.log(`📦 Using storage type: ${storageType} (${Date.now() - startTime}ms)`);
 
       // 2. Create base storage
+      console.log('🔍 Step 2: Creating storage strategy...');
       this.storage = this.createStorageStrategy(storageType);
+      console.log(`📦 Storage strategy created (${Date.now() - startTime}ms)`);
 
       // 3. Initialize base storage
+      console.log('🔍 Step 3: Initializing base storage...');
+      const storageInitStart = Date.now();
       await this.storage.initialize();
+      console.log(`✅ Base storage initialized (${Date.now() - storageInitStart}ms, total: ${Date.now() - startTime}ms)`);
 
       // 4. Add encryption layer if enabled
       if (this.config.enableEncryption) {

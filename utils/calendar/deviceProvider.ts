@@ -5,20 +5,56 @@ import { format } from 'date-fns';
 import { CalendarNormalizer } from './normalizer';
 
 export class DeviceCalendarProvider {
+  private permissionCache: { granted: boolean; timestamp: number } | null = null;
+  private readonly PERMISSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private calendarsCache: { calendars: string[]; timestamp: number } | null = null;
+  private readonly CALENDARS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
   async requestPermission(): Promise<boolean> {
+    // Check cache first
+    if (this.permissionCache && (Date.now() - this.permissionCache.timestamp) < this.PERMISSION_CACHE_TTL) {
+      console.log('🔧 Using cached calendar permission:', this.permissionCache.granted);
+      return this.permissionCache.granted;
+    }
+
     try {
+      console.log('🔧 Requesting calendar permission...');
       const res = await CalendarBridge.requestPermission();
-      return res.status === 'granted';
-    } catch {
+      const granted = res.status === 'granted';
+      
+      // Cache the result
+      this.permissionCache = { granted, timestamp: Date.now() };
+      console.log('🔧 Calendar permission result cached:', granted);
+      
+      return granted;
+    } catch (error) {
+      console.error('🔧 Calendar permission request failed:', error);
+      // Cache negative result to prevent repeated failures
+      this.permissionCache = { granted: false, timestamp: Date.now() };
       return false;
     }
   }
 
   async getCalendars(): Promise<string[]> {
+    // Check cache first
+    if (this.calendarsCache && (Date.now() - this.calendarsCache.timestamp) < this.CALENDARS_CACHE_TTL) {
+      console.log('🔧 Using cached calendar list:', this.calendarsCache.calendars.length, 'calendars');
+      return this.calendarsCache.calendars;
+    }
+
     try {
+      console.log('🔧 Fetching fresh calendar list...');
       const res = await CalendarBridge.getCalendars();
-      return (res.calendars || []).map(c => c.id);
-    } catch {
+      const calendars = (res.calendars || []).map(c => c.id);
+      
+      // Cache the result
+      this.calendarsCache = { calendars, timestamp: Date.now() };
+      console.log('🔧 Calendar list cached:', calendars.length, 'calendars');
+      
+      return calendars;
+    } catch (error) {
+      console.error('🔧 Failed to fetch calendars:', error);
+      // Return empty array on error
       return [];
     }
   }
@@ -46,6 +82,19 @@ export class DeviceCalendarProvider {
       return [];
     }
     
+    // Progressive loading: limit calendar fetch range based on phase
+    const isCurrentDay = this.isCurrentDay(dateRange);
+    const isFutureData = this.isFutureData(dateRange);
+    const isPastData = this.isPastData(dateRange);
+    
+    if (isCurrentDay) {
+      console.log('🔧 Current day detected - loading immediately');
+    } else if (isFutureData) {
+      console.log('🔧 Future data detected - loading with moderate timeout');
+    } else if (isPastData) {
+      console.log('🔧 Past data detected - loading with extended timeout');
+    }
+    
     // Convert date strings to ISO datetime format that iOS expects
     const startRange = this.convertDateRangeToISO(dateRange.start);
     const endRange = this.convertDateRangeToISO(dateRange.end);
@@ -63,7 +112,17 @@ export class DeviceCalendarProvider {
     
     console.log('🔧 Fetching events for calendars:', calendarIds);
     try {
-      const res = await CalendarBridge.getEvents({ start: startISO, end: endISO, calendarIds });
+      // Dynamic timeout based on data type
+      const timeoutMs = isCurrentDay ? 5000 : isFutureData ? 15000 : 20000;
+      console.log(`🔧 Using timeout of ${timeoutMs}ms for ${isCurrentDay ? 'current day' : isFutureData ? 'future data' : 'past data'}`);
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Calendar fetch timeout after ${timeoutMs/1000} seconds`)), timeoutMs);
+      });
+      
+      const fetchPromise = CalendarBridge.getEvents({ start: startISO, end: endISO, calendarIds });
+      
+      const res = await Promise.race([fetchPromise, timeoutPromise]) as any;
       console.log('🔧 CalendarBridge.getEvents returned:', res);
       
       const events = (res.events || []) as NativeEvent[];
@@ -81,6 +140,7 @@ export class DeviceCalendarProvider {
       return merged;
     } catch (error) {
       console.error('🔧 Error fetching calendar events:', error);
+      // Return empty array on error to prevent app freezing
       return [];
     }
   }
@@ -215,6 +275,21 @@ export class DeviceCalendarProvider {
     }
 
     return { start: date.toISOString(), end: date.toISOString() };
+  }
+
+  private isCurrentDay(dateRange: DateRange): boolean {
+    const today = new Date().toISOString().split('T')[0];
+    return dateRange.start === today && dateRange.end === today;
+  }
+
+  private isFutureData(dateRange: DateRange): boolean {
+    const today = new Date().toISOString().split('T')[0];
+    return dateRange.start >= today;
+  }
+
+  private isPastData(dateRange: DateRange): boolean {
+    const today = new Date().toISOString().split('T')[0];
+    return dateRange.end < today;
   }
 }
 

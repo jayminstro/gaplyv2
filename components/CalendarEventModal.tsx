@@ -117,13 +117,13 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-slate-900 border-slate-700 rounded-2xl max-w-md w-full mx-4 p-0">
+      <DialogContent className="bg-slate-900 border-slate-700 rounded-2xl max-w-md w-full mx-4 p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4">
-          <DialogTitle className="text-white text-xl font-semibold flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
+          <DialogTitle className="text-white text-xl font-semibold flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
               <Calendar className="w-5 h-5 text-red-400" />
             </div>
-            <span className="truncate">
+            <span className="truncate flex-1 min-w-0">
               {isMinimalEvent ? 'Busy Time' : (event.title || 'Untitled Event')}
             </span>
           </DialogTitle>
@@ -132,16 +132,16 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
         <div className="px-6 pb-6 space-y-6">
           {/* Time & Duration */}
           <div className="space-y-3">
-            <div className="flex items-center gap-3 text-slate-300">
-              <Clock className="w-5 h-5 text-slate-400" />
-              <div className="flex-1">
-                <div className="font-medium">
+            <div className="flex items-center gap-3 text-slate-300 min-w-0">
+              <Clock className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">
                   {formatDate(startDate)}
                 </div>
-                <div className="text-sm text-slate-400">
-                  {formatTime(startDate)} - {formatTime(endDate)}
+                <div className="text-sm text-slate-400 min-w-0">
+                  <span className="truncate">{formatTime(startDate)} - {formatTime(endDate)}</span>
                   {!event.isAllDay && (
-                    <span className="ml-2 text-slate-500">
+                    <span className="ml-2 text-slate-500 flex-shrink-0">
                       ({formatDuration(duration)})
                     </span>
                   )}
@@ -154,20 +154,20 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
 
           {/* Organizer */}
           {event.organizer && (
-            <div className="flex items-center gap-3 text-slate-300">
-              <User className="w-5 h-5 text-slate-400" />
-              <div>
+            <div className="flex items-center gap-3 text-slate-300 min-w-0">
+              <User className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
                 <div className="text-sm text-slate-400">Organizer</div>
-                <div className="font-medium">{event.organizer.name || event.organizer.email}</div>
+                <div className="font-medium truncate">{event.organizer.name || event.organizer.email}</div>
               </div>
             </div>
           )}
 
           {/* Attendees Count */}
           {event.attendees && event.attendees.length > 0 && (
-            <div className="flex items-center gap-3 text-slate-300">
-              <Users className="w-5 h-5 text-slate-400" />
-              <div>
+            <div className="flex items-center gap-3 text-slate-300 min-w-0">
+              <Users className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
                 <div className="text-sm text-slate-400">Attendees</div>
                 <div className="font-medium">{event.attendees.length} people</div>
               </div>
@@ -177,8 +177,8 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
           {/* Conferencing Link */}
           {hasVideoConference && videoConferenceLink && (
             <div className="space-y-3">
-              <div className="flex items-center gap-3 text-slate-300">
-                <Link className="w-5 h-5 text-slate-400" />
+              <div className="flex items-center gap-3 text-slate-300 min-w-0">
+                <Link className="w-5 h-5 text-slate-400 flex-shrink-0" />
                 <div className="text-sm text-slate-400">Video Conference</div>
               </div>
               <Button
@@ -195,34 +195,34 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
           {/* Notes Preview */}
           {event.notes && (
             <div className="space-y-3">
-              <div className="flex items-center gap-3 text-slate-300">
-                <FileText className="w-5 h-5 text-slate-400" />
-                <div className="text-sm text-slate-400">Notes</div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto p-1 h-auto text-slate-400 hover:text-slate-300 hover:bg-slate-800/50"
-                  onClick={() => setNotesExpanded(!notesExpanded)}
-                >
-                  {notesExpanded ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
+                          <div className="flex items-center gap-3 text-slate-300 min-w-0">
+              <FileText className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              <div className="text-sm text-slate-400 flex-1 min-w-0">Notes</div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto p-1 h-auto text-slate-400 hover:text-slate-300 hover:bg-slate-800/50 flex-shrink-0"
+                onClick={() => setNotesExpanded(!notesExpanded)}
+              >
+                {notesExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
               
               {notesExpanded && (
-                <div className="ml-8 p-4 bg-slate-800/30 rounded-xl border border-slate-700/30">
-                  <p className="text-slate-300 text-sm whitespace-pre-wrap">
+                <div className="ml-8 p-4 bg-slate-800/30 rounded-xl border border-slate-700/30 overflow-hidden">
+                  <p className="text-slate-300 text-sm whitespace-pre-wrap break-words">
                     {event.notes}
                   </p>
                 </div>
               )}
               
               {!notesExpanded && (
-                <div className="ml-8">
-                  <p className="text-slate-400 text-sm line-clamp-2">
+                <div className="ml-8 overflow-hidden">
+                  <p className="text-slate-400 text-sm line-clamp-2 break-words">
                     {event.notes}
                   </p>
                 </div>
@@ -232,8 +232,8 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
           
           {/* Info for minimal events */}
           {isMinimalEvent && (
-            <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-700/30">
-              <p className="text-slate-400 text-sm text-center">
+            <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-700/30 overflow-hidden">
+              <p className="text-slate-400 text-sm text-center break-words">
                 This is a busy time block from your calendar. 
                 {event.organizer && ` Organized by ${event.organizer.name || event.organizer.email}.`}
               </p>
@@ -242,13 +242,13 @@ export function CalendarEventModal({ event, isOpen, onClose }: CalendarEventModa
 
           {/* Location */}
           {event.location && (
-            <div className="flex items-center gap-3 text-slate-300">
-              <div className="w-5 h-5 rounded-full bg-slate-700/50 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-slate-300 min-w-0">
+              <div className="w-5 h-5 rounded-full bg-slate-700/50 flex items-center justify-center flex-shrink-0">
                 <div className="w-2 h-2 bg-slate-400 rounded-full" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <div className="text-sm text-slate-400">Location</div>
-                <div className="font-medium">{event.location}</div>
+                <div className="font-medium truncate">{event.location}</div>
               </div>
             </div>
           )}
