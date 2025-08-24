@@ -537,17 +537,11 @@ function PlannerTimeline({
         start: item.startTime.getTime(),
         end: item.endTime.getTime(),
         isAllDay: item.data.isAllDay || false,
-        organizer: item.data.organizer,
-        attendees: item.data.attendees,
         location: item.data.location,
         notes: item.data.description || item.data.notes,
         url: item.data.url,
         transparency: item.data.transparency,
-        status: item.data.status,
-        recurrenceRules: item.data.recurrenceRules,
-        lastModifiedDate: item.data.lastModifiedDate,
-        creationDate: item.data.creationDate,
-        conferenceData: item.data.conferenceData
+        status: item.data.status
       });
       setCalendarEventModalOpen(true);
     }

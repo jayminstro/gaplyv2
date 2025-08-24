@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { Calendar, Clock, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Clock, FileText, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface CalendarEvent {
