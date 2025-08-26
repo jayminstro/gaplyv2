@@ -10,6 +10,10 @@ export type CalendarBusyBlock = {
   recurrenceId?: string;
   transparency?: 'busy' | 'free' | 'oof' | 'tentative';
   status?: 'confirmed' | 'tentative' | 'cancelled';
+  // Additional event details for rich calendar events
+  location?: string;
+  notes?: string;
+  url?: string;
   lastSyncedAt: string; // ingest timestamp
 };
 

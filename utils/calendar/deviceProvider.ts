@@ -133,6 +133,10 @@ export class DeviceCalendarProvider {
       isAllDay: nativeEvent.isAllDay,
       transparency,
       status,
+      // Preserve additional event details
+      location: nativeEvent.location,
+      notes: nativeEvent.notes,
+      url: nativeEvent.url,
       lastSyncedAt: new Date().toISOString()
     };
     

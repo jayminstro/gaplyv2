@@ -165,13 +165,44 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
         
         // If we get here, everything is working
         let payload: [[String: Any]] = events.map { event in
-          [
-            "id": event.eventIdentifier,
-            "calendarId": event.calendar.calendarIdentifier,
-            "title": event.title ?? "",
-            "start": event.startDate.timeIntervalSince1970 * 1000,
-            "end": event.endDate.timeIntervalSince1970 * 1000,
-            "isAllDay": event.isAllDay
+          // Break down complex expressions into simpler parts
+          let eventId = event.eventIdentifier
+          let calendarId = event.calendar.calendarIdentifier
+          let title = event.title ?? ""
+          let start = event.startDate.timeIntervalSince1970 * 1000
+          let end = event.endDate.timeIntervalSince1970 * 1000
+          let isAllDay = event.isAllDay
+          let location = event.location ?? ""
+          let notes = event.notes ?? ""
+          let url = event.url?.absoluteString ?? ""
+          let transparency = event.availability == .busy ? "opaque" : "transparent"
+          
+          // Determine status separately
+          let status: String
+          switch event.status {
+          case .confirmed:
+            status = "confirmed"
+          case .tentative:
+            status = "tentative"
+          case .none:
+            status = "none"
+          @unknown default:
+            status = "none"
+          }
+          
+          // Return simplified dictionary
+          return [
+            "id": eventId,
+            "calendarId": calendarId,
+            "title": title,
+            "start": start,
+            "end": end,
+            "isAllDay": isAllDay,
+            "location": location,
+            "notes": notes,
+            "url": url,
+            "transparency": transparency,
+            "status": status
           ]
         }
         

@@ -4,7 +4,7 @@ import { minutesToTime, timeToMinutes } from '../helpers';
 
 export class CalendarNormalizer {
   static expandAllDay(
-    event: { date: string; start_time: string; end_time: string; isAllDay?: boolean; calendarId?: string; title?: string },
+    event: CalendarBusyBlock,
     preferences: UserPreferences
   ): CalendarBusyBlock[] {
     console.log('🔧 expandAllDay called with:', { event, preferences: { 
@@ -20,11 +20,18 @@ export class CalendarNormalizer {
           date: event.date,
           start_time: event.start_time,
           end_time: event.end_time,
-          source: 'device',
+          source: event.source,
           calendarId: event.calendarId,
           title: event.title,
           isAllDay: false,
-          lastSyncedAt: new Date().toISOString()
+          uid: event.uid,
+          recurrenceId: event.recurrenceId,
+          transparency: event.transparency,
+          status: event.status,
+          location: event.location,
+          notes: event.notes,
+          url: event.url,
+          lastSyncedAt: event.lastSyncedAt
         }
       ];
     }
@@ -47,11 +54,18 @@ export class CalendarNormalizer {
           date: event.date,
           start_time: workStart,
           end_time: workEnd,
-          source: 'device',
+          source: event.source,
           calendarId: event.calendarId,
           title: event.title,
           isAllDay: true,
-          lastSyncedAt: new Date().toISOString()
+          uid: event.uid,
+          recurrenceId: event.recurrenceId,
+          transparency: event.transparency,
+          status: event.status,
+          location: event.location,
+          notes: event.notes,
+          url: event.url,
+          lastSyncedAt: event.lastSyncedAt
         }
       ];
     }
@@ -80,11 +94,18 @@ export class CalendarNormalizer {
         date: event.date,
         start_time: minutesToTime(blockStartMin),
         end_time: minutesToTime(blockEndMin),
-        source: 'device',
+        source: event.source,
         calendarId: event.calendarId,
         title: event.title,
         isAllDay: true,
-        lastSyncedAt: new Date().toISOString()
+        uid: event.uid,
+        recurrenceId: event.recurrenceId,
+        transparency: event.transparency,
+        status: event.status,
+        location: event.location,
+        notes: event.notes,
+        url: event.url,
+        lastSyncedAt: event.lastSyncedAt
       }
     ];
   }
