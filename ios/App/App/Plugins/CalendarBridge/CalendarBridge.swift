@@ -5,7 +5,7 @@ import EventKitUI
 import UIKit
 
 @objc(CalendarBridge)
-public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
+public class CalendarBridge: CAPPlugin, CAPBridgedPlugin, EKEventViewDelegate {
   // ---- Capacitor v7 bridging ----
   public let identifier = "CalendarBridge"
   public let jsName = "CalendarBridge"
@@ -330,8 +330,9 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
       DispatchQueue.main.async {
         let eventViewController = EKEventViewController()
         eventViewController.event = event
-        eventViewController.allowsEditing = false
+        eventViewController.allowsEditing = true  // Enable editing
         eventViewController.allowsCalendarPreview = true
+        eventViewController.delegate = self // Set the delegate
         
         // Get the root view controller to present from
         if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
@@ -415,5 +416,26 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
   @objc private func dismissEventViewController() {
     currentEventViewController?.dismiss(animated: true)
     currentEventViewController = nil
+  }
+  
+  // MARK: - EKEventViewDelegate
+  public func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
+    // Handle different actions
+    switch action {
+    case .done:
+      // User tapped Done - dismiss the view
+      dismissEventViewController()
+    case .deleted:
+      // Event was deleted - dismiss the view and notify listeners
+      dismissEventViewController()
+      // Notify that an event was deleted so the UI can refresh
+      notifyListeners("eventDeleted", data: [:])
+    case .responded:
+      // User responded to an invitation - dismiss the view
+      dismissEventViewController()
+    @unknown default:
+      // Handle any future cases
+      dismissEventViewController()
+    }
   }
 }
