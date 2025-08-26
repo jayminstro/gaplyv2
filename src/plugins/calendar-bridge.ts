@@ -15,8 +15,11 @@ export type NativeEvent = {
   start: number; // ms
   end: number;   // ms
   isAllDay: boolean;
-  transparency?: 'busy' | 'free' | 'oof' | 'tentative';
-  status?: 'confirmed' | 'tentative' | 'cancelled';
+  location?: string;
+  notes?: string;
+  url?: string;
+  transparency?: 'opaque' | 'transparent';
+  status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
 };
 
 export interface CalendarBridgePlugin {
@@ -25,6 +28,7 @@ export interface CalendarBridgePlugin {
   getCalendars(): Promise<{ calendars: CalendarInfo[] }>;
   getEvents(opts: { start: string; end: string; calendarIds: string[] }): Promise<{ events: NativeEvent[] }>;
   openSettings(): Promise<void>;
+  openEventInCalendar(opts: { eventId: string }): Promise<{ success: boolean }>;
   addListener(eventName: 'eventStoreChanged', listenerFunc: () => void): Promise<{ remove: () => void }>;
   ping(): Promise<{ ok: boolean }>;
 }

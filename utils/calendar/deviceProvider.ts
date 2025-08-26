@@ -24,25 +24,21 @@ export class DeviceCalendarProvider {
   }
 
   async getBusyBlocks(dateRange: DateRange, preferences: UserPreferences): Promise<CalendarBusyBlock[]> {
-    console.log('🔧 DeviceCalendarProvider.getBusyBlocks called with:', { dateRange, showBusy: preferences.show_device_calendar_busy });
     
     // For debugging, allow fetching even if preference is disabled
     const shouldFetch = preferences.show_device_calendar_busy || preferences.debugCalendarSync;
     if (!shouldFetch) {
-      console.log('🔧 Calendar busy disabled and debug not enabled, returning empty array');
       return [];
     }
     
     const hasPerm = await this.requestPermission();
     if (!hasPerm) {
-      console.log('🔧 No calendar permission, returning empty array');
       return [];
     }
     
     const included = (preferences.device_calendar_included_ids || []);
     const calendarIds = included.length > 0 ? included : await this.getCalendars();
     if (calendarIds.length === 0) {
-      console.log('🔧 No calendars available, returning empty array');
       return [];
     }
     
@@ -54,29 +50,16 @@ export class DeviceCalendarProvider {
     const startISO = startRange.start;
     const endISO = endRange.end;
     
-    console.log('🔧 Converted dates for iOS:', { 
-      original: { start: dateRange.start, end: dateRange.end },
-      startRange,
-      endRange,
-      final: { start: startISO, end: endISO }
-    });
-    
-    console.log('🔧 Fetching events for calendars:', calendarIds);
     try {
       const res = await CalendarBridge.getEvents({ start: startISO, end: endISO, calendarIds });
-      console.log('🔧 CalendarBridge.getEvents returned:', res);
       
       const events = (res.events || []) as NativeEvent[];
-      console.log('🔧 Raw events from bridge:', events);
       
       const blocks = events.flatMap(ev => this.normalizeEvent(ev, preferences));
-      console.log('🔧 Normalized blocks:', blocks);
       
       const filtered = CalendarNormalizer.filterByTransparency(blocks, preferences);
-      console.log('🔧 After transparency filtering:', filtered);
       
       const merged = CalendarNormalizer.mergeOverlaps(filtered);
-      console.log('🔧 After merging overlaps:', merged);
       
       return merged;
     } catch (error) {
@@ -86,10 +69,6 @@ export class DeviceCalendarProvider {
   }
 
   private normalizeEvent(nativeEvent: NativeEvent, preferences: UserPreferences): CalendarBusyBlock[] {
-    console.log('🔧 normalizeEvent called with:', { nativeEvent, preferences: { 
-      show_device_calendar_titles: preferences.show_device_calendar_titles,
-      calendar_all_day_block_mode: preferences.calendar_all_day_block_mode
-    }});
     
     // Convert ms to local date/time strings (respect device/prefs TZ implicitly via format)
     const startDate = new Date(nativeEvent.start);
@@ -98,13 +77,25 @@ export class DeviceCalendarProvider {
     const start_time = format(startDate, 'HH:mm');
     const end_time = format(endDate, 'HH:mm');
     
-    console.log('🔧 Date conversion:', {
-      original: { start: nativeEvent.start, end: nativeEvent.end },
-      converted: { date, start_time, end_time },
-      isAllDay: nativeEvent.isAllDay
-    });
-    
     const title = preferences.show_device_calendar_titles ? nativeEvent.title : undefined;
+    // Map the new transparency values to the expected format
+    let transparency: 'busy' | 'free' | 'oof' | 'tentative' | undefined;
+    if (nativeEvent.transparency === 'opaque') {
+      transparency = 'busy';
+    } else if (nativeEvent.transparency === 'transparent') {
+      transparency = 'free';
+    }
+    
+    // Map the new status values to the expected format
+    let status: 'confirmed' | 'tentative' | 'cancelled' | undefined;
+    if (nativeEvent.status === 'confirmed') {
+      status = 'confirmed';
+    } else if (nativeEvent.status === 'tentative') {
+      status = 'tentative';
+    } else if (nativeEvent.status === 'cancelled') {
+      status = 'cancelled';
+    }
+    
     const block: CalendarBusyBlock = {
       date,
       start_time,
@@ -113,15 +104,16 @@ export class DeviceCalendarProvider {
       calendarId: nativeEvent.calendarId,
       title,
       isAllDay: nativeEvent.isAllDay,
-      transparency: nativeEvent.transparency,
-      status: nativeEvent.status,
+      uid: nativeEvent.id, // Preserve native event identifier for opening events
+      transparency,
+      status,
+      location: nativeEvent.location,
+      notes: nativeEvent.notes,
+      url: nativeEvent.url,
       lastSyncedAt: new Date().toISOString()
     };
     
-    console.log('🔧 Created block:', block);
-    
     const expanded = CalendarNormalizer.expandAllDay(block, preferences);
-    console.log('🔧 After expandAllDay:', expanded);
     
     return expanded;
   }
@@ -144,13 +136,6 @@ export class DeviceCalendarProvider {
       // Adjust the date to account for timezone offset
       // This ensures we're asking for the correct day in the user's timezone
       const adjustedDate = new Date(date.getTime() - (tzOffset * 60 * 1000));
-      
-      console.log('🔧 Date conversion details:', {
-        original: dateStr,
-        localDate: date.toISOString(),
-        tzOffset,
-        adjustedDate: adjustedDate.toISOString()
-      });
       
       return adjustedDate.toISOString();
     }
@@ -190,15 +175,6 @@ export class DeviceCalendarProvider {
       // from UTC, and we want to shift the UTC time to match the local time)
       const adjustedStart = new Date(startDate.getTime() + (tzOffset * 60 * 1000));
       const adjustedEnd = new Date(endDate.getTime() + (tzOffset * 60 * 1000));
-      
-      console.log('🔧 Date range conversion details:', {
-        original: dateStr,
-        startLocal: startDate.toISOString(),
-        endLocal: endDate.toISOString(),
-        tzOffset,
-        adjustedStart: adjustedStart.toISOString(),
-        adjustedEnd: adjustedEnd.toISOString()
-      });
       
       return {
         start: adjustedStart.toISOString(),

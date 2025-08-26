@@ -2,9 +2,11 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { format, parseISO, addMinutes, isSameDay, isValid as isValidDate } from 'date-fns';
 import { Clock, User, Briefcase, Heart, Brain, Coffee, Moon, Target, Calendar, Settings, Sparkles } from 'lucide-react';
 import { Task, TimeGap, UserPreferences } from '../types/index';
+import { CalendarBusyBlock } from '../types/calendar';
 import { renderSafeIcon } from '../utils/helpers';
 import { ActivityStackModal } from './ActivityStackModal';
 import { OverlapModal } from './OverlapModal';
+import { CalendarEventModal } from './CalendarEventModal';
 import { calendarService } from '../utils/calendar/index';
 
 interface TimelineItem {
@@ -52,20 +54,27 @@ function PlannerTimeline({
   // Ref for the timeline container to enable auto-scrolling
   const timelineRef = useRef<HTMLDivElement>(null);
   const [busyOverlays, setBusyOverlays] = useState<{ start: Date; end: Date }[]>([]);
+  const [richCalendarData, setRichCalendarData] = useState<CalendarBusyBlock[]>([]);
 
   // Load busy overlays for selected date when preference enabled
   useEffect(() => {
     const loadBusy = async () => {
       try {
-        if (!userPreferences?.show_device_calendar_busy) { setBusyOverlays([]); return; }
+        if (!userPreferences?.show_device_calendar_busy) { 
+          setBusyOverlays([]); 
+          setRichCalendarData([]);
+          return; 
+        }
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
         const blocks = await calendarService.getBusyBlocks({ start: dateStr, end: dateStr }, userPreferences);
         const mapped = (blocks || [])
           .filter(b => b.date === dateStr)
           .map(b => ({ start: parseISO(`${b.date}T${b.start_time}`), end: parseISO(`${b.date}T${b.end_time}`) }));
         setBusyOverlays(mapped);
+        setRichCalendarData(blocks.filter(b => b.date === dateStr));
       } catch {
         setBusyOverlays([]);
+        setRichCalendarData([]);
       }
     };
     void loadBusy();
@@ -84,6 +93,39 @@ function PlannerTimeline({
     timeSlot: string;
     hasCalendarEvents: boolean;
   } | null>(null);
+  
+  // Calendar event modal state
+  const [calendarEventModalOpen, setCalendarEventModalOpen] = useState(false);
+  const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<any>(null);
+  
+  // Debug: Log userPreferences when they change
+  useEffect(() => {
+    console.log('🔍 PlannerTimeline - userPreferences updated:', {
+      device_calendar_open_in: userPreferences?.device_calendar_open_in,
+      show_device_calendar_busy: userPreferences?.show_device_calendar_busy,
+      show_device_calendar_titles: userPreferences?.show_device_calendar_titles,
+      full_prefs: userPreferences
+    });
+  }, [userPreferences]);
+  
+  // Function to open calendar event directly in system calendar
+  const handleOpenEventInCalendar = async (eventData: any) => {
+    try {
+      const { CalendarBridge } = await import('../src/plugins/calendar-bridge');
+      if (CalendarBridge) {
+        const eventId = eventData.uid || eventData.id;
+        console.log('🔧 Attempting to open event in system calendar with ID:', eventId);
+        await CalendarBridge.openEventInCalendar({ eventId });
+        console.log('✅ Successfully opened event in system calendar');
+      }
+    } catch (error) {
+      console.error('❌ Error opening calendar event:', error);
+      // Fallback to modal if direct opening fails
+      console.log('🔄 Falling back to modal due to error');
+      setSelectedCalendarEvent(eventData);
+      setCalendarEventModalOpen(true);
+    }
+  };
   
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
@@ -136,12 +178,6 @@ function PlannerTimeline({
   const timelineItems = useMemo(() => {
     const items: TimelineItem[] = [];
     
-    // Debug: Log gaps being processed
-    console.log(`🔍 PlannerTimeline Debug - Processing ${gaps.length} gaps for date: ${format(selectedDate, 'yyyy-MM-dd')}`);
-    if (gaps.length > 0) {
-      console.log(`🔍 PlannerTimeline Debug - Gap dates:`, gaps.map(g => g.date).slice(0, 5));
-    }
-    
     // Get working hours for filtering
     const workStartHour = userPreferences?.calendar_work_start 
       ? parseInt(userPreferences.calendar_work_start.split(':')[0]) 
@@ -156,8 +192,6 @@ function PlannerTimeline({
       const gapDate = new Date(gap.date);
       return isSameDay(gapDate, selectedDate);
     });
-    
-    console.log(`🔍 PlannerTimeline Debug - Found ${selectedDateGaps.length} gaps for selected date`);
     
     // Add gaps to timeline items
     selectedDateGaps.forEach(gap => {
@@ -188,9 +222,6 @@ function PlannerTimeline({
             gapSource: gap.modified_by as 'default' | 'calendar' | 'manual'
           });
           
-          console.log(`✅ Added gap to timeline: ${gap.start_time}-${gap.end_time} (${gap.duration_minutes} min)`);
-        } else {
-          console.log(`⏭️ Skipped gap outside working hours: ${gap.start_time}-${gap.end_time}`);
         }
       } catch (error) {
         console.error(`❌ Error processing gap ${gap.id}:`, error);
@@ -199,32 +230,37 @@ function PlannerTimeline({
     
     // Add calendar events as timeline items
     if (userPreferences?.show_device_calendar_busy) {
-      console.log(`🔧 Timeline Debug - Calendar events prop:`, calendarEvents);
-      console.log(`🔧 Timeline Debug - Selected date:`, selectedDate.toISOString());
       
       // Combine both sources: direct prop events and busy overlays as fallback
-      const candidates: Array<{ id: string; start: Date; end: Date; title: string }>= [];
+      const candidates: Array<{ id: string; start: Date; end: Date; title: string; richData?: any }>= [];
       if (calendarEvents && calendarEvents.length > 0) {
-        console.log(`🔧 Timeline Debug - Processing ${calendarEvents.length} calendar events from prop`);
         for (const ev of calendarEvents) {
-          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '' });
+          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '', richData: ev });
         }
       }
       if (busyOverlays && busyOverlays.length > 0) {
-        console.log(`🔧 Timeline Debug - Processing ${busyOverlays.length} busy overlays`);
         for (let i = 0; i < busyOverlays.length; i++) {
           const ov = busyOverlays[i];
-          candidates.push({ id: `busy-overlay-${i}`, start: ov.start, end: ov.end, title: '' });
+          // Find the corresponding rich data
+          const richData = richCalendarData.find(b => 
+            b.date === format(ov.start, 'yyyy-MM-dd') && 
+            b.start_time === format(ov.start, 'HH:mm') && 
+            b.end_time === format(ov.end, 'HH:mm')
+          );
+          candidates.push({ 
+            id: `busy-overlay-${i}`, 
+            start: ov.start, 
+            end: ov.end, 
+            title: richData?.title || 'Busy',
+            richData 
+          });
         }
       }
       
-      console.log(`🔧 Timeline Debug - Total candidates:`, candidates.length);
-
       // Remove time-based deduplication to allow overlapping events with same times
       const filtered = candidates;
 
       if (filtered.length > 0) {
-        console.log(`🔍 Timeline Debug - Processing ${filtered.length} calendar events (combined sources)`);
       }
 
       filtered.forEach((event) => {
@@ -233,16 +269,10 @@ function PlannerTimeline({
           const dayStart = new Date(selectedDate); dayStart.setHours(0,0,0,0);
           const dayEnd = new Date(selectedDate); dayEnd.setHours(23,59,59,999);
           
-          console.log(`🔧 Timeline Debug - Event "${event.title}": ${event.start.toISOString()} to ${event.end.toISOString()}`);
-          console.log(`🔧 Timeline Debug - Day range: ${dayStart.toISOString()} to ${dayEnd.toISOString()}`);
-          console.log(`🔧 Timeline Debug - Overlap check: start <= dayEnd? ${event.start <= dayEnd}, end >= dayStart? ${event.end >= dayStart}`);
-          
           if (!(event.start <= dayEnd && event.end >= dayStart)) {
-            console.log(`🔧 Timeline Debug - Event filtered out due to date range`);
             return;
           }
           
-          console.log(`🔧 Timeline Debug - Event "${event.title}" passed date filter`);
           // Split into per-hour segments to avoid cross-slot rendering issues
           const segmentStart = event.start < dayStart ? dayStart : event.start;
           const segmentEnd = event.end > dayEnd ? dayEnd : event.end;
@@ -267,10 +297,23 @@ function PlannerTimeline({
               duration: `${durationMinutes} min`,
               icon: <Calendar className="w-4 h-4 text-red-400" />,
               iconColor: 'bg-red-500/20',
-              data: { id: event.id, start: segStart, end: segEnd, title: event.title || '', isAllDay: false },
+                      data: {
+          id: event.id,
+          uid: event.richData?.uid, // Native event identifier for opening in calendar
+          start: segStart,
+          end: segEnd,
+          title: event.title || '',
+          isAllDay: event.richData?.isAllDay || false,
+          // Pass through rich event details for the modal
+          calendarId: event.richData?.calendarId,
+          location: event.richData?.location,
+          notes: event.richData?.notes,
+          url: event.richData?.url,
+          transparency: event.richData?.transparency,
+          status: event.richData?.status
+        },
               gapSource: 'calendar'
             });
-            console.log(`✅ Added calendar segment: ${format(segStart, 'HH:mm')}-${format(segEnd, 'HH:mm')} (${durationMinutes} min)`);
           }
         } catch (error) {
           console.error(`❌ Error processing calendar event:`, error);
@@ -355,10 +398,6 @@ function PlannerTimeline({
     // Sort by start time
     const sortedItems = items.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
     
-    // Debug: Log final timeline items
-    const gapItems = sortedItems.filter(item => item.type === 'gap');
-    console.log(`🔍 PlannerTimeline Debug - Final timeline items: ${sortedItems.length} total, ${gapItems.length} gaps`);
-    
     return sortedItems;
   }, [tasks, gaps, selectedDate, userPreferences, currentTime, calendarEvents, busyOverlays]);
   
@@ -437,7 +476,6 @@ function PlannerTimeline({
       behavior: 'smooth'
     });
     
-    console.log(`📍 Auto-scrolled timeline to current hour: ${currentHour}:00`);
   }, [selectedDate, currentHour, shouldShowCurrentTime, timeSlots]);
   
   // Simple function to get items for each time slot
@@ -510,8 +548,40 @@ function PlannerTimeline({
       onTaskOpen(item.data as Task);
     } else if (item.type === 'gap') {
       onGapUtilize(item.data as TimeGap);
+    } else if (item.type === 'calendar') {
+      // Prepare calendar event data
+      const calendarEventData = {
+        id: item.data.id || item.id,
+        uid: item.data.uid, // Native event identifier for opening in calendar
+        calendarId: item.data.calendarId || 'default',
+        title: item.data.title || 'Busy',
+        start: item.startTime.getTime(),
+        end: item.endTime.getTime(),
+        isAllDay: item.data.isAllDay || false,
+        location: item.data.location,
+        notes: item.data.notes,
+        url: item.data.url,
+        transparency: item.data.transparency,
+        status: item.data.status
+      };
+      
+      // Check user preference for calendar event opening behavior
+      const openInPreference = userPreferences?.device_calendar_open_in || 'gaply';
+      
+      // Debug logging
+      console.log('🔍 Calendar event click - Preference:', openInPreference, 'UserPrefs:', userPreferences);
+      
+      if (openInPreference?.toLowerCase() === 'calendar') {
+        // Open directly in system calendar
+        console.log('🚀 Opening calendar event directly in system calendar');
+        handleOpenEventInCalendar(calendarEventData);
+      } else {
+        // Open in Gaply modal (default behavior)
+        console.log('📱 Opening calendar event in Gaply modal');
+        setSelectedCalendarEvent(calendarEventData);
+        setCalendarEventModalOpen(true);
+      }
     }
-    // Calendar items are not clickable, so no action needed
   };
 
   return (
@@ -544,12 +614,9 @@ function PlannerTimeline({
           .map((gap) => ({ kind: 'gap', item: gap }));
 
         const taskGroups = groupOverlappingItems(itemsAtHour);
-        console.log(`🔧 Timeline Debug - Hour ${slot.hour24}: ${itemsAtHour.length} items, ${taskGroups.length} groups`);
         if (itemsAtHour.length > 0) {
-          console.log(`🔧 Timeline Debug - Items for hour ${slot.hour24}:`, itemsAtHour.map(i => `${i.type}:${i.title}(${format(i.startTime, 'HH:mm')}-${format(i.endTime, 'HH:mm')})`));
         }
         if (taskGroups.length > 0) {
-          console.log(`🔧 Timeline Debug - Task groups for hour ${slot.hour24}:`, taskGroups.map(g => `${g.items.length} items (hasCalendar: ${g.hasCalendarEvents})`));
         }
         
         const groupUnits: RenderUnit[] = taskGroups.map((g) => ({
@@ -673,11 +740,13 @@ function PlannerTimeline({
                         return null;
                       }
                       return (
-                        <div
+                        <button
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40"
+                          onClick={() => handleItemClick(item)}
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation"
+                          type="button"
                         >
-                                                      <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
@@ -708,7 +777,7 @@ function PlannerTimeline({
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       );
                     } else {
                       // Render single task
@@ -1014,6 +1083,16 @@ function PlannerTimeline({
       onStartTimer={(activity) => {
         setOverlapModalOpen(false);
         onTaskOpen(activity);
+      }}
+    />
+    
+    {/* Calendar Event Modal - handles individual calendar event details */}
+    <CalendarEventModal
+      event={selectedCalendarEvent}
+      isOpen={calendarEventModalOpen}
+      onClose={() => {
+        setCalendarEventModalOpen(false);
+        setSelectedCalendarEvent(null);
       }}
     />
     </>

@@ -265,7 +265,20 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-  const [deviceBusy, setDeviceBusy] = useState<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }[]>([]);
+    const [deviceBusy, setDeviceBusy] = useState<{
+    id: string;
+    start: Date;
+    end: Date;
+    title: string | undefined;
+    isAllDay: boolean;
+    // Basic event details for the modal
+    calendarId?: string;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: 'opaque' | 'transparent';
+    status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  }[]>([]);
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -307,7 +320,14 @@ function PlannerContent({
             start: startDate, 
             end: endDate, 
             title: userPreferences?.show_device_calendar_titles ? (e.title || '') : undefined, // Respect the preference
-            isAllDay: e.isAllDay || false 
+            isAllDay: e.isAllDay || false,
+            // Preserve basic event details for the modal
+            calendarId: e.calendarId,
+            location: e.location,
+            notes: e.notes,
+            url: e.url,
+            transparency: e.transparency,
+            status: e.status
           };
         });
         
