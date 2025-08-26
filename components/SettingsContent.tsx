@@ -1094,12 +1094,12 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                     />
                   </div>
 
-                  <div className="py-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Calendar className="w-4 h-4 text-slate-400" />
+                  <div className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
                       <div className="flex-1">
                         <div className="text-white text-sm font-medium">Open Calendar Event In</div>
-                        <div className="text-slate-400 text-xs">
+                        <div className={`text-xs ${!localPreferences.show_device_calendar_titles ? 'text-slate-500' : 'text-slate-400'}`}>
                           {!localPreferences.show_device_calendar_titles 
                             ? "Enable event titles to choose how events open"
                             : "Choose where calendar events open when tapped"
@@ -1107,15 +1107,17 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                         </div>
                       </div>
                     </div>
-                    <ToggleGroup
-                      title=""
-                      options={['Gaply', 'Calendar']}
-                      selectedOptions={[localPreferences.device_calendar_open_in || 'gaply']}
-                      onChange={(options) => updatePreference('device_calendar_open_in', options[0] || 'gaply')}
-                      columns={2}
-                      disabled={!localPreferences.show_device_calendar_titles}
-                      className={!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}
-                    />
+                    <div className={`transition-opacity duration-200 ${!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}`}>
+                      <ToggleGroup
+                        title=""
+                        options={['Gaply', 'Calendar']}
+                        selectedOptions={[localPreferences.device_calendar_open_in || 'gaply']}
+                        onChange={(options) => updatePreference('device_calendar_open_in', options[0] || 'gaply')}
+                        columns={2}
+                        disabled={!localPreferences.show_device_calendar_titles}
+                        className="min-w-[160px]"
+                      />
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between py-3">
