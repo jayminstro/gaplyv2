@@ -7,15 +7,8 @@ export class CalendarNormalizer {
     event: CalendarBusyBlock,
     preferences: UserPreferences
   ): CalendarBusyBlock[] {
-    console.log('🔧 expandAllDay called with:', { event, preferences: { 
-      calendar_all_day_block_mode: preferences.calendar_all_day_block_mode,
-      calendar_work_start: preferences.calendar_work_start,
-      calendar_work_end: preferences.calendar_work_end
-    }});
-    
     if (!event.isAllDay) {
-      console.log('🔧 Not all-day event, returning as-is');
-      return [
+      const result = [
         {
           date: event.date,
           start_time: event.start_time,
@@ -34,13 +27,12 @@ export class CalendarNormalizer {
           lastSyncedAt: event.lastSyncedAt
         }
       ];
+      return result;
     }
 
     const mode = preferences.calendar_all_day_block_mode || 'workday';
-    console.log('🔧 All-day event, mode:', mode);
     
     if (mode === 'ignore') {
-      console.log('🔧 Ignoring all-day event');
       return [];
     }
 
@@ -48,7 +40,6 @@ export class CalendarNormalizer {
     const workEnd = preferences.calendar_work_end || '18:00';
 
     if (mode === 'workday') {
-      console.log('🔧 Creating workday block:', { workStart, workEnd });
       return [
         {
           date: event.date,
@@ -85,10 +76,6 @@ export class CalendarNormalizer {
     }
     const blockEndMin = blockStartMin + duration;
 
-    console.log('🔧 Creating fixed window block:', { 
-      blockMinutes, startMin, endMin, windowMinutes, duration, position, blockStartMin, blockEndMin 
-    });
-
     return [
       {
         date: event.date,
@@ -111,42 +98,25 @@ export class CalendarNormalizer {
   }
 
   static filterByTransparency(blocks: CalendarBusyBlock[], preferences: UserPreferences): CalendarBusyBlock[] {
-    console.log('🔧 filterByTransparency called with:', { 
-      blocksCount: blocks.length, 
-      preferences: { 
-        calendar_block_tentative: preferences.calendar_block_tentative 
-      } 
-    });
     
     const keepTentative = !!preferences.calendar_block_tentative;
     const filtered = blocks.filter(b => {
       if (b.status === 'cancelled') {
-        console.log('🔧 Filtering out cancelled event:', b);
         return false;
       }
       if (b.transparency === 'free') {
-        console.log('🔧 Filtering out free event:', b);
         return false;
       }
       if (b.transparency === 'tentative' && !keepTentative) {
-        console.log('🔧 Filtering out tentative event (tentative not allowed):', b);
         return false;
       }
-      console.log('🔧 Keeping event:', b);
       return true;
-    });
-    
-    console.log('🔧 filterByTransparency result:', { 
-      input: blocks.length, 
-      output: filtered.length,
-      filtered 
     });
     
     return filtered;
   }
 
   static mergeOverlaps(blocks: CalendarBusyBlock[]): CalendarBusyBlock[] {
-    console.log('🔧 mergeOverlaps called with:', { blocksCount: blocks.length, blocks });
     
     if (blocks.length === 0) return blocks;
     
@@ -155,39 +125,24 @@ export class CalendarNormalizer {
       return a.start_time.localeCompare(b.start_time);
     });
     
-    console.log('🔧 Sorted blocks:', sorted);
-    
     const merged: CalendarBusyBlock[] = [];
     for (const block of sorted) {
       const last = merged[merged.length - 1];
       if (!last || last.date !== block.date) {
-        console.log('🔧 Adding new date block:', block);
         merged.push({ ...block });
         continue;
       }
       const lastEnd = timeToMinutes(last.end_time);
       const curStart = timeToMinutes(block.start_time);
       if (curStart > lastEnd) {
-        console.log('🔧 Adding non-overlapping block:', block);
         merged.push({ ...block });
       } else {
         // overlap or touch: extend end
         const newEnd = Math.max(lastEnd, timeToMinutes(block.end_time));
         const oldEnd = last.end_time;
         last.end_time = minutesToTime(newEnd);
-        console.log('🔧 Merged overlapping blocks:', { 
-          old: { ...last, end_time: oldEnd }, 
-          new: block, 
-          merged: last 
-        });
       }
     }
-    
-    console.log('🔧 mergeOverlaps result:', { 
-      input: blocks.length, 
-      output: merged.length,
-      merged 
-    });
     
     return merged;
   }

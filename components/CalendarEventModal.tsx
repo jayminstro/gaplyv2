@@ -18,6 +18,7 @@ interface CalendarEvent {
   url?: string;
   transparency?: 'opaque' | 'transparent';
   status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  uid?: string; // Added for native event identifier
 }
 
 interface CalendarEventModalProps {
@@ -64,23 +65,16 @@ export function CalendarEventModal({
   const handleOpenInCalendar = async () => {
     try {
       setIsOpeningCalendar(true);
-      
-      // Import the CalendarBridge dynamically to avoid issues
       const { CalendarBridge } = await import('../src/plugins/calendar-bridge');
-      
       if (CalendarBridge) {
-        const result = await CalendarBridge.openEventInCalendar({ eventId: event.id });
-        
-        // Close the modal after opening the calendar
-        setTimeout(() => {
-          onClose();
-        }, 500); // Small delay to ensure the calendar app opens
+        const eventId = event.uid || event.id;
+        const result = await CalendarBridge.openEventInCalendar({ eventId });
+        setTimeout(() => { onClose(); }, 500);
       } else {
         onClose();
       }
     } catch (error) {
       console.error('Error opening calendar event:', error);
-      // Fallback: just close the modal
       onClose();
     } finally {
       setIsOpeningCalendar(false);

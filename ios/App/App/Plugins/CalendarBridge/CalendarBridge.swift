@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import EventKit
+import EventKitUI
 import UIKit
 
 @objc(CalendarBridge)
@@ -21,6 +22,7 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
 
   private let store = EKEventStore()
   private var observer: NSObjectProtocol?
+  private var currentEventViewController: UIViewController?
   private let isoWithMillis: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -324,59 +326,33 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
       print("🔧 CalendarBridge Debug - Event eventIdentifier: \(event.eventIdentifier)")
       print("🔧 CalendarBridge Debug - Event calendarItemIdentifier: \(event.calendarItemIdentifier ?? "nil")")
       
-      // Try to open the event using its URL if available
-      if let eventURL = event.url {
-        print("🔧 CalendarBridge Debug - Opening event using event.url: \(eventURL)")
+      // Try to present the event using EventKit's native event view controller
+      DispatchQueue.main.async {
+        let eventViewController = EKEventViewController()
+        eventViewController.event = event
+        eventViewController.allowsEditing = false
+        eventViewController.allowsCalendarPreview = true
         
-        // Validate the URL before attempting to open it
-        guard eventURL.scheme != nil, eventURL.host != nil else {
-          print("🔧 CalendarBridge Debug - Event URL appears invalid, using calshow:// fallback")
-          // Fallback to calshow:// if URL is malformed
-          if let calshowURL = URL(string: "calshow://") {
-            DispatchQueue.main.async {
-              UIApplication.shared.open(calshowURL) { success in
-                call.resolve(["success": success, "method": "calshow_invalid_url_fallback"])
-              }
-            }
-          } else {
-            call.reject("Failed to open calendar")
-          }
-          return
-        }
-        
-        DispatchQueue.main.async {
-          UIApplication.shared.open(eventURL) { success in
-            if success {
-              print("🔧 CalendarBridge Debug - Successfully opened event URL")
-              call.resolve(["success": true, "method": "event_url"])
-            } else {
-              print("🔧 CalendarBridge Debug - Failed to open event URL, trying calshow://")
-              // Fallback to calshow://
-              if let calshowURL = URL(string: "calshow://") {
-                UIApplication.shared.open(calshowURL) { success in
-                  call.resolve(["success": success, "method": "calshow_fallback"])
-                }
-              } else {
-                // Last resort: try to open the default calendar app
-                print("🔧 CalendarBridge Debug - calshow:// failed, trying default calendar app")
-                call.resolve(["success": false, "method": "no_calendar_app_found"])
-              }
-            }
-          }
-        }
-      } else {
-        print("🔧 CalendarBridge Debug - No event URL, using calshow:// fallback")
-        // Fallback to opening the calendar app
-        if let calshowURL = URL(string: "calshow://") {
-          DispatchQueue.main.async {
-            UIApplication.shared.open(calshowURL) { success in
-              call.resolve(["success": success, "method": "calshow_only"])
-            }
+        // Get the root view controller to present from
+        if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+          let navigationController = UINavigationController(rootViewController: eventViewController)
+          navigationController.modalPresentationStyle = .fullScreen
+          
+          // Add a done button
+          let doneButton = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(self.dismissEventViewController))
+          eventViewController.navigationItem.rightBarButtonItem = doneButton
+          
+          // Store reference to dismiss
+          self.currentEventViewController = navigationController
+          
+          rootViewController.present(navigationController, animated: true) {
+            print("🔧 CalendarBridge Debug - Successfully presented event view controller")
+            call.resolve(["success": true, "method": "native_event_view"])
           }
         } else {
-          // Last resort: try to open the default calendar app
-          print("🔧 CalendarBridge Debug - calshow:// failed, trying default calendar app")
-          call.resolve(["success": false, "method": "no_calendar_app_found"])
+          print("🔧 CalendarBridge Debug - Could not find root view controller, falling back to calshow")
+          // Fallback to opening calendar app to the date
+          self.openCalendarToDate(event: event, call: call)
         }
       }
     } else {
@@ -387,8 +363,57 @@ public class CalendarBridge: CAPPlugin, CAPBridgedPlugin {
       print("🔧 CalendarBridge Debug - 2. Event ID format mismatch")
       print("🔧 CalendarBridge Debug - 3. Calendar permissions changed")
       print("🔧 CalendarBridge Debug - 4. Event is from a different calendar source")
-      call.reject("Event not found with ID: \(eventId)")
-      return
+      call.reject("Event not found")
     }
+  }
+  
+  private func openCalendarToDate(event: EKEvent, call: CAPPluginCall) {
+    // Fallback: open calendar app to the event's date
+    var calendarURLString = "calshow://"
+    
+    if let eventDate = event.startDate {
+      let formatter = DateFormatter()
+      formatter.dateFormat = "yyyy-MM-dd"
+      let dateString = formatter.string(from: eventDate)
+      calendarURLString += "?date=\(dateString)"
+    }
+    
+    if let calendarURL = URL(string: calendarURLString) {
+      print("🔧 CalendarBridge Debug - Opening calendar with URL: \(calendarURL)")
+      
+      UIApplication.shared.open(calendarURL) { success in
+        if success {
+          print("🔧 CalendarBridge Debug - Successfully opened calendar app")
+          call.resolve(["success": true, "method": "calshow_with_date"])
+        } else {
+          print("🔧 CalendarBridge Debug - Failed to open calendar app, trying fallback")
+          // Fallback: try to open the default calendar app
+          if let defaultCalendarURL = URL(string: "calshow://") {
+            UIApplication.shared.open(defaultCalendarURL) { success in
+              call.resolve(["success": success, "method": "calshow_fallback"])
+            }
+          } else {
+            call.resolve(["success": false, "method": "no_calendar_app_found"])
+          }
+        }
+      }
+    } else {
+      print("🔧 CalendarBridge Debug - Failed to create calendar URL, using fallback")
+      // Fallback to opening the calendar app
+      if let calshowURL = URL(string: "calshow://") {
+        UIApplication.shared.open(calshowURL) { success in
+          call.resolve(["success": success, "method": "calshow_only"])
+        }
+      } else {
+        // Last resort: try to open the default calendar app
+        print("🔧 CalendarBridge Debug - calshow:// failed, trying default calendar app")
+        call.reject("Failed to open calendar")
+      }
+    }
+  }
+  
+  @objc private func dismissEventViewController() {
+    currentEventViewController?.dismiss(animated: true)
+    currentEventViewController = nil
   }
 }

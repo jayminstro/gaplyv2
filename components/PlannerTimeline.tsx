@@ -270,6 +270,7 @@ function PlannerTimeline({
               iconColor: 'bg-red-500/20',
                       data: {
           id: event.id,
+          uid: event.richData?.uid, // Native event identifier for opening in calendar
           start: segStart,
           end: segEnd,
           title: event.title || '',
@@ -520,8 +521,9 @@ function PlannerTimeline({
       onGapUtilize(item.data as TimeGap);
     } else if (item.type === 'calendar') {
       // Open calendar event modal
-      setSelectedCalendarEvent({
+      const calendarEventData = {
         id: item.data.id || item.id,
+        uid: item.data.uid, // Native event identifier for opening in calendar
         calendarId: item.data.calendarId || 'default',
         title: item.data.title || 'Busy',
         start: item.startTime.getTime(),
@@ -532,7 +534,9 @@ function PlannerTimeline({
         url: item.data.url,
         transparency: item.data.transparency,
         status: item.data.status
-      });
+      };
+      
+      setSelectedCalendarEvent(calendarEventData);
       setCalendarEventModalOpen(true);
     }
   };
