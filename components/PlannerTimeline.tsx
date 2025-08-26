@@ -98,6 +98,35 @@ function PlannerTimeline({
   const [calendarEventModalOpen, setCalendarEventModalOpen] = useState(false);
   const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<any>(null);
   
+  // Debug: Log userPreferences when they change
+  useEffect(() => {
+    console.log('🔍 PlannerTimeline - userPreferences updated:', {
+      device_calendar_open_in: userPreferences?.device_calendar_open_in,
+      show_device_calendar_busy: userPreferences?.show_device_calendar_busy,
+      show_device_calendar_titles: userPreferences?.show_device_calendar_titles,
+      full_prefs: userPreferences
+    });
+  }, [userPreferences]);
+  
+  // Function to open calendar event directly in system calendar
+  const handleOpenEventInCalendar = async (eventData: any) => {
+    try {
+      const { CalendarBridge } = await import('../src/plugins/calendar-bridge');
+      if (CalendarBridge) {
+        const eventId = eventData.uid || eventData.id;
+        console.log('🔧 Attempting to open event in system calendar with ID:', eventId);
+        await CalendarBridge.openEventInCalendar({ eventId });
+        console.log('✅ Successfully opened event in system calendar');
+      }
+    } catch (error) {
+      console.error('❌ Error opening calendar event:', error);
+      // Fallback to modal if direct opening fails
+      console.log('🔄 Falling back to modal due to error');
+      setSelectedCalendarEvent(eventData);
+      setCalendarEventModalOpen(true);
+    }
+  };
+  
   // Helper function to check if a gap overlaps with working hours
   const isGapWithinWorkingHours = (startTime: Date, endTime: Date) => {
     if (!userPreferences?.calendar_work_start || !userPreferences?.calendar_work_end) {
@@ -520,7 +549,7 @@ function PlannerTimeline({
     } else if (item.type === 'gap') {
       onGapUtilize(item.data as TimeGap);
     } else if (item.type === 'calendar') {
-      // Open calendar event modal
+      // Prepare calendar event data
       const calendarEventData = {
         id: item.data.id || item.id,
         uid: item.data.uid, // Native event identifier for opening in calendar
@@ -536,8 +565,22 @@ function PlannerTimeline({
         status: item.data.status
       };
       
-      setSelectedCalendarEvent(calendarEventData);
-      setCalendarEventModalOpen(true);
+      // Check user preference for calendar event opening behavior
+      const openInPreference = userPreferences?.device_calendar_open_in || 'gaply';
+      
+      // Debug logging
+      console.log('🔍 Calendar event click - Preference:', openInPreference, 'UserPrefs:', userPreferences);
+      
+      if (openInPreference?.toLowerCase() === 'calendar') {
+        // Open directly in system calendar
+        console.log('🚀 Opening calendar event directly in system calendar');
+        handleOpenEventInCalendar(calendarEventData);
+      } else {
+        // Open in Gaply modal (default behavior)
+        console.log('📱 Opening calendar event in Gaply modal');
+        setSelectedCalendarEvent(calendarEventData);
+        setCalendarEventModalOpen(true);
+      }
     }
   };
 

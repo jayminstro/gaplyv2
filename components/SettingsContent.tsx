@@ -254,6 +254,12 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
 
   // Update local preferences when props change
   useEffect(() => {
+    // Only update if we don't already have local preferences initialized
+    // This prevents overwriting local-only fields when server preferences sync
+    if (localPreferences) {
+      return;
+    }
+    
     // Ensure array fields are properly initialized
     const safePreferences = {
       ...preferences,
@@ -263,14 +269,14 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       preferred_categories: Array.isArray(preferences.preferred_categories) 
         ? preferences.preferred_categories 
         : [],
-      // Preserve local-only fields when updating from props
-      show_device_calendar_busy: localPreferences?.show_device_calendar_busy ?? preferences.show_device_calendar_busy ?? false,
-      show_device_calendar_titles: localPreferences?.show_device_calendar_titles ?? preferences.show_device_calendar_titles ?? false,
-      device_calendar_included_ids: localPreferences?.device_calendar_included_ids ?? preferences.device_calendar_included_ids ?? [],
-      device_calendar_open_in: localPreferences?.device_calendar_open_in ?? preferences.device_calendar_open_in ?? 'gaply'
+      // Set default values for local-only fields
+      show_device_calendar_busy: preferences.show_device_calendar_busy ?? false,
+      show_device_calendar_titles: preferences.show_device_calendar_titles ?? false,
+      device_calendar_included_ids: preferences.device_calendar_included_ids ?? [],
+      device_calendar_open_in: preferences.device_calendar_open_in ?? 'gaply'
     };
     setLocalPreferences(safePreferences);
-  }, [preferences]);
+  }, [preferences, localPreferences]);
 
   // Live preview: broadcast working day changes so planner can react immediately
   useEffect(() => {
