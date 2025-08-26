@@ -91,16 +91,19 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       const nextBusy = !!fallback.show_device_calendar_busy;
       const nextTitles = !!fallback.show_device_calendar_titles;
       const nextIds = Array.isArray(fallback.device_calendar_included_ids) ? fallback.device_calendar_included_ids : [];
+      const nextOpenIn = fallback.device_calendar_open_in || 'gaply';
       const hasDiff = (
         (localPreferences.show_device_calendar_busy ?? false) !== nextBusy ||
         (localPreferences.show_device_calendar_titles ?? false) !== nextTitles ||
-        JSON.stringify(localPreferences.device_calendar_included_ids || []) !== JSON.stringify(nextIds)
+        JSON.stringify(localPreferences.device_calendar_included_ids || []) !== JSON.stringify(nextIds) ||
+        (localPreferences.device_calendar_open_in || 'gaply') !== nextOpenIn
       );
       if (hasDiff) {
         // Apply without triggering server autosave; local-only path handles persistence
         updatePreference('show_device_calendar_busy', nextBusy);
         updatePreference('show_device_calendar_titles', nextTitles);
         updatePreference('device_calendar_included_ids', nextIds);
+        updatePreference('device_calendar_open_in', nextOpenIn);
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,38 +333,45 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
   const LOCAL_ONLY_KEYS = new Set([
     'show_device_calendar_busy',
     'show_device_calendar_titles',
-    'device_calendar_included_ids'
+    'device_calendar_included_ids',
+    'device_calendar_open_in'
   ]);
 
   const updatePreferences = (patch: Partial<UserPreferences>) => {
-    let next: UserPreferences;
     setLocalPreferences(prev => {
-      next = { ...prev, ...patch } as UserPreferences;
+      const next = { ...prev, ...patch } as UserPreferences;
+      
+      const keys = Object.keys(patch);
+      const isLocalOnly = keys.every(k => LOCAL_ONLY_KEYS.has(k));
+      if (isLocalOnly) {
+        // Immediately propagate local-only changes to parent and persist locally
+        onPreferencesUpdate?.(next);
+        try {
+          (async () => {
+            if (localFirstService && (localFirstService as any)?.savePreferences) {
+              await localFirstService.savePreferences(next);
+            }
+          })();
+        } catch {}
+        // Also persist a lightweight fallback in localStorage to survive early restarts
+        try {
+          const userId = session?.user?.id || 'local-user';
+          const devicePrefs = {
+            show_device_calendar_busy: next.show_device_calendar_busy ?? false,
+            show_device_calendar_titles: next.show_device_calendar_titles ?? false,
+            device_calendar_included_ids: next.device_calendar_included_ids ?? [],
+            device_calendar_open_in: next.device_calendar_open_in ?? 'gaply'
+          };
+          localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
+        } catch {}
+      }
+      
       return next;
     });
 
     const keys = Object.keys(patch);
     const isLocalOnly = keys.every(k => LOCAL_ONLY_KEYS.has(k));
     if (isLocalOnly) {
-      // Immediately propagate local-only changes to parent and persist locally
-      onPreferencesUpdate?.(next);
-      try {
-        (async () => {
-          if (localFirstService && (localFirstService as any)?.savePreferences) {
-            await localFirstService.savePreferences(next);
-          }
-        })();
-      } catch {}
-      // Also persist a lightweight fallback in localStorage to survive early restarts
-      try {
-        const userId = session?.user?.id || 'local-user';
-        const devicePrefs = {
-          show_device_calendar_busy: next.show_device_calendar_busy ?? false,
-          show_device_calendar_titles: next.show_device_calendar_titles ?? false,
-          device_calendar_included_ids: next.device_calendar_included_ids ?? []
-        };
-        localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
-      } catch {}
       return; // Avoid triggering autosave debounce for local-only keys
     }
 
@@ -396,7 +406,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
       calendar_working_days: normalizedWorkingDays,
       show_device_calendar_busy: (localPreferences?.show_device_calendar_busy ?? false),
       show_device_calendar_titles: (localPreferences?.show_device_calendar_titles ?? false),
-      device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? [])
+      device_calendar_included_ids: (localPreferences?.device_calendar_included_ids ?? []),
+      device_calendar_open_in: (localPreferences?.device_calendar_open_in ?? 'gaply')
     } as UserPreferences;
   };
 
@@ -482,7 +493,8 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
           const devicePrefs = {
             show_device_calendar_busy: next.show_device_calendar_busy ?? false,
             show_device_calendar_titles: next.show_device_calendar_titles ?? false,
-            device_calendar_included_ids: next.device_calendar_included_ids ?? []
+            device_calendar_included_ids: next.device_calendar_included_ids ?? [],
+            device_calendar_open_in: next.device_calendar_open_in ?? 'gaply'
           };
           localStorage.setItem(`gaply_device_calendar_${userId}`, JSON.stringify(devicePrefs));
         } catch {}
@@ -1079,6 +1091,30 @@ export function SettingsContent({ session, preferences, onSignOut, onPreferences
                       checked={localPreferences.show_device_calendar_titles || false} 
                       onCheckedChange={(checked) => updatePreference('show_device_calendar_titles', checked)}
                       disabled={!localPreferences.show_device_calendar_busy}
+                    />
+                  </div>
+
+                  <div className="py-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <div className="flex-1">
+                        <div className="text-white text-sm font-medium">Open Calendar Event In</div>
+                        <div className="text-slate-400 text-xs">
+                          {!localPreferences.show_device_calendar_titles 
+                            ? "Enable event titles to choose how events open"
+                            : "Choose where calendar events open when tapped"
+                          }
+                        </div>
+                      </div>
+                    </div>
+                    <ToggleGroup
+                      title=""
+                      options={['Gaply', 'Calendar']}
+                      selectedOptions={[localPreferences.device_calendar_open_in || 'gaply']}
+                      onChange={(options) => updatePreference('device_calendar_open_in', options[0] || 'gaply')}
+                      columns={2}
+                      disabled={!localPreferences.show_device_calendar_titles}
+                      className={!localPreferences.show_device_calendar_titles ? 'opacity-50' : ''}
                     />
                   </div>
 
