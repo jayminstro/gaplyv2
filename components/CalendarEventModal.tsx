@@ -39,6 +39,24 @@ export function CalendarEventModal({
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [isOpeningCalendar, setIsOpeningCalendar] = useState(false);
 
+  // Function to safely render HTML content
+  const renderHtml = (html: string): string => {
+    if (!html) return '';
+    
+    // Basic HTML sanitization - only allow safe tags
+    const safeHtml = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '') // Remove iframe tags
+      .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '') // Remove object tags
+      .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '') // Remove embed tags
+      .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // Remove event handlers
+      .replace(/javascript:/gi, '') // Remove javascript: protocol
+      .replace(/data:/gi, '') // Remove data: protocol
+      .replace(/vbscript:/gi, ''); // Remove vbscript: protocol
+    
+    return safeHtml;
+  };
+
   if (!event) return null;
 
   const startDate = new Date(event.start);
@@ -193,25 +211,25 @@ export function CalendarEventModal({
                 
                 {notesExpanded && (
                   <div className="ml-8 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30 overflow-hidden max-w-full">
-                    <div className="text-slate-300 text-sm whitespace-pre-wrap break-words max-w-full overflow-hidden">
-                      {event.notes}
-                    </div>
+                    <div 
+                      className="text-slate-300 text-sm max-w-full overflow-hidden prose prose-invert prose-sm"
+                      dangerouslySetInnerHTML={{ __html: renderHtml(event.notes) }}
+                    />
                   </div>
                 )}
                 
                 {!notesExpanded && (
                   <div className="ml-8 overflow-hidden max-w-full">
                     <div 
-                      className="text-slate-400 text-sm break-words max-w-full overflow-hidden"
+                      className="text-slate-400 text-sm max-w-full overflow-hidden prose prose-invert prose-sm"
                       style={{
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
                         overflow: 'hidden'
                       }}
-                    >
-                      {event.notes}
-                    </div>
+                      dangerouslySetInnerHTML={{ __html: renderHtml(event.notes) }}
+                    />
                   </div>
                 )}
               </div>
