@@ -83,15 +83,15 @@ export function CalendarEventModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white border-0 max-w-md mx-auto p-6 rounded-3xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white border-0 w-[95vw] max-w-[95vw] mx-auto p-4 sm:p-6 rounded-3xl max-h-[90vh] overflow-hidden !max-w-[95vw] !w-[95vw] !left-[2.5vw] !translate-x-0 !right-[2.5vw]">
         {/* Header with sleek design */}
-        <DialogHeader className="text-center mb-6">
-          <DialogTitle className="text-xl font-semibold mb-2 text-white">
-            <div className="flex items-center justify-center gap-3">
-              <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
+        <DialogHeader className="text-center mb-6 max-w-full">
+          <DialogTitle className="text-lg sm:text-xl font-semibold mb-2 text-white max-w-full">
+            <div className="flex items-start gap-3 max-w-full">
+              <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                 <Calendar className="w-5 h-5 text-red-400" />
               </div>
-              <span className="truncate">
+              <span className="flex-1 min-w-0 text-left break-words leading-tight">
                 {isMinimalEvent ? 'Busy Time' : (event.title || 'Untitled Event')}
               </span>
             </div>
@@ -99,17 +99,17 @@ export function CalendarEventModal({
         </DialogHeader>
 
         {/* Content with proper spacing */}
-        <div className="space-y-5">
+        <div className="space-y-5 max-w-full overflow-hidden">
           {/* Time & Duration */}
-          <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
+          <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full overflow-hidden">
             <div className="flex items-start gap-3 text-slate-300">
               <Clock className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm text-white">
+              <div className="flex-1 min-w-0 max-w-full overflow-hidden">
+                <div className="font-medium text-sm text-white break-words overflow-hidden">
                   {formatDate(startDate)}
                 </div>
-                <div className="text-sm text-slate-400 mt-1">
-                  <span className="truncate">{formatTime(startDate)} - {formatTime(endDate)}</span>
+                <div className="text-sm text-slate-400 mt-1 overflow-hidden">
+                  <span className="break-words overflow-hidden">{formatTime(startDate)} - {formatTime(endDate)}</span>
                   {!event.isAllDay && (
                     <span className="ml-2 text-slate-500 flex-shrink-0">
                       ({formatDuration(duration)})
@@ -122,14 +122,14 @@ export function CalendarEventModal({
 
           {/* Status */}
           {event.status && event.status !== 'none' && (
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
+            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-center gap-3 text-slate-300">
                 <div className="w-5 h-5 rounded-full bg-slate-700/50 flex items-center justify-center flex-shrink-0">
                   <div className="w-2.5 h-2.5 bg-slate-400 rounded-full" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 max-w-full">
                   <div className="text-xs text-slate-400 uppercase tracking-wide">Status</div>
-                  <div className="font-medium text-sm capitalize text-white">{event.status}</div>
+                  <div className="font-medium text-sm capitalize text-white break-words">{event.status}</div>
                 </div>
               </div>
             </div>
@@ -137,12 +137,12 @@ export function CalendarEventModal({
 
           {/* Location */}
           {event.location && (
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
+            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-start gap-3 text-slate-300">
                 <MapPin className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 max-w-full">
                   <div className="text-xs text-slate-400 uppercase tracking-wide">Location</div>
-                  <div className="font-medium text-sm text-white truncate">{event.location}</div>
+                  <div className="font-medium text-sm text-white break-all">{event.location}</div>
                 </div>
               </div>
             </div>
@@ -150,12 +150,12 @@ export function CalendarEventModal({
 
           {/* URL/Link */}
           {event.url && (
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
+            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-start gap-3 text-slate-300">
                 <Link className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 max-w-full">
                   <div className="text-xs text-slate-400 uppercase tracking-wide">Link</div>
-                  <div className="font-medium text-sm text-blue-400 truncate">
+                  <div className="font-medium text-sm text-blue-400 break-all">
                     <a href={event.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
                       {event.url}
                     </a>
@@ -167,7 +167,7 @@ export function CalendarEventModal({
 
           {/* Notes Preview */}
           {event.notes && (
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
+            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 text-slate-300">
@@ -189,17 +189,17 @@ export function CalendarEventModal({
                 </div>
                 
                 {notesExpanded && (
-                  <div className="ml-8 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30 overflow-hidden">
-                    <p className="text-slate-300 text-sm whitespace-pre-wrap break-words">
+                  <div className="ml-8 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30 overflow-hidden max-w-full">
+                    <div className="text-slate-300 text-sm whitespace-pre-wrap break-words max-w-full overflow-hidden">
                       {event.notes}
-                    </p>
+                    </div>
                   </div>
                 )}
                 
                 {!notesExpanded && (
-                  <div className="ml-8 overflow-hidden">
-                    <p 
-                      className="text-slate-400 text-sm break-words"
+                  <div className="ml-8 overflow-hidden max-w-full">
+                    <div 
+                      className="text-slate-400 text-sm break-words max-w-full overflow-hidden"
                       style={{
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
@@ -208,7 +208,7 @@ export function CalendarEventModal({
                       }}
                     >
                       {event.notes}
-                    </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -217,8 +217,8 @@ export function CalendarEventModal({
           
           {/* Info for minimal events */}
           {isMinimalEvent && (
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
-              <p className="text-slate-400 text-sm text-center break-words">
+            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
+              <p className="text-slate-400 text-sm text-center break-words max-w-full">
                 This is a busy time block from your calendar.
               </p>
             </div>
