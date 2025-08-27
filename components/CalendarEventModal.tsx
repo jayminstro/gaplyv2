@@ -102,6 +102,13 @@ export function CalendarEventModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white border-0 w-[95vw] max-w-[95vw] mx-auto p-4 sm:p-6 rounded-3xl max-h-[90vh] flex flex-col !max-w-[95vw] !w-[95vw] !left-[2.5vw] !translate-x-0 !right-[2.5vw]">
+        {/* DialogHeader with hidden title for accessibility */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>
+            {isMinimalEvent ? 'Busy Time' : (event.title || 'Event Details')}
+          </DialogTitle>
+        </DialogHeader>
+        
         {/* Clean header layout */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-4">

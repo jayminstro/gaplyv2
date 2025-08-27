@@ -89,7 +89,20 @@ function PlannerTimeline({
   const [overlapModalOpen, setOverlapModalOpen] = useState(false);
   const [selectedOverlap, setSelectedOverlap] = useState<{
     tasks: Task[];
-    calendarEvents: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
+    calendarEvents: Array<{
+      id: string;
+      start: Date;
+      end: Date;
+      title: string | undefined;
+      isAllDay: boolean;
+      // Rich event details for the modal
+      calendarId?: string;
+      location?: string;
+      notes?: string;
+      url?: string;
+      transparency?: 'opaque' | 'transparent';
+      status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+    }>;
     timeSlot: string;
     hasCalendarEvents: boolean;
   } | null>(null);
@@ -107,6 +120,17 @@ function PlannerTimeline({
       full_prefs: userPreferences
     });
   }, [userPreferences]);
+
+  // Debug: Log overlap modal props when modal opens
+  useEffect(() => {
+    if (overlapModalOpen) {
+      console.log('🔍 OverlapModal Debug - Props being passed:', {
+        openCalendarEventIn: userPreferences?.device_calendar_open_in || 'gaply',
+        userPreferences: userPreferences,
+        device_calendar_open_in: userPreferences?.device_calendar_open_in
+      });
+    }
+  }, [overlapModalOpen, userPreferences?.device_calendar_open_in]);
   
   // Function to open calendar event directly in system calendar
   const handleOpenEventInCalendar = async (eventData: any) => {
@@ -1086,7 +1110,16 @@ function PlannerTimeline({
         setOverlapModalOpen(false);
         onTaskOpen(activity);
       }}
+      openCalendarEventIn={userPreferences?.device_calendar_open_in || 'gaply'}
+      onOpenInCalendar={(event) => {
+        // Handle opening calendar event in device calendar
+        console.log('🚀 Opening calendar event in device calendar:', event);
+        // Use the existing handleOpenEventInCalendar function
+        handleOpenEventInCalendar(event);
+      }}
     />
+    
+
     
     {/* Calendar Event Modal - handles individual calendar event details */}
     <CalendarEventModal

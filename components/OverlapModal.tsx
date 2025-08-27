@@ -2,15 +2,44 @@ import { X, Clock, Play, Calendar } from 'lucide-react';
 import { Task } from '../types/index';
 import { renderSafeIcon } from '../utils/helpers';
 import { format } from 'date-fns';
+import { useState } from 'react';
+import { CalendarEventModal } from './CalendarEventModal';
 
 interface OverlapModalProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: Task[];
-  calendarEvents: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
+  calendarEvents: Array<{
+    id: string;
+    start: Date;
+    end: Date;
+    title: string | undefined;
+    isAllDay: boolean;
+    // Rich event details for the modal
+    calendarId?: string;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: 'opaque' | 'transparent';
+    status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  }>;
   timeSlot: string;
   onActivitySelect: (activity: Task) => void;
   onStartTimer: (activity: Task) => void;
+  openCalendarEventIn?: 'gaply' | 'calendar'; // New prop to determine behavior
+  onOpenInCalendar?: (event: {
+    id: string;
+    start: Date;
+    end: Date;
+    title: string | undefined;
+    isAllDay: boolean;
+    calendarId?: string;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: 'opaque' | 'transparent';
+    status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  }) => void; // Callback for opening in device calendar
 }
 
 export function OverlapModal({
@@ -20,8 +49,42 @@ export function OverlapModal({
   calendarEvents,
   timeSlot,
   onActivitySelect,
-  onStartTimer
+  onStartTimer,
+  openCalendarEventIn = 'gaply', // Default to gaply behavior
+  onOpenInCalendar
 }: OverlapModalProps) {
+  const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<typeof calendarEvents[0] | null>(null);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+
+  // Helper function to handle opening calendar events in device calendar
+  const handleOpenInDeviceCalendar = (event: typeof calendarEvents[0]) => {
+    if (onOpenInCalendar) {
+      onOpenInCalendar(event);
+    } else {
+      // Fallback: try to open in device calendar using URL scheme
+      const startTime = event.start.toISOString();
+      const endTime = event.end.toISOString();
+      const title = encodeURIComponent(event.title || 'Busy');
+      
+      // Try different calendar URL schemes
+      const calendarUrls = [
+        `calshow://?start=${startTime}&end=${endTime}&title=${title}`,
+        `x-apple-calevent://?start=${startTime}&end=${endTime}&title=${title}`,
+        `googlecalendar://?action=TEMPLATE&text=${title}&dates=${startTime}/${endTime}`
+      ];
+      
+      // Try to open the first available calendar app
+      for (const url of calendarUrls) {
+        try {
+          window.open(url, '_blank');
+          break;
+        } catch (error) {
+          console.log('Could not open calendar URL:', url);
+        }
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
 
@@ -67,7 +130,26 @@ export function OverlapModal({
               {calendarEvents.map((event) => (
                 <div
                   key={event.id}
-                  className="bg-red-800/40 backdrop-blur-sm rounded-2xl p-4 border border-red-500/30"
+                  className="bg-red-800/40 backdrop-blur-sm rounded-2xl p-4 border border-red-500/30 cursor-pointer hover:bg-red-800/50 transition-colors"
+                  onClick={() => {
+                    console.log('🔍 OverlapModal - Calendar event clicked:', {
+                      eventTitle: event.title,
+                      openCalendarEventIn,
+                      preferenceLower: openCalendarEventIn?.toLowerCase(),
+                      shouldOpenInCalendar: openCalendarEventIn?.toLowerCase() === 'calendar'
+                    });
+                    
+                    if (openCalendarEventIn?.toLowerCase() === 'calendar') {
+                      // Open in device calendar
+                      console.log('🚀 Opening calendar event in device calendar');
+                      handleOpenInDeviceCalendar(event);
+                    } else {
+                      // Open in Gaply (show CalendarEventModal)
+                      console.log('📱 Opening calendar event in Gaply modal');
+                      setSelectedCalendarEvent(event);
+                      setIsCalendarModalOpen(true);
+                    }
+                  }}
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -194,6 +276,28 @@ export function OverlapModal({
           )}
         </div>
       </div>
+      
+      {/* Calendar Event Modal */}
+      {selectedCalendarEvent && (
+        <CalendarEventModal
+          isOpen={isCalendarModalOpen}
+          onClose={() => {
+            setIsCalendarModalOpen(false);
+            setSelectedCalendarEvent(null);
+          }}
+          event={{
+            id: selectedCalendarEvent.id,
+            title: selectedCalendarEvent.title || 'Busy',
+            start: selectedCalendarEvent.start,
+            end: selectedCalendarEvent.end,
+            isAllDay: selectedCalendarEvent.isAllDay,
+            notes: selectedCalendarEvent.notes || '',
+            url: selectedCalendarEvent.url || '',
+            location: selectedCalendarEvent.location || '',
+            status: selectedCalendarEvent.status || 'confirmed'
+          }}
+        />
+      )}
     </div>
   );
 }
