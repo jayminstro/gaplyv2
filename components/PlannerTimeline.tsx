@@ -89,7 +89,20 @@ function PlannerTimeline({
   const [overlapModalOpen, setOverlapModalOpen] = useState(false);
   const [selectedOverlap, setSelectedOverlap] = useState<{
     tasks: Task[];
-    calendarEvents: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
+    calendarEvents: Array<{
+      id: string;
+      start: Date;
+      end: Date;
+      title: string | undefined;
+      isAllDay: boolean;
+      // Rich event details for the modal
+      calendarId?: string;
+      location?: string;
+      notes?: string;
+      url?: string;
+      transparency?: 'opaque' | 'transparent';
+      status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+    }>;
     timeSlot: string;
     hasCalendarEvents: boolean;
   } | null>(null);
@@ -107,6 +120,17 @@ function PlannerTimeline({
       full_prefs: userPreferences
     });
   }, [userPreferences]);
+
+  // Debug: Log overlap modal props when modal opens
+  useEffect(() => {
+    if (overlapModalOpen) {
+      console.log('🔍 OverlapModal Debug - Props being passed:', {
+        openCalendarEventIn: userPreferences?.device_calendar_open_in || 'gaply',
+        userPreferences: userPreferences,
+        device_calendar_open_in: userPreferences?.device_calendar_open_in
+      });
+    }
+  }, [overlapModalOpen, userPreferences?.device_calendar_open_in]);
   
   // Function to open calendar event directly in system calendar
   const handleOpenEventInCalendar = async (eventData: any) => {
@@ -586,7 +610,7 @@ function PlannerTimeline({
 
   return (
     <>
-    <div ref={timelineRef} className="space-y-4 pb-8 relative">
+    <div ref={timelineRef} className="space-y-4 pb-8 relative w-full max-w-full overflow-hidden">
       {!hasWorkingDays && (
         <div className="text-center py-8 bg-slate-800/30 border border-slate-700/30 rounded-2xl">
           <h3 className="text-slate-200 font-medium mb-1">No working days selected</h3>
@@ -636,7 +660,7 @@ function PlannerTimeline({
         );
 
         return (
-          <div key={slot.time} className="flex items-start gap-4 relative">
+          <div key={slot.time} className="flex items-start gap-4 relative w-full max-w-full min-w-0">
             {/* Time label */}
             <div className="w-16 flex-shrink-0 text-slate-400 text-xs font-medium pt-2">
               {slot.display}
@@ -659,7 +683,7 @@ function PlannerTimeline({
             )}
             
             {/* Timeline items */}
-            <div className="flex-1 space-y-3">
+            <div className="flex-1 space-y-3 min-w-0 max-w-full">
               {renderUnits.length > 0 ? (
                 renderUnits.map((unit) => {
                   if (unit.kind === 'gap') {
@@ -671,7 +695,7 @@ function PlannerTimeline({
                       <button
                         key={`${item.type}-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                         onClick={() => handleItemClick(item)}
-                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`}
+                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40 overflow-hidden`}
                         type="button"
                       >
                         <div className="flex items-center gap-3">
@@ -680,14 +704,14 @@ function PlannerTimeline({
                           >
                             {gapSourceInfo.icon}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h3 className="text-white font-medium truncate text-base">Gap</h3>
-                              <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full">
+                          <div className="flex-1 min-w-0 max-w-full">
+                            <div className="flex items-center gap-2 mb-1">
+                                                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">Gap</h3>
+                              <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full flex-shrink-0">
                                 {gapSourceInfo.label}
                               </span>
                             </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 text-sm text-slate-400 text-left">
                               {(() => {
                                 // Dynamic display range for current hour when inside the gap and viewing today
                                 const isTodaySelected = isSameDay(selectedDate, currentTime);
@@ -743,21 +767,21 @@ function PlannerTimeline({
                         <button
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                           onClick={() => handleItemClick(item)}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation"
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation overflow-hidden"
                           type="button"
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-white font-medium truncate text-base">{item.title || 'Busy'}</h3>
-                                <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full">
+                            <div className="flex-1 min-w-0 max-w-full">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">{item.title || 'Busy'}</h3>
+                                <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full flex-shrink-0">
                                   Calendar
                                 </span>
                               </div>
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                              <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 text-sm text-slate-400 text-left">
                                 {(() => {
                                   // Clip display to the current hour slot for multi-hour events
                                   const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
@@ -768,7 +792,9 @@ function PlannerTimeline({
                                     return <span className="font-medium">--</span>;
                                   }
                                   return (
-                                    <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
+                                    <span className="font-medium">
+                                      {formatTimeRange(displayStart, displayEnd)}
+                                    </span>
                                   );
                                 })()}
                                 {userPreferences?.show_duration_in_planner && (
@@ -782,21 +808,21 @@ function PlannerTimeline({
                     } else {
                       // Render single task
                       return (
-                        <button
-                          key={`task-${item.id}-${item.startTime.getTime()}`}
-                          onClick={() => handleItemClick(item)}
-                          className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50`}
-                          type="button"
-                        >
+                                              <button
+                        key={`task-${item.id}-${item.startTime.getTime()}`}
+                        onClick={() => handleItemClick(item)}
+                        className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/40 hover:bg-slate-800/60 border border-slate-700/30 hover:border-slate-600/50 overflow-hidden`}
+                        type="button"
+                      >
                           <div className="flex items-center gap-3">
                             <div 
                               className={`w-10 h-10 ${item.iconColor} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
                             >
                               {renderSafeIcon(item.icon)}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-white font-medium truncate text-base">{item.title}</h3>
+                            <div className="flex-1 min-w-0 max-w-full">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">{item.title}</h3>
                               </div>
                               <div className="flex items-center gap-3 text-sm text-slate-400">
                                 <span className="truncate font-medium">{formatTimeRange(item.startTime, item.endTime)}</span>
@@ -845,7 +871,7 @@ function PlannerTimeline({
                           setStackModalOpen(true);
                         }
                       }}
-                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation ${
+                      className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation overflow-hidden ${
                         unit.hasCalendarEvents 
                           ? 'bg-red-800/40 hover:bg-red-800/60 border border-red-500/30 hover:border-red-500/50' 
                           : 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 hover:border-amber-500/50'
@@ -864,9 +890,9 @@ function PlannerTimeline({
                             <Clock className="w-4 h-4 text-amber-400" />
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <h3 className="text-white font-medium truncate text-base">
+                        <div className="flex-1 min-w-0 max-w-full">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">
                               {unit.hasCalendarEvents 
                                 ? `${items.length} overlapping events` 
                                 : `${items.length} overlapping activities`
@@ -983,7 +1009,7 @@ function PlannerTimeline({
                           <button
                             key={`gap-${gap.id}-${slot.hour24}`}
                             onClick={() => onGapUtilize(gap)}
-                            className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40`}
+                            className={`w-full backdrop-blur-sm rounded-2xl p-4 transition-all duration-200 text-left group active:scale-[0.98] touch-manipulation bg-slate-800/30 hover:bg-slate-800/50 border ${gapSourceInfo?.borderColor || 'border-slate-700/20'} hover:border-slate-600/40 overflow-hidden`}
                             type="button"
                           >
                             <div className="flex items-center gap-3">
@@ -996,11 +1022,11 @@ function PlannerTimeline({
                               
                               {/* Content */}
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between mb-1">
-                                  <h3 className="text-white font-medium truncate text-base">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h3 className="text-white font-medium truncate text-base flex-1 min-w-0 text-[clamp(14px,3.5vw,16px)]">
                                     Gap
                                   </h3>
-                                  <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full">
+                                  <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded-full flex-shrink-0">
                                     {gapSourceInfo.label}
                                   </span>
                                 </div>
@@ -1084,7 +1110,16 @@ function PlannerTimeline({
         setOverlapModalOpen(false);
         onTaskOpen(activity);
       }}
+      openCalendarEventIn={userPreferences?.device_calendar_open_in || 'gaply'}
+      onOpenInCalendar={(event) => {
+        // Handle opening calendar event in device calendar
+        console.log('🚀 Opening calendar event in device calendar:', event);
+        // Use the existing handleOpenEventInCalendar function
+        handleOpenEventInCalendar(event);
+      }}
     />
+    
+
     
     {/* Calendar Event Modal - handles individual calendar event details */}
     <CalendarEventModal
