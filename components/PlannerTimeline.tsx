@@ -687,7 +687,7 @@ function PlannerTimeline({
                                 {gapSourceInfo.label}
                               </span>
                             </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 text-sm text-slate-400 text-left">
                               {(() => {
                                 // Dynamic display range for current hour when inside the gap and viewing today
                                 const isTodaySelected = isSameDay(selectedDate, currentTime);
@@ -757,7 +757,7 @@ function PlannerTimeline({
                                   Calendar
                                 </span>
                               </div>
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-slate-400">
+                              <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 text-sm text-slate-400 text-left">
                                 {(() => {
                                   // Clip display to the current hour slot for multi-hour events
                                   const hourStart = new Date(selectedDate); hourStart.setHours(slot.hour24, 0, 0, 0);
@@ -768,7 +768,9 @@ function PlannerTimeline({
                                     return <span className="font-medium">--</span>;
                                   }
                                   return (
-                                    <span className="font-medium">{formatTimeRange(displayStart, displayEnd)}</span>
+                                    <span className="font-medium">
+                                      {formatTimeRange(displayStart, displayEnd)}
+                                    </span>
                                   );
                                 })()}
                                 {userPreferences?.show_duration_in_planner && (
