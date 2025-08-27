@@ -83,23 +83,26 @@ export function CalendarEventModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white border-0 w-[95vw] max-w-[95vw] mx-auto p-4 sm:p-6 rounded-3xl max-h-[90vh] overflow-hidden !max-w-[95vw] !w-[95vw] !left-[2.5vw] !translate-x-0 !right-[2.5vw]">
-        {/* Header with sleek design */}
-        <DialogHeader className="text-center mb-6 max-w-full">
-          <DialogTitle className="text-lg sm:text-xl font-semibold mb-2 text-white max-w-full">
-            <div className="flex items-start gap-3 max-w-full">
-              <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Calendar className="w-5 h-5 text-red-400" />
-              </div>
-              <span className="flex-1 min-w-0 text-left break-words leading-tight">
-                {isMinimalEvent ? 'Busy Time' : (event.title || 'Untitled Event')}
-              </span>
+      <DialogContent className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 text-white border-0 w-[95vw] max-w-[95vw] mx-auto p-4 sm:p-6 rounded-3xl max-h-[90vh] flex flex-col !max-w-[95vw] !w-[95vw] !left-[2.5vw] !translate-x-0 !right-[2.5vw]">
+        {/* Clean header layout */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-red-400" />
             </div>
-          </DialogTitle>
-        </DialogHeader>
+            <h2 className="text-lg sm:text-xl font-semibold text-white">
+              {isMinimalEvent ? 'Busy Time' : 'Event Details'}
+            </h2>
+          </div>
+          <div className="ml-13">
+            <h3 className="text-base font-medium text-slate-300 break-words leading-relaxed">
+              {isMinimalEvent ? 'Busy Time' : (event.title || 'Untitled Event')}
+            </h3>
+          </div>
+        </div>
 
-        {/* Content with proper spacing */}
-        <div className="space-y-5 max-w-full overflow-hidden">
+        {/* Content with proper spacing and scrolling */}
+        <div className="space-y-5 max-w-full overflow-y-auto flex-1">
           {/* Time & Duration */}
           <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full overflow-hidden">
             <div className="flex items-start gap-3 text-slate-300">
@@ -226,7 +229,7 @@ export function CalendarEventModal({
         </div>
 
         {/* Footer Button with sleek design */}
-        <div className="mt-8">
+        <div className="mt-8 flex-shrink-0">
           <Button
             onClick={handleOpenInCalendar}
             disabled={isOpeningCalendar}
