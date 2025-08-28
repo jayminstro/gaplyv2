@@ -5,6 +5,8 @@ import { format } from 'date-fns';
 import { CalendarNormalizer } from './normalizer';
 
 export class DeviceCalendarProvider {
+  private calendars: Array<{ id: string; title: string; color: string; type: string; allowsModifications: boolean }> = [];
+
   async requestPermission(): Promise<boolean> {
     try {
       const res = await CalendarBridge.requestPermission();
@@ -17,7 +19,15 @@ export class DeviceCalendarProvider {
   async getCalendars(): Promise<string[]> {
     try {
       const res = await CalendarBridge.getCalendars();
-      return (res.calendars || []).map(c => c.id);
+      // Store full calendar information for name lookup
+      this.calendars = (res.calendars || []).map(c => ({
+        id: c.id,
+        title: c.title,
+        color: c.color,
+        type: c.type,
+        allowsModifications: c.allowsModifications
+      }));
+      return this.calendars.map(c => c.id);
     } catch {
       return [];
     }
@@ -102,6 +112,7 @@ export class DeviceCalendarProvider {
       end_time,
       source: 'device',
       calendarId: nativeEvent.calendarId,
+      calendarName: this.getCalendarName(nativeEvent.calendarId), // Add calendar name
       title,
       isAllDay: nativeEvent.isAllDay,
       uid: nativeEvent.id, // Preserve native event identifier for opening events
@@ -148,6 +159,14 @@ export class DeviceCalendarProvider {
     }
 
     return date.toISOString();
+  }
+
+  private getCalendarName(calendarId?: string): string | undefined {
+    if (!calendarId) return undefined;
+    
+    // Try to get calendar name from the cached calendars
+    const calendar = this.calendars.find(cal => cal.id === calendarId);
+    return calendar?.title;
   }
 
   private convertDateRangeToISO(dateStr: string): { start: string; end: string } {

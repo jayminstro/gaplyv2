@@ -265,7 +265,7 @@ function PlannerContent({
   const selectedDateGaps = useGaps(selectedDateStr, globalTasks, userPreferences);
 
   // Phase 2: Device calendar busy → subtract from gaps
-    const [deviceBusy, setDeviceBusy] = useState<{
+  const [deviceBusy, setDeviceBusy] = useState<{
     id: string;
     start: Date;
     end: Date;
@@ -273,17 +273,49 @@ function PlannerContent({
     isAllDay: boolean;
     // Basic event details for the modal
     calendarId?: string;
+    calendarName?: string; // Add calendar name
     location?: string;
     notes?: string;
     url?: string;
     transparency?: 'opaque' | 'transparent';
     status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
   }[]>([]);
+  
+  // State to store calendar ID to name mapping
+  const [calendarNameMap, setCalendarNameMap] = useState<Record<string, string>>({});
+  
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const touchStartY = useRef(0);
   const touchMoveY = useRef(0);
+
+  // Load calendar names and create ID to name mapping
+  useEffect(() => {
+    const loadCalendarNames = async () => {
+      if (!userPreferences?.show_device_calendar_busy) {
+        setCalendarNameMap({});
+        return;
+      }
+      
+      try {
+        const calendars = await loadDeviceCalendars();
+        const nameMap: Record<string, string> = {};
+        calendars.forEach(cal => {
+          if (cal.id && cal.title) {
+            nameMap[cal.id] = cal.title;
+          }
+        });
+        setCalendarNameMap(nameMap);
+        console.log('🔧 Calendar name mapping loaded:', nameMap);
+      } catch (error) {
+        console.error('Failed to load calendar names:', error);
+        setCalendarNameMap({});
+      }
+    };
+    
+    loadCalendarNames();
+  }, [userPreferences?.show_device_calendar_busy, userPreferences?.device_calendar_included_ids]);
 
   // Fetch device calendar busy times for the selected date
   useEffect(() => {
@@ -323,6 +355,7 @@ function PlannerContent({
             isAllDay: e.isAllDay || false,
             // Preserve basic event details for the modal
             calendarId: e.calendarId,
+            calendarName: calendarNameMap[e.calendarId || ''] || e.calendarId, // Use calendar name if available, fallback to ID
             location: e.location,
             notes: e.notes,
             url: e.url,

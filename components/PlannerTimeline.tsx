@@ -34,7 +34,20 @@ interface PlannerTimelineProps {
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
   hasWorkingDays?: boolean;
-  calendarEvents?: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
+  calendarEvents?: Array<{ 
+    id: string; 
+    start: Date; 
+    end: Date; 
+    title: string | undefined; 
+    isAllDay: boolean;
+    calendarId?: string;
+    calendarName?: string;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: 'opaque' | 'transparent';
+    status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  }>;
 }
 
 function PlannerTimeline({ 
@@ -97,6 +110,7 @@ function PlannerTimeline({
       isAllDay: boolean;
       // Rich event details for the modal
       calendarId?: string;
+      calendarName?: string;
       location?: string;
       notes?: string;
       url?: string;
@@ -259,7 +273,16 @@ function PlannerTimeline({
       const candidates: Array<{ id: string; start: Date; end: Date; title: string; richData?: any }>= [];
       if (calendarEvents && calendarEvents.length > 0) {
         for (const ev of calendarEvents) {
-          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '', richData: ev });
+          candidates.push({ 
+            id: ev.id, 
+            start: ev.start, 
+            end: ev.end, 
+            title: ev.title || '', 
+            richData: {
+              ...ev,
+              calendarName: ev.calendarName // Ensure calendar name is passed through
+            }
+          });
         }
       }
       if (busyOverlays && busyOverlays.length > 0) {
@@ -330,6 +353,7 @@ function PlannerTimeline({
           isAllDay: event.richData?.isAllDay || false,
           // Pass through rich event details for the modal
           calendarId: event.richData?.calendarId,
+          calendarName: event.richData?.calendarName, // Add calendar name
           location: event.richData?.location,
           notes: event.richData?.notes,
           url: event.richData?.url,
@@ -578,6 +602,7 @@ function PlannerTimeline({
         id: item.data.id || item.id,
         uid: item.data.uid, // Native event identifier for opening in calendar
         calendarId: item.data.calendarId || 'default',
+        calendarName: item.data.calendarName, // Add calendar name
         title: item.data.title || 'Busy',
         start: item.startTime.getTime(),
         end: item.endTime.getTime(),
@@ -1117,6 +1142,7 @@ function PlannerTimeline({
         // Use the existing handleOpenEventInCalendar function
         handleOpenEventInCalendar(event);
       }}
+      showEventTitles={userPreferences?.show_device_calendar_titles}
     />
     
 
@@ -1129,6 +1155,7 @@ function PlannerTimeline({
         setCalendarEventModalOpen(false);
         setSelectedCalendarEvent(null);
       }}
+      showEventTitles={userPreferences?.show_device_calendar_titles}
     />
     </>
   );

@@ -8,6 +8,7 @@ import { useIsMobile } from './ui/use-mobile';
 interface CalendarEvent {
   id: string;
   calendarId?: string;
+  calendarName?: string; // Add calendar name
   title: string;
   start: number; // timestamp in milliseconds
   end: number;   // timestamp in milliseconds
@@ -25,16 +26,18 @@ interface CalendarEventModalProps {
   event: CalendarEvent | null;
   isOpen: boolean;
   onClose: () => void;
+  showEventTitles?: boolean; // Whether to show detailed event information
 }
 
 export function CalendarEventModal({ 
   event, 
   isOpen, 
-  onClose 
+  onClose,
+  showEventTitles = true // Default to showing titles for backward compatibility
 }: CalendarEventModalProps) {
   const isMobile = useIsMobile();
 
-  const isMinimalEvent = !event?.title || event.title === 'Busy';
+  const isMinimalEvent = !event?.title || event.title === 'Busy' || !showEventTitles;
   
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [isOpeningCalendar, setIsOpeningCalendar] = useState(false);
@@ -119,11 +122,13 @@ export function CalendarEventModal({
               {isMinimalEvent ? 'Busy Time' : 'Event Details'}
             </h2>
           </div>
-          <div className="ml-13">
-            <h3 className="text-base font-medium text-slate-300 break-words leading-relaxed">
-              {isMinimalEvent ? 'Busy Time' : (event.title || 'Untitled Event')}
-            </h3>
-          </div>
+          {showEventTitles && (
+            <div className="ml-13">
+              <h3 className="text-base font-medium text-slate-300 break-words leading-relaxed">
+                {event.title || 'Untitled Event'}
+              </h3>
+            </div>
+          )}
         </div>
 
         {/* Content with proper spacing and scrolling */}
@@ -148,23 +153,23 @@ export function CalendarEventModal({
             </div>
           </div>
 
-          {/* Status */}
-          {event.status && event.status !== 'none' && (
+          {/* Calendar */}
+          {event.calendarId && (
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-center gap-3 text-slate-300">
-                <div className="w-5 h-5 rounded-full bg-slate-700/50 flex items-center justify-center flex-shrink-0">
-                  <div className="w-2.5 h-2.5 bg-slate-400 rounded-full" />
-                </div>
+                <Calendar className="w-5 h-5 text-slate-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0 max-w-full">
-                  <div className="text-xs text-slate-400 uppercase tracking-wide">Status</div>
-                  <div className="font-medium text-sm capitalize text-white break-words">{event.status}</div>
+                  <div className="text-xs text-slate-400 uppercase tracking-wide">Calendar</div>
+                  <div className="font-medium text-sm text-white break-words">
+                    {event.calendarName || event.calendarId}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {/* Location */}
-          {event.location && (
+          {showEventTitles && event.location && (
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-start gap-3 text-slate-300">
                 <MapPin className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
@@ -177,13 +182,13 @@ export function CalendarEventModal({
           )}
 
           {/* URL/Link */}
-          {event.url && (
+          {showEventTitles && event.url && (
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="flex items-start gap-3 text-slate-300">
                 <Link className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0 max-w-full">
                   <div className="text-xs text-slate-400 uppercase tracking-wide">Link</div>
-                  <div className="font-medium text-sm text-blue-400 break-all">
+                  <div className="text-slate-400 text-sm break-all">
                     <a href={event.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
                       {event.url}
                     </a>
@@ -194,7 +199,7 @@ export function CalendarEventModal({
           )}
 
           {/* Notes Preview */}
-          {event.notes && (
+          {showEventTitles && event.notes && (
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50 max-w-full">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
