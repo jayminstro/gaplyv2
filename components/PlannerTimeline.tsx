@@ -767,16 +767,16 @@ function PlannerTimeline({
                         <button
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                           onClick={() => handleItemClick(item)}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation overflow-hidden"
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation overflow-hidden text-left"
                           type="button"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3 text-left">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
-                            <div className="flex-1 min-w-0 max-w-full">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">{item.title || 'Busy'}</h3>
+                            <div className="flex-1 min-w-0 max-w-full text-left">
+                              <div className="flex items-start gap-2 mb-1 text-left">
+                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap text-left">{item.title || 'Busy'}</h3>
                                 <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full flex-shrink-0">
                                   Calendar
                                 </span>
