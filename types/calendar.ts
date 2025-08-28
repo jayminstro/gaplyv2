@@ -4,6 +4,7 @@ export type CalendarBusyBlock = {
   end_time: string; // HH:mm
   source: 'device' | 'google';
   calendarId?: string;
+  calendarName?: string; // Add calendar name
   title?: string;
   isAllDay?: boolean;
   uid?: string;

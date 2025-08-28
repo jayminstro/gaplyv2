@@ -17,6 +17,7 @@ interface OverlapModalProps {
     isAllDay: boolean;
     // Rich event details for the modal
     calendarId?: string;
+    calendarName?: string;
     location?: string;
     notes?: string;
     url?: string;
@@ -34,12 +35,14 @@ interface OverlapModalProps {
     title: string | undefined;
     isAllDay: boolean;
     calendarId?: string;
+    calendarName?: string;
     location?: string;
     notes?: string;
     url?: string;
     transparency?: 'opaque' | 'transparent';
     status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
   }) => void; // Callback for opening in device calendar
+  showEventTitles?: boolean; // Whether to show detailed event information in modal
 }
 
 export function OverlapModal({
@@ -51,7 +54,8 @@ export function OverlapModal({
   onActivitySelect,
   onStartTimer,
   openCalendarEventIn = 'gaply', // Default to gaply behavior
-  onOpenInCalendar
+  onOpenInCalendar,
+  showEventTitles = true // Default to showing titles for backward compatibility
 }: OverlapModalProps) {
   const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<typeof calendarEvents[0] | null>(null);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
@@ -291,11 +295,14 @@ export function OverlapModal({
             start: selectedCalendarEvent.start,
             end: selectedCalendarEvent.end,
             isAllDay: selectedCalendarEvent.isAllDay,
+            calendarId: selectedCalendarEvent.calendarId,
+            calendarName: selectedCalendarEvent.calendarName,
             notes: selectedCalendarEvent.notes || '',
             url: selectedCalendarEvent.url || '',
             location: selectedCalendarEvent.location || '',
             status: selectedCalendarEvent.status || 'confirmed'
           }}
+          showEventTitles={showEventTitles}
         />
       )}
     </div>

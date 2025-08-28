@@ -34,7 +34,20 @@ interface PlannerTimelineProps {
   userPreferences?: UserPreferences;
   isWorkingDay?: boolean;
   hasWorkingDays?: boolean;
-  calendarEvents?: Array<{ id: string; start: Date; end: Date; title: string | undefined; isAllDay: boolean }>;
+  calendarEvents?: Array<{ 
+    id: string; 
+    start: Date; 
+    end: Date; 
+    title: string | undefined; 
+    isAllDay: boolean;
+    calendarId?: string;
+    calendarName?: string;
+    location?: string;
+    notes?: string;
+    url?: string;
+    transparency?: 'opaque' | 'transparent';
+    status?: 'none' | 'confirmed' | 'tentative' | 'cancelled';
+  }>;
 }
 
 function PlannerTimeline({ 
@@ -97,6 +110,7 @@ function PlannerTimeline({
       isAllDay: boolean;
       // Rich event details for the modal
       calendarId?: string;
+      calendarName?: string;
       location?: string;
       notes?: string;
       url?: string;
@@ -259,7 +273,16 @@ function PlannerTimeline({
       const candidates: Array<{ id: string; start: Date; end: Date; title: string; richData?: any }>= [];
       if (calendarEvents && calendarEvents.length > 0) {
         for (const ev of calendarEvents) {
-          candidates.push({ id: ev.id, start: ev.start, end: ev.end, title: ev.title || '', richData: ev });
+          candidates.push({ 
+            id: ev.id, 
+            start: ev.start, 
+            end: ev.end, 
+            title: ev.title || '', 
+            richData: {
+              ...ev,
+              calendarName: ev.calendarName // Ensure calendar name is passed through
+            }
+          });
         }
       }
       if (busyOverlays && busyOverlays.length > 0) {
@@ -330,6 +353,7 @@ function PlannerTimeline({
           isAllDay: event.richData?.isAllDay || false,
           // Pass through rich event details for the modal
           calendarId: event.richData?.calendarId,
+          calendarName: event.richData?.calendarName, // Add calendar name
           location: event.richData?.location,
           notes: event.richData?.notes,
           url: event.richData?.url,
@@ -578,6 +602,7 @@ function PlannerTimeline({
         id: item.data.id || item.id,
         uid: item.data.uid, // Native event identifier for opening in calendar
         calendarId: item.data.calendarId || 'default',
+        calendarName: item.data.calendarName, // Add calendar name
         title: item.data.title || 'Busy',
         start: item.startTime.getTime(),
         end: item.endTime.getTime(),
@@ -767,16 +792,16 @@ function PlannerTimeline({
                         <button
                           key={`calendar-${item.id}-${item.startTime.getTime()}-${slot.hour24}`}
                           onClick={() => handleItemClick(item)}
-                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation overflow-hidden"
+                          className="w-full backdrop-blur-sm rounded-2xl p-4 bg-red-800/30 border border-red-600/40 hover:bg-red-800/50 transition-all duration-200 active:scale-[0.98] touch-manipulation overflow-hidden text-left"
                           type="button"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3 text-left">
                             <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <Calendar className="w-4 h-4 text-red-400" />
                             </div>
-                            <div className="flex-1 min-w-0 max-w-full">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap">{item.title || 'Busy'}</h3>
+                            <div className="flex-1 min-w-0 max-w-full text-left">
+                              <div className="flex items-start gap-2 mb-1 text-left">
+                                <h3 className="text-white font-medium text-base flex-1 min-w-0 max-w-full text-[clamp(14px,3.5vw,16px)] overflow-hidden text-ellipsis whitespace-nowrap text-left">{item.title || 'Busy'}</h3>
                                 <span className="text-xs text-red-400 bg-red-700/50 px-2 py-1 rounded-full flex-shrink-0">
                                   Calendar
                                 </span>
@@ -1117,6 +1142,7 @@ function PlannerTimeline({
         // Use the existing handleOpenEventInCalendar function
         handleOpenEventInCalendar(event);
       }}
+      showEventTitles={userPreferences?.show_device_calendar_titles}
     />
     
 
@@ -1129,6 +1155,7 @@ function PlannerTimeline({
         setCalendarEventModalOpen(false);
         setSelectedCalendarEvent(null);
       }}
+      showEventTitles={userPreferences?.show_device_calendar_titles}
     />
     </>
   );
