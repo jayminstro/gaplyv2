@@ -1,11 +1,11 @@
 # Gaply - Intelligent Time-Blocking & Task Management
 
-A comprehensive mobile-first task management and time-blocking application with intelligent gap detection, calendar synchronization, and smart activity suggestions. Features a sleek, modern design aesthetic similar to Apple Health and Headspace.
+A comprehensive mobile-first task management and time-blocking application with intelligent gap detection, calendar synchronization, and smart activity suggestions. Features a sleek, modern design aesthetic similar to Apple Health and Headspace, optimized for iOS and PWA experiences.
 
 ## 🌟 Features
 
 ### 📱 Core Functionality
-- **Intelligent Time-Blocking**: Automatically detect and manage time gaps in your schedule with three-tier priority system (manual > calendar > default)
+- **Intelligent Time-Blocking**: Automatically detect and manage time gaps in your schedule with simplified three-tier priority system (manual > calendar > default)
 - **Smart Task Management**: Create, organize, and track tasks with categories (Overdue, Today, Upcoming, Draft)
 - **Google Calendar Integration**: Seamless OAuth 2.0 sync with automatic gap detection from calendar data
 - **Interactive Timeline**: Visual timeline with intelligent stacking, proximity-based grouping, and overflow prevention
@@ -29,35 +29,37 @@ A comprehensive mobile-first task management and time-blocking application with 
 - **Complete User Isolation**: Row Level Security ensures users only see their own data
 - **Relational Database**: Proper foreign key relationships linking all user data through user_id references
 - **Timestamptz Handling**: Proper timestamp formatting for database storage and frontend display
-- **Comprehensive Gap Logic**: Documented gap creation and management system
+- **Simplified Gap Logic**: Streamlined gap creation and management system with 14-day rolling window
 
 ### 🎨 Mobile-Optimized Experience
-- **Touch-First Design**: No scrollbars, optimized for mobile touch interfaces with momentum scrolling
-- **Native Notifications**: iOS-compatible notification system positioned above navigation bar
-- **PWA Ready**: Progressive Web App capabilities with widget shortcuts
+- **Touch-First Design**: Enhanced touch scrolling with momentum and native feel, no scrollbars
+- **iOS Native Integration**: Capacitor-based iOS app with device calendar access
+- **PWA Ready**: Progressive Web App capabilities with widget shortcuts and offline support
 - **Widget Mode**: Compact widget view accessible via URL parameter (?widget=true)
-- **Responsive Design**: Adaptive layout that works seamlessly across different screen sizes
+- **Responsive Design**: Adaptive layout optimized for mobile devices with enhanced touch interactions
 
 ## 🛠️ Tech Stack
 
 ### Frontend
 - **React 18** with TypeScript
-- **Tailwind CSS** for styling
+- **Tailwind CSS** for styling with design tokens
 - **shadcn/ui** as the primary design system
 - **Lucide React** for icons
-- **Motion/React** for animations
+- **Framer Motion** for animations
 - **Sonner** for toast notifications
 
-### Backend
-- **Supabase** for backend services
+### Backend & Infrastructure
+- **Supabase** for backend services and database
 - **Hono** web server for edge functions
 - **PostgreSQL** with Row Level Security
 - **OAuth 2.0** for Google Calendar integration
+- **Capacitor** for native iOS app capabilities
 
 ### Development Tools
 - **Vite** for build tooling
 - **TypeScript** for type safety
 - **ESLint** for code quality
+- **Vitest** for testing
 
 ## 🚀 Getting Started
 
@@ -66,6 +68,7 @@ A comprehensive mobile-first task management and time-blocking application with 
 - npm or yarn
 - Supabase account
 - Google Cloud Console account (for calendar integration)
+- iOS development tools (for native app)
 
 ### Installation
 
@@ -98,7 +101,7 @@ A comprehensive mobile-first task management and time-blocking application with 
    - `user_preferences` - User settings, work hours, and calendar preferences
    - `tasks` - Task management with timestamptz due dates and scheduling
    - `gaps` - Simplified time gap management (available time slots only)
-   - `explore` - Activity suggestions and discovery (Note: API endpoint is `/explore`, not `/discover`)
+   - `explore` - Activity suggestions and discovery
    - `activity_completions` - Completion tracking and analytics
    
    All tables use Row Level Security (RLS) and are linked through user_id foreign key relationships.
@@ -118,7 +121,7 @@ A comprehensive mobile-first task management and time-blocking application with 
 ## 📁 Project Structure
 
 ```
-├── App.tsx                 # Main application component
+├── App.tsx                 # Main application component with global state
 ├── components/             # React components
 │   ├── ui/                # shadcn/ui components
 │   ├── figma/             # Figma-specific components  
@@ -132,17 +135,24 @@ A comprehensive mobile-first task management and time-blocking application with 
 │   ├── TimerModal.tsx        # High-fidelity Pomodoro timer
 │   ├── FloatingTimer.tsx     # Minimized global timer
 │   ├── WidgetView.tsx        # PWA widget mode
-│   └── CategorizedTasks.tsx  # Task organization by status
+│   ├── CategorizedTasks.tsx  # Task organization by status
+│   ├── MobileOptimizations.tsx # Enhanced mobile touch and PWA features
+│   ├── CalendarSync.tsx      # Google Calendar integration
+│   └── DeviceCalendarPickerModal.tsx # iOS device calendar selection
 ├── hooks/                 # Custom React hooks
 ├── types/                 # TypeScript type definitions
 ├── utils/                 # Utility functions and helpers
-│   ├── api.tsx           # API integration layer
+│   ├── api.tsx           # API integration layer with retry logic
 │   ├── gapsAPI.tsx       # Gap management logic
+│   ├── gapLogic.tsx      # Simplified gap creation and management
 │   ├── helpers.tsx       # Common helper functions
+│   ├── storage/          # Enhanced storage management system
+│   ├── localFirst/       # Offline-first capabilities
 │   └── supabase/         # Supabase client configuration
 ├── supabase/functions/   # Backend edge functions
-│   └── server/           # Hono web server
+│   └── make-server-966d4846/ # Hono web server with API endpoints
 ├── styles/               # Global CSS and design tokens
+├── native/               # Capacitor native bridge
 └── guidelines/           # Development guidelines
 ```
 
@@ -160,15 +170,17 @@ A comprehensive mobile-first task management and time-blocking application with 
 - **TimerModal**: High-fidelity timer with circular progress and modern controls
 - **FloatingTimer**: Minimized timer with progress ring and global state management
 - **WidgetView**: Compact widget mode for PWA shortcuts
+- **MobileOptimizations**: Enhanced touch scrolling, PWA meta tags, and iOS optimizations
 
 ### Data Flow & Architecture
 
 1. **Authentication**: Supabase Auth with session management and user metadata
 2. **Task Management**: Full CRUD operations with proper timestamptz date handling
-3. **Gap Logic**: Simplified gap creation system with automatic gap splitting when tasks are scheduled
+3. **Simplified Gap Logic**: Streamlined gap creation system with automatic gap splitting when tasks are scheduled
 4. **Real-time Updates**: Debounced saves and live synchronization across all components
 5. **Timeline Rendering**: Smart time conversion helpers for consistent HH:MM format handling
-6. **Mobile Optimizations**: Touch scroll handling, iOS-compatible notifications, and PWA support
+6. **Mobile Optimizations**: Enhanced touch scroll handling, iOS-compatible notifications, and PWA support
+7. **Offline-First**: Local storage fallbacks with enhanced storage management
 
 ### API Endpoints
 
@@ -177,7 +189,7 @@ The backend provides RESTful endpoints via Hono web server:
 - `/make-server-966d4846/gaps` - Time gap management and calendar integration
 - `/make-server-966d4846/preferences` - User settings and work hours
 - `/make-server-966d4846/google-calendar` - Calendar sync and OAuth handling
-- `/make-server-966d4846/explore` - Activity suggestions (corrected from `/discover`)
+- `/make-server-966d4846/explore` - Activity suggestions
 
 ## 🎨 Design System
 
@@ -224,6 +236,12 @@ The application can be deployed to any static hosting service:
 - Test widget mode with ?widget=true parameter
 - Ensure proper service worker caching for offline support
 
+### iOS Native App
+- **Capacitor Build**: Use `npx cap build ios` to build native iOS app
+- **Xcode Integration**: Open `ios/App/App.xcworkspace` in Xcode
+- **Device Calendar**: Requires proper permissions and entitlements
+- **App Store**: Follow Apple's guidelines for app submission
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -242,33 +260,39 @@ The application can be deployed to any static hosting service:
 - Avoid manual font-size/weight classes unless specifically needed (use globals.css defaults)
 - Ensure all user data is properly scoped with Row Level Security
 - Use proper timestamptz handling for date/time fields
-- Follow the three-tier gap logic system for time management
+- Follow the simplified gap logic system for time management
+- Test PWA functionality and widget mode
 
 ### Code Style & Architecture
 
 - Use TypeScript for all new components with proper type definitions
 - Follow React best practices (hooks, functional components, proper state management)
-- Use Tailwind CSS v4 with design tokens from globals.css
+- Use Tailwind CSS with design tokens from globals.css
 - Maintain component modularity and reusability
 - Implement proper error boundaries and loading states
 - Use debounced saves for real-time updates to avoid excessive API calls
 - Follow the established folder structure and naming conventions
-- Ensure proper mobile scrolling with touch optimization
+- Ensure proper mobile scrolling with enhanced touch optimization
+- Implement offline-first capabilities with local storage fallbacks
 
 ## 📋 Recent Updates & Improvements
 
 ### ✅ Completed Features
-- ✅ **Security Improvements**: Moved hardcoded Supabase credentials to environment variables
-- ✅ Work hours banner system with smart timeline replacement
-- ✅ Activity stack modal with bottom slide-up animation and proper spacing
-- ✅ Google Calendar integration with optional activity scheduling
-- ✅ Fixed gap time format handling for consistent HH:MM display
-- ✅ Repositioned notifications above navigation bar for iOS compatibility
-- ✅ Widget mode functionality with PWA shortcuts and URL parameter support
-- ✅ Enhanced mobile touch scrolling with momentum and native feel
-- ✅ Comprehensive gap logic with three-tier priority system
-- ✅ Proper timestamptz handling between database and frontend
-- ✅ Task categorization with real-time sorting and status management
+- ✅ **Simplified Preferences**: Removed redundant calendar_include_weekends and quiet_hours preferences
+- ✅ **Enhanced Mobile Experience**: Improved touch scrolling, PWA meta tags, and iOS optimizations
+- ✅ **Offline-First Architecture**: Local storage fallbacks and enhanced storage management
+- ✅ **Device Calendar Integration**: iOS device calendar access with picker modal
+- ✅ **Simplified Gap Logic**: Streamlined gap creation with 14-day rolling window
+- ✅ **Enhanced API Layer**: Retry logic, session management, and better error handling
+- ✅ **Work hours banner system** with smart timeline replacement
+- ✅ **Activity stack modal** with bottom slide-up animation and proper spacing
+- ✅ **Google Calendar integration** with optional activity scheduling
+- ✅ **Fixed gap time format handling** for consistent HH:MM display
+- ✅ **Repositioned notifications** above navigation bar for iOS compatibility
+- ✅ **Widget mode functionality** with PWA shortcuts and URL parameter support
+- ✅ **Comprehensive gap logic** with simplified three-tier priority system
+- ✅ **Proper timestamptz handling** between database and frontend
+- ✅ **Task categorization** with real-time sorting and status management
 
 ### 🔮 Future Roadmap
 
@@ -277,9 +301,10 @@ The application can be deployed to any static hosting service:
 - [ ] Multiple calendar provider support (Outlook, Apple Calendar)
 - [ ] Advanced analytics dashboard with productivity insights
 - [ ] Voice commands and enhanced accessibility
-- [ ] Native mobile app versions (iOS/Android)
-- [ ] Offline-first architecture with sync conflict resolution
+- [ ] Android native app version
+- [ ] Advanced offline capabilities with sync conflict resolution
 - [ ] Advanced calendar features (recurring events, reminders)
+- [ ] Enhanced PWA features and offline support
 
 ## 🐛 Known Issues & Considerations
 
@@ -287,6 +312,7 @@ The application can be deployed to any static hosting service:
 - Google Calendar sync requires manual OAuth 2.0 credential setup in Google Cloud Console
 - Missing Google OAuth credentials will result in "provider is not enabled" errors
 - Widget mode requires specific URL parameter (?widget=true) to activate
+- iOS native app requires proper device calendar permissions
 
 ### Technical Limitations
 - Timer accuracy may vary on background tabs due to browser throttling
@@ -298,6 +324,7 @@ The application can be deployed to any static hosting service:
 - Optimized for modern mobile browsers (Chrome, Safari, Edge)
 - PWA features require HTTPS for full functionality
 - Clipboard API requires user permission for widget URL sharing
+- iOS Safari has enhanced support with Capacitor integration
 
 ## 📄 License
 
@@ -309,6 +336,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Supabase](https://supabase.com/) for the comprehensive backend platform
 - [Tailwind CSS](https://tailwindcss.com/) for the utility-first CSS framework
 - [Lucide](https://lucide.dev/) for the beautiful icon set
+- [Capacitor](https://capacitorjs.com/) for native mobile app capabilities
 
 ---
 
